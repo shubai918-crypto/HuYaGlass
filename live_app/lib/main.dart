@@ -4,14 +4,21 @@ import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'app/routes.dart';
 import 'app/theme.dart';
+import 'common/services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化 Hive 本地存储
   await Hive.initFlutter();
   await Hive.openBox('settings');
   await Hive.openBox('follow');
 
-  SystemChrome.setPreferredOrientations([
+  // 初始化存储服务
+  StorageService.init();
+
+  // 锁定竖屏
+  await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
 
