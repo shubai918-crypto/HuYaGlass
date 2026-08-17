@@ -28,7 +28,7 @@ class AppTheme {
         fontWeight: FontWeight.w600,
       ),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: _surfaceColor.withOpacity(0.8),
       elevation: 0,
       shape: RoundedRectangleBorder(
