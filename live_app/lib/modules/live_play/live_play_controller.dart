@@ -6,7 +6,7 @@ import 'package:video_player/video_player.dart';
 
 class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
-  final streamerUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
+  final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
   // 状态
   final loading = true.obs;
@@ -29,6 +29,7 @@ class LivePlayController extends GetxController {
   final inputController = TextEditingController();
   final HuyaStreamResolver _streamResolver = HuyaStreamResolver();
   final HuyaApi _api = HuyaApi();
+  final HuyaLoginManager _loginManager = HuyaLoginManager();
 
   @override
   void onInit() {
@@ -40,12 +41,14 @@ class LivePlayController extends GetxController {
     try {
       final info = await _streamResolver.resolveStream(roomId);
       if (info == null) {
-        Get.snackbar('错误', '无法获取直播流');
+        Get.snackbar('错误', '无法获取直播流', snackPosition: SnackPosition.TOP);
+        loading.value = false;
         return;
       }
 
-      streamerName.value = info.presenterName;
-      fansCount.value = info.fansCount;
+      streamerName.value = info.streamerInfo.nickname;
+      streamerAvatar.value = info.streamerInfo.avatar;
+      fansCount.value = info.streamerInfo.fansCount;
       isLive.value = info.isLive;
       qualities.assignAll(info.qualities);
 
@@ -77,9 +80,8 @@ class LivePlayController extends GetxController {
   }
 
   void _connectDanmaku(int presenterUid) {
-    _danmakuClient = HuyaDanmakuClient();
+    _danmakuClient = HuyaDanmakuClient(_loginManager);
     _danmakuClient!.connect(
-      uid: 0, // 未登录时为 0
       roomId: roomId,
       presenterUid: presenterUid,
     );
@@ -93,20 +95,27 @@ class LivePlayController extends GetxController {
 
   void sendDanmaku(String text) {
     if (text.isEmpty) return;
-    // TODO: 实现发送弹幕（需要登录态）
+    if (!_loginManager.isLoggedIn) {
+      Get.snackbar('提示', '发送弹幕需要先登录');
+      return;
+    }
+    _danmakuClient?.sendDanmaku(text);
     inputController.clear();
-    Get.snackbar('提示', '发送弹幕需要登录');
   }
 
   void toggleFollow() {
-    // TODO: 实现订阅（需要登录态）
-    Get.snackbar('提示', '订阅需要登录');
+    if (!_loginManager.isLoggedIn) {
+      Get.snackbar('提示', '订阅需要先登录');
+      return;
+    }
+    // TODO: 调用 ModRelationReq 实现订阅
+    isFollowed.value = !isFollowed.value;
   }
 
   Widget videoWidget() {
     if (_videoController == null || !_videoController!.value.isInitialized) {
       return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+        child: CircularProgressIndicator(color: Color(0xFF00D2FF)),
       );
     }
     return Center(
