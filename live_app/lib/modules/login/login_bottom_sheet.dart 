@@ -1,0 +1,106 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../common/services/login_service.dart';
+import '../../common/widgets/liquid_glass.dart';
+import 'login_page.dart';
+
+/// 登录入口底部弹窗（参考 dtv_mobile BilibiliWebLoginSheet）
+void showLoginSheet(BuildContext context) {
+  final loginService = Get.find<LoginService>();
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: const Color(0xFF1A1A2E),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (ctx) {
+      return Obx(() {
+        if (loginService.isLoggedIn.value) {
+          // 已登录状态
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 36,
+                  backgroundImage: loginService.avatar.value.isNotEmpty
+                      ? NetworkImage(loginService.avatar.value)
+                      : null,
+                  child: loginService.avatar.value.isEmpty
+                      ? const Icon(Icons.person, size: 36)
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  loginService.nickname.value.isNotEmpty
+                      ? loginService.nickname.value
+                      : '用户${loginService.uid.value}',
+                  style: const TextStyle(color: Colors.white, fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'UID: ${loginService.uid.value}',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: LiquidGlassButton(
+                    text: '退出登录',
+                    selected: false,
+                    onTap: () {
+                      loginService.logout();
+                      Get.back();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // 未登录状态
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.account_circle_outlined, size: 64, color: Colors.white38),
+                const SizedBox(height: 16),
+                const Text(
+                  '登录虎牙账号',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '登录后可发送弹幕、订阅主播',
+                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Get.back();
+                      Get.to(() => const LoginPage());
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00D2FF),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('打开虎牙登录页', style: TextStyle(fontSize: 16)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      });
+    },
+  );
+}
