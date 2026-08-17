@@ -9,10 +9,15 @@ import 'common/services/login_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 初始化 Hive
-  await Hive.initFlutter();
-  await Hive.openBox('settings');
-  await Hive.openBox('follow');
+  try {
+    // 初始化 Hive
+    await Hive.initFlutter();
+    await Hive.openBox('settings');
+    await Hive.openBox('follow');
+  } catch (e) {
+    // Hive 初始化失败也不阻塞启动
+    debugPrint('Hive init error: $e');
+  }
 
   // 锁定竖屏
   await SystemChrome.setPreferredOrientations([
@@ -27,6 +32,9 @@ void main() async {
     ),
   );
 
+  // 注册全局服务（必须在 runApp 之前）
+  Get.put(LoginService(), permanent: true);
+
   runApp(const MyApp());
 }
 
@@ -35,9 +43,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 注册全局服务
-    Get.put(LoginService());
-
     return GetMaterialApp(
       title: 'HuyaLive',
       debugShowCheckedModeBanner: false,
