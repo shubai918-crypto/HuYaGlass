@@ -7,6 +7,8 @@ class DanmakuMessage {
   final String badgeName;
   final String avatarUrl;
   final int gender;
+  final int fontColor;
+  final int fontSize;
   final DateTime timestamp;
 
   DanmakuMessage({
@@ -18,5 +20,7 @@ class DanmakuMessage {
     this.badgeName = '',
     this.avatarUrl = '',
     this.gender = 0,
+    this.fontColor = -1,
+    this.fontSize = 4,
   }) : timestamp = DateTime.now();
 }
