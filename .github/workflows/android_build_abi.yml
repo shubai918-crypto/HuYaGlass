@@ -4,8 +4,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'live_core/**'       # 核心逻辑变动触发
-      - 'live_app/**'        # App 版本号变动触发
+      - 'live_core/**'
+      - 'live_app/**'
   workflow_dispatch:
 
 jobs:
@@ -33,14 +33,14 @@ jobs:
           fileName: 'my-release-key.jks'
           encodedString: ${{ secrets.ANDROID_KEYSTORE }}
 
-      # 2. 生成 key.properties 签名配置
-      - name: Generate key.properties
+      # 2. 生成 key.properties
+      - name: Create key.properties
         run: |
-          KEYSTORE_PATH=${{ steps.keystore_file.outputs.filePath }}
-          echo "storeFile=$KEYSTORE_PATH" > live_app/android/key.properties
-          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> live_app/android/key.properties
-          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> live_app/android/key.properties
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> live_app/android/key.properties
+          cd live_app/android
+          echo "storeFile=${{ steps.keystore_file.outputs.filePath }}" > key.properties
+          echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
 
       # 3. 获取依赖
       - name: Install Dependencies
@@ -60,7 +60,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: HuyaGlassLive-Android-Build
+          name: LiveApp-Android-Build
           path: |
             live_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
             live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
