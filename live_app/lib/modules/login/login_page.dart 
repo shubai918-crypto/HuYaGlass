@@ -1,0 +1,98 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import '../../common/services/login_service.dart';
+import '../../common/widgets/liquid_glass.dart';
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  late final WebViewController _controller;
+  final loginService = Get.find<LoginService>();
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (url) {
+            setState(() => _isLoading = true);
+          },
+          onPageFinished: (url) async {
+            setState(() => _isLoading = false);
+            // 检测是否登录成功（URL 跳转回虎牙首页）
+            if (url.contains('huya.com') && !url.contains('login')) {
+              final cookie = await _controller
+                  .runJavaScriptReturningResult('document.cookie') as String;
+              if (cookie.contains('udb_uid')) {
+                loginService.parseCookie(cookie);
+                if (loginService.isLoggedIn.value) {
+                  Get.back();
+                }
+              }
+            }
+          },
+          onNavigationRequest: (request) {
+            // 拦截登录成功后的跳转
+            if (request.url.contains('huya.com') &&
+                !request.url.contains('login') &&
+                !request.url.contains('passport')) {
+              _checkLoginStatus();
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse('https://www.huya.com/login'));
+  }
+
+  Future<void> _checkLoginStatus() async {
+    try {
+      final cookie = await _controller
+          .runJavaScriptReturningResult('document.cookie') as String;
+      if (cookie.contains('udb_uid')) {
+        loginService.parseCookie(cookie);
+        if (loginService.isLoggedIn.value) {
+          Get.back();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0F),
+      appBar: AppBar(
+        title: const Text('虎牙登录', style: TextStyle(color: Colors.white)),
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Get.back(),
+        ),
+        backgroundColor: Colors.transparent,
+      ),
+      body: Stack(
+        children: [
+          WebViewWidget(controller: _controller),
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00D2FF)),
+            ),
+        ],
+      ),
+    );
+  }
+}
