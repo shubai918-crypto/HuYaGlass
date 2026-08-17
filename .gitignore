@@ -1,0 +1,4 @@
+# 签名文件
+live_app/android/key.properties
+*.jks
+*.keystore
