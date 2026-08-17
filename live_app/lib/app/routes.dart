@@ -14,7 +14,11 @@ class AppRoutes {
 
   static final pages = [
     GetPage(name: home, page: () => const HomePage()),
-    GetPage(name: livePlay, page: () => const LivePlayPage()),
+    GetPage(
+      name: livePlay,
+      page: () => const LivePlayPage(),
+      transition: Transition.fadeIn,
+    ),
     GetPage(name: search, page: () => const SearchPage()),
     GetPage(name: follow, page: () => const FollowPage()),
     GetPage(name: settings, page: () => const SettingsPage()),
