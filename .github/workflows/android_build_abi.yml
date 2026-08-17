@@ -38,16 +38,18 @@ jobs:
         run: |
           cd live_app/android
           echo "storeFile=${{ steps.keystore_file.outputs.filePath }}" > key.properties
-          echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
+          echo "storePassword=123456" >> key.properties
+          echo "keyPassword=123456" >> key.properties
+          echo "keyAlias=mykey" >> key.properties
 
-      # 3. 获取依赖
-      - name: Install Dependencies
+      # 3. 清理并获取依赖
+      - name: Clean and Restore packages
         run: |
-          cd live_core
-          flutter pub get
-          cd ../live_app
+          cd live_app
+          flutter clean
+          rm -f .flutter-plugins
+          rm -f .flutter-plugins-dependencies
+          rm -rf .dart_tool
           flutter pub get
 
       # 4. 构建 APK（按 ABI 拆分）
