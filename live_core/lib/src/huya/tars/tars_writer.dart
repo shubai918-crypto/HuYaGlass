@@ -1,10 +1,13 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'tars_struct.dart';
 
+/// Tars 二进制编码器
 class TarsWriter {
   final List<int> _buffer = [];
 
   Uint8List get bytes => Uint8List.fromList(_buffer);
+  int get length => _buffer.length;
 
   void writeTag(int tag, int type) {
     if (tag < 15) {
@@ -69,15 +72,36 @@ class TarsWriter {
       _buffer.add(bytes.length);
     } else {
       writeTag(tag, 7); // STRING4
-      writeInt32(0, bytes.length);
+      _buffer.add((bytes.length >> 24) & 0xFF);
+      _buffer.add((bytes.length >> 16) & 0xFF);
+      _buffer.add((bytes.length >> 8) & 0xFF);
+      _buffer.add(bytes.length & 0xFF);
     }
     _buffer.addAll(bytes);
   }
 
   void writeBytes(int tag, Uint8List value) {
     writeTag(tag, 13); // SIMPLE_LIST
-    writeTag(0, 0); // head type: byte
+    writeTag(0, 0); // head: byte type
     writeInt32(0, value.length);
     _buffer.addAll(value);
+  }
+
+  void writeStructBegin(int tag) {
+    writeTag(tag, 10); // STRUCT_BEGIN
+  }
+
+  void writeStructEnd() {
+    writeTag(0, 11); // STRUCT_END
+  }
+
+  void writeListBegin(int tag, int size) {
+    writeTag(tag, 9); // LIST
+    writeInt32(0, size);
+  }
+
+  void writeMapBegin(int tag, int size) {
+    writeTag(tag, 8); // MAP
+    writeInt32(0, size);
   }
 }
