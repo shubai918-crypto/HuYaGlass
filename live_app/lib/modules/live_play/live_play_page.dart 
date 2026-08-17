@@ -1,0 +1,204 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:live_core/live_core.dart';
+import '../../common/widgets/liquid_glass.dart';
+import '../../common/widgets/danmaku_view.dart';
+import 'live_play_controller.dart';
+
+class LivePlayPage extends StatelessWidget {
+  const LivePlayPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = Get.put(LivePlayController());
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Obx(() {
+        if (controller.loading.value) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return Stack(
+          children: [
+            // 视频播放器
+            Positioned.fill(
+              child: controller.videoWidget(),
+            ),
+
+            // 弹幕层
+            if (controller.showDanmaku.value)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 60,
+                left: 0,
+                right: 0,
+                child: DanmakuView(
+                  danmakuStream: controller.danmakuStream!,
+                  height: 250,
+                  fontSize: controller.danmakuFontSize.value,
+                ),
+              ),
+
+            // 顶部信息栏 (液态玻璃)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: _buildTopBar(context, controller),
+              ),
+            ),
+
+            // 底部控制栏 (液态玻璃)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: _buildBottomBar(context, controller),
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context, LivePlayController controller) {
+    return LiquidGlass(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          // 主播头像
+          CircleAvatar(
+            radius: 22,
+            backgroundImage: controller.streamerAvatar.isNotEmpty
+                ? NetworkImage(controller.streamerAvatar.value)
+                : null,
+            child: controller.streamerAvatar.isEmpty
+                ? const Icon(Icons.person, size: 20)
+                : null,
+          ),
+          const SizedBox(width: 12),
+          // 主播信息
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  controller.streamerName.value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '粉丝 ${_formatCount(controller.fansCount.value)}',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 订阅按钮
+          LiquidGlassButton(
+            text: controller.isFollowed.value ? '已订阅' : '订阅',
+            selected: controller.isFollowed.value,
+            onTap: () => controller.toggleFollow(),
+          ),
+          const SizedBox(width: 8),
+          // 关闭
+          IconButton(
+            onPressed: () => Get.back(),
+            icon: const Icon(Icons.close, color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(BuildContext context, LivePlayController controller) {
+    return LiquidGlass(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 画质切换
+          Row(
+            children: [
+              const Text(
+                '画质',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: controller.qualities.map((q) {
+                      final selected = q.name == controller.currentQuality.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: LiquidGlassButton(
+                          text: q.name,
+                          selected: selected,
+                          onTap: () => controller.switchQuality(q),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 弹幕输入框
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller.inputController,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: '发送弹幕...',
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                  ),
+                  onSubmitted: (text) => controller.sendDanmaku(text),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => controller.sendDanmaku(
+                  controller.inputController.text,
+                ),
+                icon: const Icon(Icons.send, color: Colors.white),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 10000) {
+      return '${(count / 10000).toStringAsFixed(1)}万';
+    }
+    return '$count';
+  }
+}
