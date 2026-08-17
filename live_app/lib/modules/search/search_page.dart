@@ -3,14 +3,14 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/liquid_glass.dart';
 import '../../app/routes.dart';
-import 'search_controller.dart';
+import 'search_controller.dart' as search_ctrl;
 
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(SearchController());
+    final controller = Get.put(search_ctrl.SearchController());
 
     return Scaffold(
       appBar: AppBar(
