@@ -1,0 +1,67 @@
+name: Build Android ABI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'live_core/**'       # 核心逻辑变动触发
+      - 'live_app/**'        # App 版本号变动触发
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.x"
+
+      # 1. 使用专用 Action 还原签名文件
+      - name: Restore Keystore
+        id: keystore_file
+        uses: timheuer/base64-to-file@v2
+        with:
+          fileName: 'my-release-key.jks'
+          encodedString: ${{ secrets.ANDROID_KEYSTORE }}
+
+      # 2. 生成 key.properties 签名配置
+      - name: Generate key.properties
+        run: |
+          KEYSTORE_PATH=${{ steps.keystore_file.outputs.filePath }}
+          echo "storeFile=$KEYSTORE_PATH" > live_app/android/key.properties
+          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> live_app/android/key.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> live_app/android/key.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> live_app/android/key.properties
+
+      # 3. 获取依赖
+      - name: Install Dependencies
+        run: |
+          cd live_core
+          flutter pub get
+          cd ../live_app
+          flutter pub get
+
+      # 4. 构建 APK（按 ABI 拆分）
+      - name: Build APK
+        run: |
+          cd live_app
+          flutter build apk --release --split-per-abi
+
+      # 5. 上传产物
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: HuyaGlassLive-Android-Build
+          path: |
+            live_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            live_app/build/app/outputs/flutter-apk/app-x86_64-release.apk
