@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <!-- 虎牙 CDN 域名（直播流可能用 HTTP） -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">huya.com</domain>
+        <domain includeSubdomains="true">liveplay-kuro.huya.com</domain>
+        <domain includeSubdomains="true">cdnws.api.huya.com</domain>
+    </domain-config>
+</network-security-config>
