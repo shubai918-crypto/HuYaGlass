@@ -112,7 +112,7 @@ class TarsReader {
         pos += len;
         break;
       case 8: // MAP
-        var size = readInt(0, true);
+        var size = readInt(0, required: true);
         for (var i = 0; i < size * 2; i++) {
           var hd = HeadData();
           readHead(hd);
@@ -120,7 +120,7 @@ class TarsReader {
         }
         break;
       case 9: // LIST
-        var size = readInt(0, true);
+        var size = readInt(0, required: true);
         var hd = HeadData();
         readHead(hd);
         for (var i = 0; i < size; i++) {
@@ -141,7 +141,7 @@ class TarsReader {
         break;
       case 13: // SIMPLE_LIST
         readHead(HeadData()); // head
-        var size = readInt(0, true);
+        var size = readInt(0, required: true);
         pos += size;
         break;
     }
@@ -201,7 +201,7 @@ class TarsReader {
     }
     if (hd.type == 13) { // SIMPLE_LIST
       readHead(HeadData()); // head
-      var size = readInt(0, true);
+      var size = readInt(0, required: true);
       if (pos + size > data.length) return Uint8List(0);
       var bytes = data.sublist(pos, pos + size);
       pos += size;
@@ -221,7 +221,7 @@ class TarsReader {
       if (required) throw TarsDecodeException('type mismatch: tag=$tag');
       return [];
     }
-    var size = readInt(0, true);
+    var size = readInt(0, required: true);
     if (size < 0) throw TarsDecodeException('size invalid: $size');
     // 跳过元素类型头
     readHead(HeadData());
@@ -248,7 +248,7 @@ class TarsReader {
       if (required) throw TarsDecodeException('type mismatch: tag=$tag');
       return {};
     }
-    var size = readInt(0, true);
+    var size = readInt(0, required: true);
     if (size < 0) throw TarsDecodeException('size invalid: $size');
     var map = <K, V>{};
     for (var i = 0; i < size; i++) {
