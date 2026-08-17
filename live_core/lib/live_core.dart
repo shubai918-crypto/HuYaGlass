@@ -11,6 +11,7 @@ export 'src/huya/huya_api.dart';
 export 'src/huya/huya_stream.dart';
 export 'src/huya/huya_danmaku.dart';
 export 'src/huya/huya_login.dart';
+export 'src/huya/huya_follow.dart';
 
 // 模型
 export 'src/model/live_room.dart';
