@@ -43,7 +43,12 @@ class LivePlayController extends GetxController {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
+  // ---------- 弹幕参数 ----------
+  int _ayyuid = 0;
+  int _topSid = 0;
+  int _subSid = 0;
   HuyaDanmakuClient? _danmakuClient;
+
   final inputController = TextEditingController();
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
@@ -120,8 +125,11 @@ class LivePlayController extends GetxController {
         debugInfo.value = '未解析到线路(可能未开播)';
       }
 
+      _ayyuid = info.ayyuid;
+      _topSid = info.topSid != 0 ? info.topSid : info.presenterUid;
+      _subSid = info.subSid;
       if (isLive.value && _danmakuClient == null) {
-        _connectDanmaku(info.presenterUid);
+        _connectDanmaku();
       }
       loading.value = false;
       _updateDebug();
@@ -169,6 +177,8 @@ class LivePlayController extends GetxController {
     _controller = null;
     final c = VideoPlayerController.networkUrl(Uri.parse(url));
     c.addListener(() {
+      // 忽略已切换掉的旧控制器的错误
+      if (_controller != null && !identical(_controller, c)) return;
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
         debugPrint('PLAYER ERROR: $_lastError');
@@ -243,9 +253,9 @@ class LivePlayController extends GetxController {
     _playStream(q);
   }
 
-  void _connectDanmaku(int presenterUid) {
-    _danmakuClient = HuyaDanmakuClient(_loginManager);
-    _danmakuClient!.connect(roomId: roomId, presenterUid: presenterUid);
+  void _connectDanmaku() {
+    _danmakuClient = HuyaDanmakuClient();
+    _danmakuClient!.connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid);
     danmakuStream = _danmakuClient!.danmakuStream;
   }
 
