@@ -10,7 +10,7 @@ class HuyaStreamResolver {
   static const _ua =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 
-  final Random _random = Random();
+static  final Random _random = Random();
 
   int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
   String _s(dynamic v) => v?.toString() ?? '';
@@ -302,7 +302,7 @@ class HuyaStreamResolver {
   }
 
   // ============ uid 取值（pure_live getUUid 同款） ============
-  int _uidFor(int loginUid, String streamName) {
+static  int _uidFor(int loginUid, String streamName) {
     if (loginUid > 0) return loginUid;
     final parts = streamName.split('-');
     if (parts.isNotEmpty) {
