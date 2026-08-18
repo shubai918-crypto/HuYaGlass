@@ -27,12 +27,10 @@ class HuyaStreamResolver {
 
   String _md5(String input) => md5.convert(utf8.encode(input)).toString();
 
-  /// dtv: enforceHttp —— 规避 TLS/SNI 问题
   static String enforceHttp(String url) => url.startsWith('https://')
       ? url.replaceFirst('https://', 'http://')
       : url;
 
-  // ================= dtv: parseQuery =================
   Map<String, String> _parseQuery(String qs) {
     var trimmed = qs.trim();
     while (trimmed.startsWith('?') || trimmed.startsWith('&')) {
@@ -56,7 +54,7 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= dtv: generateWebAntiCode（逐行对齐） =================
+  // ================= dtv: generateWebAntiCode =================
   String generateWebAntiCode(String streamName, String antiCode) {
     try {
       final sanitized = antiCode.replaceAll('&amp;', '&');
@@ -106,7 +104,6 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= dtv: adjustTxStreamUrl =================
   String _adjustTxStreamUrl(String url, String cdn) {
     if (cdn.toLowerCase() != 'tx') return enforceHttp(url);
     var s = url.replaceAll('&ctype=tars_mp', '&ctype=huya_webh5');
@@ -114,7 +111,6 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
-  // ================= dtv: fetchHtml =================
   Future<String> _fetchHtml(String roomId, bool mobile) async {
     final res = await http.get(
       Uri.parse('https://www.huya.com/$roomId'),
@@ -130,7 +126,6 @@ class HuyaStreamResolver {
     return res.body;
   }
 
-  // ================= dtv: parseCandidates 的 stream 块 =================
   Map<String, dynamic>? _parseStreamBlock(String html) {
     try {
       final re = RegExp(
@@ -150,8 +145,9 @@ class HuyaStreamResolver {
     if (block == null) return result;
     try {
       final dataList = block['data'] as List<dynamic>?;
-      final first =
-          (dataList != null && dataList.isNotEmpty) ? dataList.first as Map<String, dynamic> : null;
+      final first = (dataList != null && dataList.isNotEmpty)
+          ? dataList.first as Map<String, dynamic>
+          : null;
       final streamInfoList = first?['gameStreamInfoList'] as List<dynamic>?;
       if (streamInfoList == null) return result;
       for (final item in streamInfoList) {
@@ -189,10 +185,56 @@ class HuyaStreamResolver {
     return rates ?? [];
   }
 
-  // ================= dtv: resolve =================
+  // ============ 新增：从网页 HNF_GLOBAL_INIT 解析主播信息 ============
+  Map<String, dynamic> _parseMeta(String body) {
+    final out = <String, dynamic>{
+      'nickname': '',
+      'avatar': '',
+      'fans': 0,
+      'title': '',
+      'isLive': false,
+      'uid': 0,
+      'topSid': 0,
+      'subSid': 0,
+    };
+    try {
+      final m = RegExp(
+        r'window\.HNF_GLOBAL_INIT\s*=\s*\{(.*?)\}\s*</script>',
+        dotAll: true,
+      ).firstMatch(body);
+      if (m != null) {
+        final json = jsonDecode('{${m.group(1)}}') as Map<String, dynamic>;
+        final roomInfo = json['roomInfo'] as Map<String, dynamic>?;
+        if (roomInfo != null) {
+          final profile = (roomInfo['tProfileInfo'] as Map<String, dynamic>?) ?? {};
+          final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
+          out['nickname'] = _s(profile['sNick']);
+          out['avatar'] = _s(profile['sAvatar180'] ?? profile['sAvatar']);
+          out['fans'] = _i(profile['lFansCount'] ?? profile['iFansCount']);
+          out['title'] = _s(liveInfo['sIntroduction']);
+          out['isLive'] = _i(liveInfo['eLiveStatus']) == 2;
+          out['uid'] = _i(profile['lUid']);
+          out['topSid'] = _i(liveInfo['lChannelId'] ?? liveInfo['lYyid'] ?? profile['lChannelId']);
+          out['subSid'] = _i(liveInfo['lSubChannelId']);
+        }
+      }
+    } catch (_) {}
+    // 粉丝数兜底：正则扫全页
+    if (_i(out['fans']) == 0) {
+      for (final key in ['lFansCount', 'lSubscribeCount', 'iSubscribeCount', 'totalCount']) {
+        final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+        if (m != null) {
+          out['fans'] = int.parse(m.group(1)!);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  // ================= dtv: resolve（现在同时带主播信息） =================
   Future<HuyaStreamResult?> _resolveByDtv(String roomId) async {
     try {
-      // 桌面优先，移动兜底（dtv 同款顺序）
       var html = await _fetchHtml(roomId, false);
       var block = _parseStreamBlock(html);
       var candidates = _parseCandidates(block);
@@ -205,7 +247,9 @@ class HuyaStreamResolver {
       }
       if (candidates.isEmpty) return null;
 
-      // dtv: CDN 优先级 al > hs > tx
+      // 从同一份网页解析主播信息（不再依赖 API）
+      final meta = _parseMeta(html);
+
       int cdnRank(String cdn) {
         switch (cdn.toLowerCase()) {
           case 'al':
@@ -243,16 +287,19 @@ class HuyaStreamResolver {
 
       return HuyaStreamResult(
         roomId: roomId,
-        presenterUid: 0,
+        ayyuid: _i(meta['uid']),
+        topSid: _i(meta['topSid']),
+        subSid: _i(meta['subSid']),
+        presenterUid: _i(meta['uid']),
         streamerInfo: StreamerInfo(
-          uid: 0,
-          nickname: '',
-          avatar: '',
-          fansCount: 0,
-          isLive: true,
+          uid: _i(meta['uid']),
+          nickname: _s(meta['nickname']),
+          avatar: _s(meta['avatar']),
+          fansCount: _i(meta['fans']),
+          isLive: meta['isLive'] == true,
         ),
-        title: '',
-        isLive: true,
+        title: _s(meta['title']),
+        isLive: meta['isLive'] == true,
         qualities: qualities,
       );
     } catch (_) {
@@ -260,7 +307,7 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= 入口：dtv 线路 + API 元信息/兜底 =================
+  // ================= 入口：dtv 优先，API 补全 =================
   Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
     final dtv = await _resolveByDtv(roomId);
     final api = await _resolveByApi(roomId);
@@ -268,18 +315,30 @@ class HuyaStreamResolver {
     if (api == null) return dtv;
     return HuyaStreamResult(
       roomId: roomId,
-      ayyuid: api.ayyuid,
-      topSid: api.topSid,
-      subSid: api.subSid,
-      presenterUid: api.presenterUid,
-      streamerInfo: api.streamerInfo,
-      title: api.title.isNotEmpty ? api.title : dtv.title,
+      ayyuid: dtv.ayyuid != 0 ? dtv.ayyuid : api.ayyuid,
+      topSid: dtv.topSid != 0 ? dtv.topSid : api.topSid,
+      subSid: dtv.subSid != 0 ? dtv.subSid : api.subSid,
+      presenterUid: dtv.presenterUid != 0 ? dtv.presenterUid : api.presenterUid,
+      streamerInfo: StreamerInfo(
+        uid: dtv.presenterUid != 0 ? dtv.presenterUid : api.presenterUid,
+        nickname: dtv.streamerInfo.nickname.isNotEmpty
+            ? dtv.streamerInfo.nickname
+            : api.streamerInfo.nickname,
+        avatar: dtv.streamerInfo.avatar.isNotEmpty
+            ? dtv.streamerInfo.avatar
+            : api.streamerInfo.avatar,
+        fansCount: dtv.streamerInfo.fansCount > 0
+            ? dtv.streamerInfo.fansCount
+            : api.streamerInfo.fansCount,
+        isLive: dtv.isLive || api.isLive,
+      ),
+      title: dtv.title.isNotEmpty ? dtv.title : api.title,
       isLive: dtv.isLive || api.isLive,
       qualities: dtv.qualities.isNotEmpty ? dtv.qualities : api.qualities,
     );
   }
 
-  // ================= 官方 profileRoom API（元信息 + 兜底线路） =================
+  // ================= 官方 profileRoom API（兜底） =================
   Future<HuyaStreamResult?> _resolveByApi(String roomId) async {
     try {
       final res = await http.get(
@@ -326,7 +385,6 @@ class HuyaStreamResolver {
             [];
       }
 
-      // 兜底线路：直接用 baseSteamInfoList 的地址 + dtv 签名
       final qualities = <StreamQuality>[];
       if (baseList.isNotEmpty) {
         final rateList = rates.isNotEmpty
