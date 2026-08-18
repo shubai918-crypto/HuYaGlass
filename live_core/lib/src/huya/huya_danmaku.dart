@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// 弹幕消息
+/// 弹幕消息（字段名对齐 UI 层的 danmaku_view.dart）
 class DanmakuMessage {
-  final String userName;
+  final String nickname;
   final String content;
-  final int color;
-  DanmakuMessage({required this.userName, required this.content, this.color = 0xFFFFFFFF});
+  final int fontColor;
+  DanmakuMessage({required this.nickname, required this.content, this.fontColor = 0xFFFFFFFF});
 }
 
 /// 虎牙弹幕客户端（WebSocket + Tars，对齐 dtv_mobile / pure_live）
@@ -100,7 +100,12 @@ class HuyaDanmakuClient {
             if (content is String && content.isNotEmpty) {
               var nick = '';
               if (sender is Map<int, Object?>) nick = '${sender[2] ?? ''}';
-              _controller.add(DanmakuMessage(userName: nick, content: content));
+              // 对齐 UI 层字段名：nickname / fontColor
+              _controller.add(DanmakuMessage(
+                nickname: nick, 
+                content: content, 
+                fontColor: 0xFFFFFFFF,
+              ));
             }
           }
         }
