@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 
-/// 弹幕消息（字段名对齐 UI 层的 danmaku_view.dart）
+/// 弹幕消息（字段名对齐 UI 层 danmaku_view.dart）
 class DanmakuMessage {
   final String nickname;
   final String content;
@@ -13,6 +14,9 @@ class DanmakuMessage {
 
 /// 虎牙弹幕客户端（WebSocket + Tars，对齐 dtv_mobile / pure_live）
 class HuyaDanmakuClient {
+  static const _ua =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
   WebSocket? _ws;
   Timer? _heartTimer;
   Timer? _idleTimer;
@@ -24,16 +28,54 @@ class HuyaDanmakuClient {
 
   Stream<DanmakuMessage> get danmakuStream => _controller.stream;
 
+  /// pure_live 同款：获取匿名 uid（没有它服务器不推弹幕）
+  Future<int> _fetchAnonymousUid() async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('https://udblgn.huya.com/web/anonymousLogin'),
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': _ua,
+              'Origin': 'https://www.huya.com',
+              'Referer': 'https://www.huya.com/',
+            },
+            body: jsonEncode({
+              'appId': 5002,
+              'byPass': 3,
+              'context': '',
+              'version': '2.4',
+              'data': {},
+            }),
+          )
+          .timeout(const Duration(seconds: 6));
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final uid = (j['data'] as Map<String, dynamic>?)?['uid'];
+      if (uid is int) return uid;
+      if (uid is String) return int.tryParse(uid) ?? 0;
+      if (uid is double) return uid.toInt();
+    } catch (e) {
+      print('DANMAKU anonymous uid failed: $e');
+    }
+    return 0;
+  }
+
   Future<void> connect({required int topSid, required int subSid, int uid = 0}) async {
     _closed = false;
-    _registerPayload = _buildRegister(topSid, subSid, uid);
+    var realUid = uid;
+    if (realUid <= 0) realUid = await _fetchAnonymousUid();
+    if (realUid <= 0) {
+      realUid = 1400000000000 + (DateTime.now().millisecondsSinceEpoch % 10000000000);
+    }
+    print('DANMAKU connect topSid=$topSid subSid=$subSid uid=$realUid');
+    _registerPayload = _buildRegister(topSid, subSid, realUid);
     try {
       _ws = await WebSocket.connect(
         'wss://cdnws.api.huya.com/',
         headers: {
           'Origin': 'https://www.huya.com',
-          'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          'User-Agent': _ua,
+          'Cookie': 'huya_ua=webh5&0.1.0&websocket',
         },
       ).timeout(const Duration(seconds: 8));
     } catch (e) {
@@ -43,11 +85,9 @@ class HuyaDanmakuClient {
     _ws!.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
     _send(_registerPayload);
 
-    // 心跳 20s（dtv 同款）
     _heartTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       _send(_buildHeartbeat());
     });
-    // 空闲重发注册包（dtv: idle re-send subscribe）
     _idleTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       _send(_registerPayload);
     });
@@ -86,26 +126,27 @@ class HuyaDanmakuClient {
       final fields = r.readFields();
       final cmd = fields[0];
       if (cmd == 6) {
-        // S2C_MsgPushReq
         final push = fields[1];
         if (push is Map<int, Object?>) {
           final uri = '${push[2]}';
           final vData = push[3];
-          if (uri.contains('message_notice') && vData is List) {
+          if (vData is List) {
             final nr = _TarsReader(
                 Uint8List.fromList(vData.map((e) => (e as int) & 0xFF).toList()));
             final nf = nr.readFields();
-            final sender = nf[0];
-            final content = nf[3];
-            if (content is String && content.isNotEmpty) {
-              var nick = '';
-              if (sender is Map<int, Object?>) nick = '${sender[2] ?? ''}';
-              // 对齐 UI 层字段名：nickname / fontColor
-              _controller.add(DanmakuMessage(
-                nickname: nick, 
-                content: content, 
-                fontColor: 0xFFFFFFFF,
-              ));
+            if (uri.contains('message_notice')) {
+              final sender = nf[0];
+              final content = nf[3];
+              if (content is String && content.isNotEmpty) {
+                var nick = '';
+                if (sender is Map<int, Object?>) nick = '${sender[2] ?? ''}';
+                print('DANMAKU recv: $nick: $content');
+                _controller.add(DanmakuMessage(
+                  nickname: nick,
+                  content: content,
+                  fontColor: 0xFFFFFFFF,
+                ));
+              }
             }
           }
         }
@@ -116,14 +157,14 @@ class HuyaDanmakuClient {
   // ================= 发包构造 =================
   Uint8List _buildRegister(int topSid, int subSid, int uid) {
     final user = _TarsWriter();
-    user.writeInt(0, uid); // lUid
-    user.writeString(1, ''); // sGuid
-    user.writeString(2, ''); // sToken
+    user.writeInt(0, uid);
+    user.writeString(1, '');
+    user.writeString(2, '');
 
     final payload = _TarsWriter();
-    payload.writeStruct(0, user); // stUserId
-    payload.writeStringList(1, ['live://$topSid', 'chat:$subSid']); // vGroupId
-    payload.writeString(2, 'webh5&0.1.0&websocket'); // sUA（dtv 同款）
+    payload.writeStruct(0, user);
+    payload.writeStringList(1, ['live://$topSid', 'chat:$subSid']);
+    payload.writeString(2, 'webh5&0.1.0&websocket');
 
     final cmd = _TarsWriter();
     cmd.writeInt(0, 0); // C2S_RegisterGroupReq
@@ -138,7 +179,6 @@ class HuyaDanmakuClient {
     return cmd.toBytes();
   }
 
-  /// 发送弹幕（需要登录，未登录时由 controller 拦截）
   void sendDanmaku(String text) {
     print('DANMAKU send (login required): $text');
   }
@@ -197,7 +237,7 @@ class _TarsWriter {
   void writeStruct(int tag, _TarsWriter inner) {
     _head(tag, 10);
     _b.add(inner._b.toBytes());
-    _b.addByte(0x0C); // struct end
+    _b.addByte(0x0C);
   }
 
   void writeStringList(int tag, List<String> items) {
@@ -251,7 +291,7 @@ class _TarsReader {
     while (hasMore) {
       final h = _byte();
       final type = h & 0x0F;
-      if (type == 12) return m; // struct end
+      if (type == 12) return m;
       var tag = (h >> 4) & 0x0F;
       if (tag == 15) tag = _byte();
       m[tag] = _readValue(type);
