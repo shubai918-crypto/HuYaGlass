@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'package:media_kit/media_kit.dart';
@@ -28,6 +29,9 @@ class LivePlayController extends GetxController {
 
   final List<String> _candidates = [];
   String _currentUrl = '';
+  String _lastError = '';
+  int _candidateIndex = 0;
+  int _candidateTotal = 0;
   bool _playing = false;
   int _vw = 0;
   int _vh = 0;
@@ -54,21 +58,23 @@ class LivePlayController extends GetxController {
       }
     });
     player.stream.width.listen((w) {
-      _vw = w ?? 0; // ✅ 修复：处理 null
+      _vw = w ?? 0;
       _updateDebug();
     });
     player.stream.height.listen((h) {
-      _vh = h ?? 0; // ✅ 修复：处理 null
+      _vh = h ?? 0;
       _updateDebug();
     });
     player.stream.error.listen((err) {
+      _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
       _tryNext('出错');
     });
   }
 
   void _updateDebug() {
-    if (_playing) debugInfo.value = '播放中 ✔ ${_vw}x$_vh';
+    debugInfo.value =
+        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh (点我复制地址)';
   }
 
   Future<void> _loadStream() async {
@@ -94,6 +100,7 @@ class LivePlayController extends GetxController {
 
       if (isLive.value) _connectDanmaku(info.presenterUid);
       loading.value = false;
+      _updateDebug();
     } catch (e) {
       loading.value = false;
       Get.snackbar('错误', '加载失败: $e');
@@ -104,6 +111,8 @@ class LivePlayController extends GetxController {
     _candidates
       ..clear()
       ..addAll(q.candidates);
+    _candidateTotal = _candidates.length;
+    _candidateIndex = 0;
     _playing = false;
     _vw = 0;
     _vh = 0;
@@ -114,15 +123,13 @@ class LivePlayController extends GetxController {
     _playTimeout?.cancel();
     if (_playing) return;
     if (_candidates.isEmpty) {
-      debugInfo.value = '全部线路失败 ✘';
-      Get.snackbar('播放失败', '所有线路均失败，主播可能未开播',
-          snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 4));
+      debugInfo.value = '全部线路失败 ✘ (点我查看地址)';
       return;
     }
+    _candidateIndex++;
     final url = _candidates.removeAt(0);
     _currentUrl = url;
-    debugInfo.value = '[$reason] 尝试: ${url.length > 50 ? '${url.substring(0, 50)}…' : url}';
+    debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
     player.open(
       Media(url, httpHeaders: {
         'User-Agent':
@@ -134,6 +141,45 @@ class LivePlayController extends GetxController {
     _playTimeout = Timer(const Duration(seconds: 8), () {
       if (!_playing) _tryNext('超时');
     });
+  }
+
+  /// 点按视频区域：弹出当前地址，可复制去浏览器验证
+  void _showUrlDialog() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('当前播放地址', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(
+              _currentUrl.isEmpty ? '（还没有地址）' : _currentUrl,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh\n错误:$_lastError',
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: _currentUrl));
+              Get.back();
+              Get.snackbar('已复制', '把地址粘贴到浏览器打开，看显示什么');
+            },
+            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
+          ),
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('关闭', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
   }
 
   void switchQuality(StreamQuality q) {
@@ -167,22 +213,26 @@ class LivePlayController extends GetxController {
   }
 
   Widget videoWidget() {
-    return Stack(
-      children: [
-        Video(
-          controller: videoController,
-          fit: BoxFit.contain,
-          controls: (state) => const SizedBox.shrink(),
-        ),
-        Positioned(
-          left: 8,
-          bottom: 8,
-          child: Obx(() => Text(
-                debugInfo.value,
-                style: const TextStyle(color: Colors.white38, fontSize: 10),
-              )),
-        ),
-      ],
+    return GestureDetector(
+      onTap: _showUrlDialog,
+      child: Stack(
+        children: [
+          Video(
+            controller: videoController,
+            fit: BoxFit.contain,
+            controls: (state) => const SizedBox.shrink(),
+          ),
+          Positioned(
+            left: 8,
+            bottom: 130,
+            right: 8,
+            child: Obx(() => Text(
+                  debugInfo.value,
+                  style: const TextStyle(color: Colors.white38, fontSize: 10),
+                )),
+          ),
+        ],
+      ),
     );
   }
 
