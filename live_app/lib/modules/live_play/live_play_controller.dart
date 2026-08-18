@@ -39,10 +39,11 @@ class LivePlayController extends GetxController {
   int _candidateIndex = 0;
   int _candidateTotal = 0;
   int _reconnectCount = 0;
+  int _refreshCount = 0;
   bool _playing = false;
   int _vw = 0;
   int _vh = 0;
-  DateTime _lastReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _playTimeout;
   Timer? _stallTimer;
 
@@ -76,47 +77,54 @@ class LivePlayController extends GetxController {
       _vh = h ?? 0;
       _updateDebug();
     });
-    // 关键1：出错立即重连（不再因为 _playing 而忽略）
+    // 打开失败 → 换下一条线路（不重试坏地址）
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
-      _reconnect('出错');
+      _advance('出错');
     });
-    // 关键2：卡顿 watchdog —— 直播中持续缓冲超过10秒就重连
+    // 播放中卡住 → 重试当前地址（它刚才在播）
     player.stream.buffering.listen((b) {
       if (b) {
         _stallTimer?.cancel();
         _stallTimer = Timer(const Duration(seconds: 10), () {
-          if (_playing) _reconnect('卡顿');
+          if (_playing) _retryCurrent('卡顿');
         });
       } else {
         _stallTimer?.cancel();
       }
     });
-    // 关键3：流意外结束也重连
     player.stream.completed.listen((c) {
-      if (c) _reconnect('结束');
+      if (c) _retryCurrent('结束');
     });
   }
 
-  /// 底层 mpv 调优：让 ffmpeg 自己自动重连
   Future<void> _tunePlayer() async {
     try {
       final native = player.platform as dynamic;
       await native.setProperty('stream-lavf-options',
           'reconnect=1,reconnect_streamed=1,reconnect_delay_max=3');
     } catch (_) {}
-    try {
-      final native = player.platform as dynamic;
-      await native.setProperty('demuxer-readahead-secs', '2');
-    } catch (_) {}
   }
 
-  /// 断线重连：优先重试当前地址，失败再轮换线路
-  void _reconnect(String reason) {
+  bool _throttled() {
     final now = DateTime.now();
-    if (now.difference(_lastReconnectAt).inMilliseconds < 1500) return;
-    _lastReconnectAt = now;
+    if (now.difference(_lastAt).inMilliseconds < 800) return true;
+    _lastAt = now;
+    return false;
+  }
+
+  /// 出错：跳到下一条候选
+  void _advance(String reason) {
+    if (_throttled()) return;
+    _playing = false;
+    _reconnectCount++;
+    _tryNext(reason);
+  }
+
+  /// 卡顿/结束：把当前地址插回队首重试
+  void _retryCurrent(String reason) {
+    if (_throttled()) return;
     _playing = false;
     _reconnectCount++;
     if (_currentUrl.isNotEmpty && !_candidates.contains(_currentUrl)) {
@@ -147,13 +155,20 @@ class LivePlayController extends GetxController {
       qualities.assignAll(info.qualities);
 
       if (qualities.isNotEmpty) {
-        currentQuality.value = qualities.first.name;
-        _playStream(qualities.first);
+        final keep = currentQuality.value;
+        final q = qualities.firstWhere(
+          (e) => e.name == keep,
+          orElse: () => qualities.first,
+        );
+        currentQuality.value = q.name;
+        _playStream(q);
       } else {
         debugInfo.value = '未解析到线路(可能未开播)';
       }
 
-      if (isLive.value) _connectDanmaku(info.presenterUid);
+      if (isLive.value && _danmakuClient == null) {
+        _connectDanmaku(info.presenterUid);
+      }
       loading.value = false;
       _updateDebug();
     } catch (e) {
@@ -178,7 +193,14 @@ class LivePlayController extends GetxController {
     _playTimeout?.cancel();
     if (_playing) return;
     if (_candidates.isEmpty) {
-      debugInfo.value = '全部线路失败 ✘ (点我查看地址)';
+      // 全部失败 → 重新解析一批新地址（最多3轮）
+      if (_refreshCount < 3) {
+        _refreshCount++;
+        debugInfo.value = '[$reason] 重新解析线路…';
+        _loadStream();
+      } else {
+        debugInfo.value = '全部线路失败 ✘ (点我查看地址)';
+      }
       return;
     }
     _candidateIndex++;
@@ -194,7 +216,7 @@ class LivePlayController extends GetxController {
       play: true,
     );
     _playTimeout = Timer(const Duration(seconds: 8), () {
-      if (!_playing) _tryNext('超时');
+      if (!_playing) _advance('超时');
     });
   }
 
@@ -241,6 +263,7 @@ class LivePlayController extends GetxController {
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
+    _refreshCount = 0;
     _playStream(q);
   }
 
