@@ -120,7 +120,7 @@ class LivePlayController extends GetxController {
 
   bool _throttled() {
     final now = DateTime.now();
-    if (now.difference(_lastAt).inMilliseconds < 800) return true;
+    if (now.difference(_lastAt).inMilliseconds < 2000) return true;
     _lastAt = now;
     return false;
   }
@@ -219,7 +219,14 @@ class LivePlayController extends GetxController {
     final url = _candidates.removeAt(0);
     _currentUrl = url;
     debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
-    player.open(Media(url), play: true);
+    player.open(
+      Media(url, httpHeaders: {
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Referer': 'https://www.huya.com/',
+      }),
+      play: true,
+    );
     _playTimeout = Timer(const Duration(seconds: 8), () {
       if (!_playing) _advance('超时');
     });
