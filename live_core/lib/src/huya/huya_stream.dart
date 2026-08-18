@@ -224,6 +224,19 @@ class HuyaStreamResolver {
       }
     } catch (_) {}
 
+if (_i(out['topSid']) == 0) {
+      final m = RegExp(r'"lChannelId"\s*:\s*(\d+)').firstMatch(body);
+      if (m != null) out['topSid'] = int.parse(m.group(1)!);
+    }
+    if (_i(out['subSid']) == 0) {
+      final m = RegExp(r'"lSubChannelId"\s*:\s*(\d+)').firstMatch(body);
+      if (m != null) out['subSid'] = int.parse(m.group(1)!);
+    }
+    if (_i(out['uid']) == 0) {
+      final m = RegExp(r'"lPresenterUid"\s*:\s*(\d+)').firstMatch(body);
+      if (m != null) out['uid'] = int.parse(m.group(1)!);
+    }
+    
     // 昵称/头像兜底：多组正则扫全页
     if (_s(out['nickname']).isEmpty) {
       for (final re in [
@@ -253,7 +266,7 @@ class HuyaStreamResolver {
     }
     // 粉丝数兜底：正则扫全页
     if (_i(out['fans']) == 0) {
-      for (final key in ['lFansCount', 'lSubscribeCount', 'iSubscribeCount', 'totalCount']) {
+      for (final key in ['lFansCount', 'lSubscribeCount', 'iSubscribeCount', 'lFollowCount']) {
         final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
         if (m != null) {
           out['fans'] = int.parse(m.group(1)!);
@@ -373,9 +386,9 @@ class HuyaStreamResolver {
         avatar: dtv.streamerInfo.avatar.isNotEmpty
             ? dtv.streamerInfo.avatar
             : api.streamerInfo.avatar,
-        fansCount: dtv.streamerInfo.fansCount > 0
-            ? dtv.streamerInfo.fansCount
-            : api.streamerInfo.fansCount,
+        fansCount: api.streamerInfo.fansCount > 0
+            ? api.streamerInfo.fansCount
+            : dtv.streamerInfo.fansCount,
         isLive: dtv.isLive || api.isLive,
       ),
       title: dtv.title.isNotEmpty ? dtv.title : api.title,
