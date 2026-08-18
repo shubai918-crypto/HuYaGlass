@@ -286,7 +286,7 @@ class HuyaStreamResolver {
         }
       }
 
-      final urls = [...hlsUrls, ...flvUrls];
+      final urls = [...flvUrls, ...hlsUrls];
       if (urls.isNotEmpty) {
         final name = _s(rr['sDisplayName']).isEmpty
             ? (bitrate == 0 ? '原画' : '蓝光${bitrate ~/ 1000}M')
