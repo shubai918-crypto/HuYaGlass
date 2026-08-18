@@ -47,8 +47,10 @@ class LivePlayController extends GetxController {
   int _vw = 0;
   int _vh = 0;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastPlayingAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _playTimeout;
   Timer? _stallTimer;
+  Timer? _recoverTimer;
 
   HuyaDanmakuClient? _danmakuClient;
   final inputController = TextEditingController();
@@ -69,6 +71,7 @@ class LivePlayController extends GetxController {
     player.stream.playing.listen((p) {
       if (p) {
         _playing = true;
+        _lastPlayingAt = DateTime.now();
         _playTimeout?.cancel();
         _lastError = '';
         _updateDebug();
@@ -84,15 +87,25 @@ class LivePlayController extends GetxController {
       _vh = h ?? 0;
       _updateDebug();
     });
-    // 关键：正在播放时收到的错误属于"上一条线路的迟到错误"，忽略，
-    // 避免误切断当前健康的流（重连连锁的根因）
+
+    // 错误处理：
+    // - 正在播放 → 忽略（迟到错误）
+    // - 刚播过(<5秒) → 瞬间抖动，给 mpv 自己的 reconnect 一次恢复机会，
+    //   6秒后还没恢复才切线路（避免"自己杀自己"的卡顿循环）
+    // - 长时间没播过 → 立即换线路
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
       if (player.state.playing) return;
+      final sincePlay = DateTime.now().difference(_lastPlayingAt);
+      if (sincePlay < const Duration(seconds: 5)) {
+        _scheduleRecoverCheck();
+        return;
+      }
       _advance('出错');
     });
-    // 卡顿 watchdog：缓冲超过 15 秒才重连当前地址
+
+    // 卡顿 watchdog：持续缓冲 15 秒才重连当前地址
     player.stream.buffering.listen((b) {
       if (b) {
         _stallTimer?.cancel();
@@ -103,18 +116,28 @@ class LivePlayController extends GetxController {
         _stallTimer?.cancel();
       }
     });
-    // 流意外结束：仅在没在播放时才重连
-    player.stream.completed.listen((c) {
-      if (c && !player.state.playing) _retryCurrent('结束');
+  }
+
+  void _scheduleRecoverCheck() {
+    _recoverTimer ??= Timer(const Duration(seconds: 6), () {
+      _recoverTimer = null;
+      if (!_playing &&
+          DateTime.now().difference(_lastPlayingAt) > const Duration(seconds: 6)) {
+        _advance('未恢复');
+      }
     });
   }
 
-  /// 底层 mpv 调优：让 ffmpeg 自己自动重连
+  /// 底层 mpv 调优：ffmpeg 自动重连 + 网络超时
   Future<void> _tunePlayer() async {
     try {
       final native = player.platform as dynamic;
       await native.setProperty('stream-lavf-options',
           'reconnect=1,reconnect_streamed=1,reconnect_delay_max=3');
+    } catch (_) {}
+    try {
+      final native = player.platform as dynamic;
+      await native.setProperty('network-timeout', '5');
     } catch (_) {}
   }
 
@@ -219,14 +242,8 @@ class LivePlayController extends GetxController {
     final url = _candidates.removeAt(0);
     _currentUrl = url;
     debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
-    player.open(
-      Media(url, httpHeaders: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Referer': 'https://www.huya.com/',
-      }),
-      play: true,
-    );
+    // 对齐 pure_live：裸请求，不带任何自定义头
+    player.open(Media(url), play: true);
     _playTimeout = Timer(const Duration(seconds: 8), () {
       if (!_playing) _advance('超时');
     });
@@ -334,6 +351,7 @@ class LivePlayController extends GetxController {
   void onClose() {
     _playTimeout?.cancel();
     _stallTimer?.cancel();
+    _recoverTimer?.cancel();
     _danmakuClient?.disconnect();
     player.dispose();
     inputController.dispose();
