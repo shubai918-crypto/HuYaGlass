@@ -128,14 +128,22 @@ class LivePlayController extends GetxController {
   }
 
   Future<void> _tunePlayer() async {
+    // 底层 ffmpeg 全自动重连：断流自己在底层续上，不触发上层换线路
     try {
       final native = player.platform as dynamic;
-      await native.setProperty('stream-lavf-options',
-          'reconnect=1,reconnect_streamed=1,reconnect_delay_max=3');
+      await native.setProperty(
+          'stream-lavf-options',
+          'reconnect=1,reconnect_streamed=1,reconnect_delay_max=2,'
+              'reconnect_at_eof=1,reconnect_on_network_error=1');
     } catch (_) {}
     try {
       final native = player.platform as dynamic;
       await native.setProperty('network-timeout', '5');
+    } catch (_) {}
+    // 小缓冲：吸收瞬间断流，画面不顿挫
+    try {
+      final native = player.platform as dynamic;
+      await native.setProperty('demuxer-max-bytes', '32MiB');
     } catch (_) {}
   }
 
