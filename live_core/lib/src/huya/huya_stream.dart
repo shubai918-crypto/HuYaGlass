@@ -223,14 +223,33 @@ class HuyaStreamResolver {
         }
       }
     } catch (_) {}
-    // 昵称/头像兜底：直接正则扫全页
+
+    // 昵称/头像兜底：多组正则扫全页
     if (_s(out['nickname']).isEmpty) {
-      final m = RegExp(r'"sNick"\s*:\s*"([^"]*)"').firstMatch(body);
-      if (m != null) out['nickname'] = m.group(1)!;
+      for (final re in [
+        RegExp(r'"sNick"\s*:\s*"([^"]+)"'),
+        RegExp(r'"nick"\s*:\s*"([^"]+)"'),
+        RegExp(r'"nickname"\s*:\s*"([^"]+)"'),
+      ]) {
+        final m = re.firstMatch(body);
+        if (m != null) {
+          out['nickname'] = m.group(1)!;
+          break;
+        }
+      }
     }
     if (_s(out['avatar']).isEmpty) {
-      final m = RegExp(r'"sAvatar180"\s*:\s*"([^"]*)"').firstMatch(body);
-      if (m != null) out['avatar'] = m.group(1)!;
+      for (final re in [
+        RegExp(r'"sAvatar180"\s*:\s*"([^"]+)"'),
+        RegExp(r'"sAvatar"\s*:\s*"([^"]+)"'),
+        RegExp(r'"avatar"\s*:\s*"(https?://[^"]+)"'),
+      ]) {
+        final m = re.firstMatch(body);
+        if (m != null) {
+          out['avatar'] = m.group(1)!;
+          break;
+        }
+      }
     }
     // 粉丝数兜底：正则扫全页
     if (_i(out['fans']) == 0) {
@@ -260,7 +279,22 @@ class HuyaStreamResolver {
       }
       if (candidates.isEmpty) return null;
 
-      final meta = _parseMeta(html);
+      // 桌面页缺信息时用移动页补全
+      var meta = _parseMeta(html);
+      if (_s(meta['nickname']).isEmpty || _s(meta['avatar']).isEmpty) {
+        final mHtml = await _fetchHtml(roomId, true);
+        if (mHtml.isNotEmpty) {
+          final mMeta = _parseMeta(mHtml);
+          if (_s(meta['nickname']).isEmpty) meta['nickname'] = mMeta['nickname'];
+          if (_s(meta['avatar']).isEmpty) meta['avatar'] = mMeta['avatar'];
+          if (_i(meta['fans']) == 0) meta['fans'] = mMeta['fans'];
+          if (_i(meta['uid']) == 0) meta['uid'] = mMeta['uid'];
+          if (_i(meta['topSid']) == 0) meta['topSid'] = mMeta['topSid'];
+          if (_i(meta['subSid']) == 0) meta['subSid'] = mMeta['subSid'];
+          if (meta['isLive'] != true) meta['isLive'] = mMeta['isLive'];
+          if (_s(meta['title']).isEmpty) meta['title'] = mMeta['title'];
+        }
+      }
 
       int cdnRank(String cdn) {
         switch (cdn.toLowerCase()) {
