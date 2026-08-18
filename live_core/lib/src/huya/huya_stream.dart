@@ -199,11 +199,11 @@ class HuyaStreamResolver {
         final uid = _uidFor(loginUid, streamName);
 
         void addBoth(String url) {
-          // https 优先，http 兜底
+          // http 优先（已验证能播），https 备用
+          candidates.add(url);
           if (url.startsWith('http://')) {
             candidates.add(url.replaceFirst('http://', 'https://'));
           }
-          candidates.add(url);
         }
 
         if (sFlvUrl.isNotEmpty) {
