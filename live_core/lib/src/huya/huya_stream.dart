@@ -4,150 +4,138 @@ import 'package:http/http.dart' as http;
 import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 
-/// 虎牙直播流解析（参考 pure_live / dart_simple_live）
 class HuyaStreamResolver {
-  static const _userAgent =
+  static const _ua =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+
+  int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
 
   Future<HuyaStreamResult?> resolveStream(String roomId) async {
     try {
-      final response = await http.get(
+      final res = await http.get(
         Uri.parse('https://m.huya.com/$roomId'),
-        headers: {'User-Agent': _userAgent, 'Referer': 'https://m.huya.com/'},
+        headers: {'User-Agent': _ua, 'Referer': 'https://m.huya.com/'},
       );
-      if (response.statusCode != 200) return null;
-
-      final match = RegExp(
+      if (res.statusCode != 200) return null;
+      final m = RegExp(
         r'window\.HNF_GLOBAL_INIT\s*=\s*(\{.*?\})\s*</script>',
         dotAll: true,
-      ).firstMatch(response.body);
-      if (match == null) return null;
-
-      final json = jsonDecode(match.group(1)!) as Map<String, dynamic>;
-      return _parseStreamInfo(json, roomId);
-    } catch (e) {
+      ).firstMatch(res.body);
+      if (m == null) return null;
+      return _parse(jsonDecode(m.group(1)!) as Map<String, dynamic>, roomId);
+    } catch (_) {
       return null;
     }
   }
 
-  HuyaStreamResult? _parseStreamInfo(Map<String, dynamic> json, String roomId) {
+  /// 通过官方 profileRoom 接口补粉丝数
+  Future<int> fetchFansCount(String roomId) async {
     try {
-      final roomInfo = json['roomInfo'] as Map<String, dynamic>?;
-      final streamInfo = json['stream'] as Map<String, dynamic>?;
-      if (roomInfo == null) return null;
+      final res = await http.get(
+        Uri.parse('https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
+        headers: {'User-Agent': _ua},
+      );
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final d = j['data'] as Map<String, dynamic>?;
+      final s = (d?['streamerInfo'] as Map<String, dynamic>?) ??
+          ((d?['liveData'] as Map<String, dynamic>?)?['streamerInfo'] as Map<String, dynamic>?);
+      return _i(s?['lFansCount'] ?? s?['iFansCount']);
+    } catch (_) {
+      return 0;
+    }
+  }
 
-      final profile = roomInfo['tProfileInfo'] as Map<String, dynamic>? ?? {};
-      final liveInfo = roomInfo['tLiveInfo'] as Map<String, dynamic>? ?? {};
+  HuyaStreamResult? _parse(Map<String, dynamic> json, String roomId) {
+    final roomInfo = json['roomInfo'] as Map<String, dynamic>?;
+    final stream = json['stream'] as Map<String, dynamic>?;
+    if (roomInfo == null) return null;
 
-      final presenterUid = (profile['lUid'] ?? 0) as int;
-      final presenterName = profile['sNick'] ?? '';
-      final fansCount = (profile['lFansCount'] ?? profile['iFansCount'] ?? 0) as int;
-      final avatar = profile['sAvatar180'] ?? '';
-      final title = liveInfo['sIntroduction'] ?? '';
-      final isLive = (liveInfo['eLiveStatus'] ?? 0) == 2;
+    final profile = (roomInfo['tProfileInfo'] as Map<String, dynamic>?) ?? {};
+    final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
+    final data = stream?['data'] as Map<String, dynamic>?;
+    final gameList = (data?['gameStreamInfoList'] as List<dynamic>?) ?? [];
+    final multi = (stream?['vMultiStreamInfo'] as List<dynamic>?) ??
+        ((data?['gameLiveInfo'] as Map<String, dynamic>?)?['vMultiStreamInfo'] as List<dynamic>?) ??
+        [];
 
-      final qualities = <StreamQuality>[];
-      final baseInfo = streamInfo?['data']?['gameStreamInfoList'] as List<dynamic>? ??
-          streamInfo?['vMultiStreamInfo'] as List<dynamic>? ??
-          [];
+    final isLive = _i(liveInfo['eLiveStatus']) == 2;
+    final qualities = <StreamQuality>[];
 
-      // 先取 gameStreamInfoList（含流名），再退而求其次
-      final streamList = (streamInfo?['data']?['gameStreamInfoList'] as List<dynamic>?) ??
-          (streamInfo?['vMultiStreamInfo'] as List<dynamic>?) ??
-          [];
-      final rateList = (streamInfo?['data']?['gameLiveInfo']?['vMultiStreamInfo'] as List<dynamic>?) ?? [];
+    if (gameList.isNotEmpty) {
+      final base = gameList[0] as Map<String, dynamic>;
+      final streamName = (base['sStreamName'] ?? '') as String;
+      final sFlvUrl = (base['sFlvUrl'] ?? '') as String;
+      final sHlsUrl = (base['sHlsUrl'] ?? '') as String;
+      final flvSuffix = (base['sFlvUrlSuffix'] ?? 'flv') as String;
+      final hlsSuffix = (base['sHlsUrlSuffix'] ?? 'm3u8') as String;
+      final flvAnti = (base['sFlvAntiCode'] ?? '') as String;
+      final hlsAnti = (base['sHlsAntiCode'] ?? flvAnti) as String;
 
-      for (var item in streamList) {
-        final s = item as Map<String, dynamic>;
-        final streamName = (s['sStreamName'] ?? '') as String;
-        final sFlvUrl = (s['sFlvUrl'] ?? '') as String;
-        final sHlsUrl = (s['sHlsUrl'] ?? '') as String;
-        final flvSuffix = (s['sFlvUrlSuffix'] ?? 'flv') as String;
-        final hlsSuffix = (s['sHlsUrlSuffix'] ?? 'm3u8') as String;
-        final flvAnti = (s['sFlvAntiCode'] ?? '') as String;
-        final hlsAnti = (s['sHlsAntiCode'] ?? flvAnti) as String;
+      // 4 种线路：签名HLS / 签名FLV / 原始HLS / 原始FLV
+      final flvP = '$sFlvUrl/$streamName.$flvSuffix?${processAnticode(flvAnti, streamName)}';
+      final flvR = '$sFlvUrl/$streamName.$flvSuffix?$flvAnti';
+      final hlsP = sHlsUrl.isNotEmpty
+          ? '$sHlsUrl/$streamName.$hlsSuffix?${processAnticode(hlsAnti, streamName)}'
+          : '';
+      final hlsR = sHlsUrl.isNotEmpty ? '$sHlsUrl/$streamName.$hlsSuffix?$hlsAnti' : '';
 
-        if (streamName.isEmpty || sFlvUrl.isEmpty) continue;
+      final rateList = multi.isNotEmpty
+          ? multi
+          : <dynamic>[{'sDisplayName': '原画', 'iBitRate': 0}];
 
+      for (final r in rateList) {
+        final rr = r as Map<String, dynamic>;
+        final bitrate = _i(rr['iBitRate']);
+        final ratio = bitrate > 0 ? '&ratio=$bitrate' : '';
         qualities.add(StreamQuality(
-          name: (s['sDisplayName'] ?? '原画') as String,
-          bitrate: (s['iBitRate'] ?? 0) as int,
-          flvUrl: '$sFlvUrl/$streamName.$flvSuffix?${processAnticode(flvAnti, streamName)}',
-          hlsUrl: sHlsUrl.isNotEmpty
-              ? '$sHlsUrl/$streamName.$hlsSuffix?${processAnticode(hlsAnti, streamName)}'
-              : '',
+          name: (rr['sDisplayName'] ?? '原画') as String,
+          bitrate: bitrate,
+          candidates: [
+            if (hlsP.isNotEmpty) '$hlsP$ratio',
+            '$flvP$ratio',
+            if (hlsR.isNotEmpty) '$hlsR$ratio',
+            '$flvR$ratio',
+          ],
         ));
       }
-
-      // 如果 gameStreamInfoList 为空，用 vMultiStreamInfo 的清晰度名 + 默认流
-      if (qualities.isEmpty && streamInfo != null) {
-        final sFlvUrl = (streamInfo['sFlvUrl'] ?? '') as String;
-        final streamName = (streamInfo['sStreamName'] ?? '') as String;
-        if (sFlvUrl.isNotEmpty && streamName.isNotEmpty) {
-          final anti = (streamInfo['sFlvAntiCode'] ?? '') as String;
-          final suffix = (streamInfo['sFlvUrlSuffix'] ?? 'flv') as String;
-          for (var r in rateList) {
-            final rr = r as Map<String, dynamic>;
-            qualities.add(StreamQuality(
-              name: (rr['sDisplayName'] ?? '原画') as String,
-              bitrate: (rr['iBitRate'] ?? 0) as int,
-              flvUrl: '$sFlvUrl/$streamName.$suffix?${processAnticode(anti, streamName)}',
-            ));
-          }
-          if (qualities.isEmpty) {
-            qualities.add(StreamQuality(
-              name: '原画',
-              bitrate: 0,
-              flvUrl: '$sFlvUrl/$streamName.$suffix?${processAnticode(anti, streamName)}',
-            ));
-          }
-        }
-      }
-
-      return HuyaStreamResult(
-        roomId: roomId,
-        presenterUid: presenterUid,
-        streamerInfo: StreamerInfo(
-          uid: presenterUid,
-          nickname: presenterName,
-          avatar: avatar,
-          fansCount: fansCount,
-          isLive: isLive,
-        ),
-        title: title,
-        isLive: isLive,
-        qualities: qualities,
-      );
-    } catch (e) {
-      return null;
     }
+
+    return HuyaStreamResult(
+      roomId: roomId,
+      presenterUid: _i(profile['lUid']),
+      streamerInfo: StreamerInfo(
+        uid: _i(profile['lUid']),
+        nickname: (profile['sNick'] ?? '') as String,
+        avatar: (profile['sAvatar180'] ?? '') as String,
+        fansCount: _i(profile['lFansCount'] ?? profile['iFansCount']),
+        isLive: isLive,
+      ),
+      title: (liveInfo['sIntroduction'] ?? '') as String,
+      isLive: isLive,
+      qualities: qualities,
+    );
   }
 
-  /// 虎牙 anti-code 签名（参考 pure_live / dart_simple_live 的通用算法）
+  /// 虎牙 anti-code 签名
   static String processAnticode(String anticode, String streamName) {
     if (anticode.isEmpty) return '';
-    final query = Map<String, String>.from(Uri.splitQueryString(anticode));
-
+    final q = Map<String, String>.from(Uri.splitQueryString(anticode));
     String prefix = '';
     try {
-      final fmDecoded = utf8.decode(base64.decode(Uri.decodeComponent(query['fm'] ?? '')));
-      prefix = fmDecoded.split('_').first;
+      prefix = utf8
+          .decode(base64.decode(Uri.decodeComponent(q['fm'] ?? '')))
+          .split('_')
+          .first;
     } catch (_) {}
-
-    final u = query['u'] ?? '0';
-    final wsTime = query['wsTime'] ?? '';
-    final sStreamName = query['sStreamName'] ?? streamName;
-
-    final ss = md5.convert(utf8.encode('$u|$streamName|$sStreamName')).toString();
+    final u = q['u'] ?? '0';
+    final wsTime = q['wsTime'] ?? '';
+    final ssn = q['sStreamName'] ?? streamName;
+    final ss = md5.convert(utf8.encode('$u|$streamName|$ssn')).toString();
     final wsSecret = md5.convert(utf8.encode('${prefix}_${ss}_$wsTime')).toString();
-
-    query.remove('fm');
-    query.remove('sStreamName');
-    query['wsSecret'] = wsSecret;
-
-    return query.entries
-        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
-        .join('&');
+    q.remove('fm');
+    q.remove('sStreamName');
+    q['wsSecret'] = wsSecret;
+    return q.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
   }
 }
 
