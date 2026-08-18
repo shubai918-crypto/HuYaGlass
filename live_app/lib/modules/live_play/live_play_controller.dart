@@ -44,7 +44,6 @@ class LivePlayController extends GetxController {
   int _vw = 0;
   int _vh = 0;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
-  // 关键：用"时间轴是否走动"作为存活信号（state.playing 在 open 失败时也会是 true，不可靠）
   DateTime _lastAliveAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _playTimeout;
   Timer? _stallTimer;
@@ -65,7 +64,6 @@ class LivePlayController extends GetxController {
   void _setupPlayer() {
     _tunePlayer();
 
-    // position 走动 = 真正在播
     player.stream.position.listen((pos) {
       if (pos > Duration.zero) {
         _lastAliveAt = DateTime.now();
@@ -90,23 +88,25 @@ class LivePlayController extends GetxController {
       _updateDebug();
     });
 
-    // 错误处理：
-    // - 4秒内时间轴走动过 → 真播放中的瞬间抖动，给 6 秒恢复期，不立即切线
-    // - 否则（open 失败/死线路）→ 立即换下一条
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
-      // 解码失败（HEVC 硬解打不开等）→ 自动切软件解码，
-      // 之后所有线路都能解，不会再浪费尝试次数
+      
+      // 遇到 codec 错误（如 HEVC 硬解失败）自动切软解
       if ('$err'.toLowerCase().contains('codec')) {
         try {
           (player.platform as dynamic).setProperty('hwdec', 'no');
         } catch (_) {}
       }
-      final alive =
-          DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 4);
 
-    // 卡顿 watchdog：持续缓冲 15 秒才重连当前地址
+      final alive = DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 4);
+      if (alive) {
+        _scheduleRecoverCheck();
+      } else {
+        _advance('出错');
+      }
+    });
+
     player.stream.buffering.listen((b) {
       if (b) {
         _stallTimer?.cancel();
@@ -122,14 +122,12 @@ class LivePlayController extends GetxController {
   void _scheduleRecoverCheck() {
     _recoverTimer ??= Timer(const Duration(seconds: 6), () {
       _recoverTimer = null;
-      final alive =
-          DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
+      final alive = DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
       if (!alive && !_playing) _advance('未恢复');
     });
   }
 
   Future<void> _tunePlayer() async {
-    // 底层 ffmpeg 全自动重连：断流自己在底层续上，不触发上层换线路
     try {
       final native = player.platform as dynamic;
       await native.setProperty(
@@ -141,7 +139,6 @@ class LivePlayController extends GetxController {
       final native = player.platform as dynamic;
       await native.setProperty('network-timeout', '5');
     } catch (_) {}
-    // 小缓冲：吸收瞬间断流，画面不顿挫
     try {
       final native = player.platform as dynamic;
       await native.setProperty('demuxer-max-bytes', '32MiB');
@@ -244,13 +241,11 @@ class LivePlayController extends GetxController {
     _candidateIndex++;
     final url = _candidates.removeAt(0);
     _currentUrl = url;
-    // 每条新线路重置存活信号，保证 open 失败时错误能被识别为"死线路"
     _lastAliveAt = DateTime.fromMillisecondsSinceEpoch(0);
     debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
     player.open(Media(url), play: true);
     _playTimeout = Timer(const Duration(seconds: 6), () {
-      final alive =
-          DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
+      final alive = DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
       if (!_playing && !alive) _advance('超时');
     });
   }
@@ -259,8 +254,7 @@ class LivePlayController extends GetxController {
     Get.dialog(
       AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('当前播放地址',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text('当前播放地址', style: TextStyle(color: Colors.white, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,8 +277,7 @@ class LivePlayController extends GetxController {
               Get.back();
               Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
             },
-            child: const Text('复制地址',
-                style: TextStyle(color: Color(0xFF00D2FF))),
+            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
           ),
           TextButton(
             onPressed: () => Get.back(),
