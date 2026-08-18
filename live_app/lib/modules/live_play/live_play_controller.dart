@@ -18,48 +18,70 @@ class LivePlayController extends GetxController {
   final showDanmaku = true.obs;
   final danmakuFontSize = 14.0.obs;
   final currentQuality = ''.obs;
+  final debugInfo = ''.obs;
 
   final qualities = <StreamQuality>[].obs;
   Stream<DanmakuMessage>? danmakuStream;
 
-  // media_kit 播放器
   final Player player = Player();
   late final VideoController videoController = VideoController(player);
 
+  final List<String> _candidates = [];
+  bool _playing = false;
+  Timer? _playTimeout;
+
   HuyaDanmakuClient? _danmakuClient;
   final inputController = TextEditingController();
-  final HuyaStreamResolver _streamResolver = HuyaStreamResolver();
+  final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
 
   @override
   void onInit() {
     super.onInit();
+    _setupPlayer();
     _loadStream();
+  }
+
+  void _setupPlayer() {
+    player.stream.playing.listen((p) {
+      if (p) {
+        _playing = true;
+        _playTimeout?.cancel();
+        debugInfo.value = '播放中 ✔';
+      }
+    });
+    player.stream.error.listen((err) {
+      debugPrint('PLAYER ERROR: $err');
+      _tryNext('出错');
+    });
   }
 
   Future<void> _loadStream() async {
     try {
-      final info = await _streamResolver.resolveStream(roomId);
+      final info = await _resolver.resolveStream(roomId);
       if (info == null) {
         loading.value = false;
         Get.snackbar('错误', '无法获取直播流', snackPosition: SnackPosition.TOP);
         return;
       }
-
       streamerName.value = info.streamerInfo.nickname;
       streamerAvatar.value = info.streamerInfo.avatar;
       fansCount.value = info.streamerInfo.fansCount;
+      if (fansCount.value == 0) {
+        final fans = await _resolver.fetchFansCount(roomId);
+        if (fans > 0) fansCount.value = fans;
+      }
       isLive.value = info.isLive;
       qualities.assignAll(info.qualities);
 
       if (qualities.isNotEmpty) {
         currentQuality.value = qualities.first.name;
         _playStream(qualities.first);
+      } else {
+        debugInfo.value = '未解析到线路(可能未开播)';
       }
 
-      if (isLive.value) {
-        _connectDanmaku(info.presenterUid);
-      }
+      if (isLive.value) _connectDanmaku(info.presenterUid);
       loading.value = false;
     } catch (e) {
       loading.value = false;
@@ -67,9 +89,27 @@ class LivePlayController extends GetxController {
     }
   }
 
-  void _playStream(StreamQuality quality) {
-    // 优先 HLS，失败时 media_kit 也能播 FLV
-    final url = quality.hlsUrl.isNotEmpty ? quality.hlsUrl : quality.flvUrl;
+  void _playStream(StreamQuality q) {
+    _candidates
+      ..clear()
+      ..addAll(q.candidates);
+    _playing = false;
+    _tryNext('首条线路');
+  }
+
+  void _tryNext(String reason) {
+    _playTimeout?.cancel();
+    if (_playing) return;
+    if (_candidates.isEmpty) {
+      debugInfo.value = '全部线路失败 ✘';
+      Get.snackbar('播放失败', '所有线路均失败，主播可能未开播',
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 4));
+      return;
+    }
+    final url = _candidates.removeAt(0);
+    debugInfo.value =
+        '[$reason] 尝试: ${url.length > 50 ? '${url.substring(0, 50)}…' : url}';
     player.open(
       Media(url, httpHeaders: {
         'User-Agent':
@@ -78,11 +118,15 @@ class LivePlayController extends GetxController {
       }),
       play: true,
     );
+    _playTimeout = Timer(const Duration(seconds: 8), () {
+      if (!_playing) _tryNext('超时');
+    });
   }
 
-  void switchQuality(StreamQuality quality) {
-    currentQuality.value = quality.name;
-    _playStream(quality);
+  void switchQuality(StreamQuality q) {
+    currentQuality.value = q.name;
+    _playing = false;
+    _playStream(q);
   }
 
   void _connectDanmaku(int presenterUid) {
@@ -109,17 +153,30 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
-  /// 播放器组件
   Widget videoWidget() {
-    return Video(
-      controller: videoController,
-      fit: BoxFit.contain,
-      controls: (state) => const SizedBox.shrink(),
+    return Stack(
+      children: [
+        Video(
+          controller: videoController,
+          fit: BoxFit.contain,
+          controls: (state) => const SizedBox.shrink(),
+        ),
+        // 诊断信息：截图时带上它
+        Positioned(
+          left: 8,
+          bottom: 8,
+          child: Obx(() => Text(
+                debugInfo.value,
+                style: const TextStyle(color: Colors.white38, fontSize: 10),
+              )),
+        ),
+      ],
     );
   }
 
   @override
   void onClose() {
+    _playTimeout?.cancel();
     _danmakuClient?.disconnect();
     player.dispose();
     inputController.dispose();
