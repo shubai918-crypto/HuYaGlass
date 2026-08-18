@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 
+/// 虎牙直播流解析
+/// 线路组装对齐 pure_live：multiLine + anti-code 重签名 + codec=264
 class HuyaStreamResolver {
   static const _ua =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -14,6 +16,7 @@ class HuyaStreamResolver {
   int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
   String _s(dynamic v) => v?.toString() ?? '';
 
+  // ================= 入口：API 优先，网页兜底，信息合并 =================
   Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
     final api = await _resolveByApi(roomId, loginUid);
     final web = await _resolveByWeb(roomId, loginUid);
@@ -41,6 +44,7 @@ class HuyaStreamResolver {
     );
   }
 
+  // ================= 官方 profileRoom API =================
   Future<HuyaStreamResult?> _resolveByApi(String roomId, int loginUid) async {
     try {
       final res = await http.get(
@@ -106,6 +110,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= 移动端网页兜底 =================
   Future<HuyaStreamResult?> _resolveByWeb(String roomId, int loginUid) async {
     try {
       final res = await http.get(
@@ -115,6 +120,7 @@ class HuyaStreamResolver {
       if (res.statusCode != 200) return null;
       final body = res.body;
 
+      // 粉丝数兜底：正则扫全页
       int webFans = 0;
       for (final key in ['lFansCount', 'lSubscribeCount', 'iSubscribeCount', 'lActivityCount', 'totalCount']) {
         final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
@@ -172,7 +178,7 @@ class HuyaStreamResolver {
     }
   }
 
-  // ============ 线路组装 ============
+  // ================= 线路组装（multiLine 按 cdnType 匹配 baseSteamInfoList） =================
   List<StreamQuality> _buildQualities({
     required List<dynamic> baseList,
     List<dynamic>? flvLines,
@@ -195,15 +201,16 @@ class HuyaStreamResolver {
       return baseList.first as Map<String, dynamic>;
     }
 
-    // 关键修复：multiLine 的 url 可能已是“带路径+旧签名”的完整地址，
-    // 必须拆开复用，只重算 wsSecret，不能再拼一层
+    // 关键：multiLine 的 url 可能已是"带路径+旧签名"的完整地址，
+    // 必须 Uri.parse 拆开复用路径与参数，只重算 wsSecret，不能再拼一层
     String composeUrl(
       String lineUrl,
       Map<String, dynamic> base,
       String suffix,
       String fallbackAnti,
-      String ratio,
-    ) {
+      String ratio, {
+      String extra = '',
+    }) {
       final streamName = _s(base['sStreamName']);
       if (streamName.isEmpty || lineUrl.isEmpty) return '';
       try {
@@ -217,7 +224,7 @@ class HuyaStreamResolver {
         final antiSource = u.query.isNotEmpty ? u.query : fallbackAnti;
         final processed = processAnticode(antiSource, streamName, loginUid);
         if (processed.isEmpty) return '';
-        return '${u.scheme}://${u.authority}$path?$processed$ratio';
+        return '${u.scheme}://${u.authority}$path?$processed$ratio$extra';
       } catch (_) {
         return '';
       }
@@ -229,16 +236,25 @@ class HuyaStreamResolver {
       final ratio = bitrate > 0 ? '&ratio=$bitrate' : '';
       final urls = <String>[];
 
+      // FLV 线路（pure_live 同款，追加 codec=264 请求 H.264）
       if (flvLines != null && flvLines.isNotEmpty) {
         for (final l in flvLines) {
           final lm = l as Map<String, dynamic>;
           final base = baseForCdn(_s(lm['cdnType']));
           final suffix = _s(base['sFlvUrlSuffix']).isEmpty ? 'flv' : _s(base['sFlvUrlSuffix']);
-          final url = composeUrl(_s(lm['url']).trim(), base, suffix, _s(base['sFlvAntiCode']), ratio);
+          final url = composeUrl(
+            _s(lm['url']).trim(),
+            base,
+            suffix,
+            _s(base['sFlvAntiCode']),
+            ratio,
+            extra: '&codec=264',
+          );
           if (url.isNotEmpty) urls.add(url);
         }
       }
 
+      // HLS 线路
       if (hlsLines != null && hlsLines.isNotEmpty) {
         for (final l in hlsLines) {
           final lm = l as Map<String, dynamic>;
@@ -257,7 +273,7 @@ class HuyaStreamResolver {
           final sHlsUrl = _s(bm['sHlsUrl']).trim();
           if (sFlvUrl.isNotEmpty) {
             final suffix = _s(bm['sFlvUrlSuffix']).isEmpty ? 'flv' : _s(bm['sFlvUrlSuffix']);
-            final url = composeUrl(sFlvUrl, bm, suffix, _s(bm['sFlvAntiCode']), ratio);
+            final url = composeUrl(sFlvUrl, bm, suffix, _s(bm['sFlvAntiCode']), ratio, extra: '&codec=264');
             if (url.isNotEmpty) urls.add(url);
           }
           if (sHlsUrl.isNotEmpty) {
@@ -278,7 +294,7 @@ class HuyaStreamResolver {
     return qualities;
   }
 
-  // ============ anti-code：原样保留参数，只重算 wsSecret ============
+  // ============ anti-code：原样保留服务器参数，只重算 wsSecret（pure_live 同款） ============
   static String processAnticode(String anticode, String streamName, int loginUid) {
     if (anticode.isEmpty) return '';
     final parts = anticode.split('&');
@@ -295,7 +311,7 @@ class HuyaStreamResolver {
       }
       if (k == 'wsSecret' || k == 'sStreamName') continue;
       if (k == 'wsTime') wsTime = Uri.decodeComponent(v);
-      kept.add(p);
+      kept.add(p); // 原样保留，不重新编码
     }
 
     String hash = '';
@@ -313,6 +329,7 @@ class HuyaStreamResolver {
     return kept.join('&');
   }
 
+  // ============ uid 取值（pure_live getUUid 同款） ============
   static int _uidFor(int loginUid, String streamName) {
     if (loginUid > 0) return loginUid;
     final parts = streamName.split('-');
@@ -323,6 +340,7 @@ class HuyaStreamResolver {
     return 1400000000000 + _random.nextInt(100000000000);
   }
 
+  // ============ 粉丝数 ============
   Future<int> fetchFansCount(String roomId) async {
     try {
       final res = await http.get(
