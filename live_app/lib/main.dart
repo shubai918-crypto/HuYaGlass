@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-import 'package:media_kit/media_kit.dart';
 import 'app/routes.dart';
 import 'app/theme.dart';
 import 'common/services/login_service.dart';
@@ -11,8 +10,7 @@ import 'common/services/login_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 播放器引擎
-  MediaKit.ensureInitialized();
+  
 
   // 液态玻璃：预热着色器，消除首帧白闪
   await LiquidGlassWidgets.initialize();
