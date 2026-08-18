@@ -25,6 +25,7 @@ class LivePlayController extends GetxController {
 
   final qualities = <StreamQuality>[].obs;
   final danmakuList = <DanmakuMessage>[].obs;
+  final danmakuStatus = '弹幕连接中…'.obs;
   Stream<DanmakuMessage>? danmakuStream;
 
   VideoPlayerController? _controller;
@@ -256,15 +257,11 @@ class LivePlayController extends GetxController {
 
   void _connectDanmaku() {
     _danmakuClient = HuyaDanmakuClient();
-    _danmakuClient!.connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid);
+    _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
+    final ts = _topSid != 0 ? _topSid : _ayyuid;
+    final ss = _subSid != 0 ? _subSid : _topSid;
+    _danmakuClient!.connect(topSid: ts, subSid: ss, uid: _ayyuid);
     danmakuStream = _danmakuClient!.danmakuStream;
-    danmakuStream!.listen((m) {
-      danmakuList.add(m);
-      if (danmakuList.length > 200) {
-        danmakuList.removeRange(0, danmakuList.length - 200);
-      }
-    });
-  }
 
   void sendDanmaku(String text) {
     if (text.isEmpty) return;
