@@ -5,12 +5,10 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'package:video_player/video_player.dart';
 
-/// 播放内核：video_player（Android 底层 = Media3 ExoPlayer，与 dtv_mobile 同款）
 class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
-  // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
@@ -30,7 +28,6 @@ class LivePlayController extends GetxController {
 
   VideoPlayerController? _controller;
 
-  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -45,7 +42,6 @@ class LivePlayController extends GetxController {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
-  // ---------- 弹幕参数 ----------
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
@@ -58,13 +54,10 @@ class LivePlayController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // 卡顿 watchdog：每 3 秒检查一次
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _loadStream();
   }
 
-  // 关键：直播流 position 不前进，不能用进度判断卡顿！
-  // 只有持续缓冲(isBuffering)超过 12 秒才算真卡死
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
@@ -87,7 +80,6 @@ class LivePlayController extends GetxController {
     return false;
   }
 
-  /// 出错：跳到下一条候选（不重试坏地址）
   void _advance(String reason) {
     if (_throttled()) return;
     _playing = false;
@@ -100,7 +92,6 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
-  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -156,7 +147,6 @@ class LivePlayController extends GetxController {
   void _tryNext(String reason) {
     if (_playing) return;
     if (_candidates.isEmpty) {
-      // 全部失败 → 重新解析一批新地址（最多 3 轮）
       if (_refreshCount < 3) {
         _refreshCount++;
         debugInfo.value = '[$reason] 重新解析线路…';
@@ -173,13 +163,11 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
-  /// 用 ExoPlayer 打开线路（dtv 同款：裸请求，不带自定义头）
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
     final c = VideoPlayerController.networkUrl(Uri.parse(url));
     c.addListener(() {
-      // 忽略已切换掉的旧控制器的错误
       if (_controller != null && !identical(_controller, c)) return;
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
@@ -206,7 +194,6 @@ class LivePlayController extends GetxController {
     }
   }
 
-  // ================= 调试弹窗 =================
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -247,7 +234,6 @@ class LivePlayController extends GetxController {
     );
   }
 
-  // ================= 交互 =================
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -262,6 +248,13 @@ class LivePlayController extends GetxController {
     final ss = _subSid != 0 ? _subSid : _topSid;
     _danmakuClient!.connect(topSid: ts, subSid: ss, uid: _ayyuid);
     danmakuStream = _danmakuClient!.danmakuStream;
+    danmakuStream!.listen((m) {
+      danmakuList.add(m);
+      if (danmakuList.length > 200) {
+        danmakuList.removeRange(0, danmakuList.length - 200);
+      }
+    });
+  }
 
   void sendDanmaku(String text) {
     if (text.isEmpty) return;
@@ -281,10 +274,8 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
-  // ================= 播放器组件 =================
   Widget videoWidget() {
     return Obx(() {
-      // 依赖 playerVersion：换线路后自动重建画面
       playerVersion.value;
       final c = _controller;
       return GestureDetector(
