@@ -10,6 +10,7 @@ class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
+  // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
@@ -27,6 +28,7 @@ class LivePlayController extends GetxController {
 
   VideoPlayerController? _controller;
 
+  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -34,12 +36,11 @@ class LivePlayController extends GetxController {
   int _candidateTotal = 0;
   int _reconnectCount = 0;
   int _refreshCount = 0;
-  int _stallCount = 0;
+  bool _playing = false;
   int _vw = 0;
   int _vh = 0;
-  bool _playing = false;
-  Duration _lastPos = Duration.zero;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _bufferingSince;
   Timer? _stallTimer;
 
   HuyaDanmakuClient? _danmakuClient;
@@ -50,25 +51,26 @@ class LivePlayController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // 卡顿 watchdog：每3秒检查进度，连续3次不动就换线路
+    // 卡顿 watchdog：每 3 秒检查一次
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _loadStream();
   }
 
+  // 关键：直播流 position 不前进，不能用进度判断卡顿！
+  // 只有持续缓冲(isBuffering)超过 12 秒才算真卡死
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
-    final pos = c.value.position;
-    if (pos == _lastPos) {
-      _stallCount++;
-      if (_stallCount >= 3) {
-        _stallCount = 0;
+    if (c.value.isBuffering) {
+      _bufferingSince ??= DateTime.now();
+      if (DateTime.now().difference(_bufferingSince!) >
+          const Duration(seconds: 12)) {
+        _bufferingSince = null;
         _advance('卡顿');
       }
     } else {
-      _stallCount = 0;
+      _bufferingSince = null;
     }
-    _lastPos = pos;
   }
 
   bool _throttled() {
@@ -78,6 +80,7 @@ class LivePlayController extends GetxController {
     return false;
   }
 
+  /// 出错：跳到下一条候选（不重试坏地址）
   void _advance(String reason) {
     if (_throttled()) return;
     _playing = false;
@@ -90,6 +93,7 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
+  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -142,6 +146,7 @@ class LivePlayController extends GetxController {
   void _tryNext(String reason) {
     if (_playing) return;
     if (_candidates.isEmpty) {
+      // 全部失败 → 重新解析一批新地址（最多 3 轮）
       if (_refreshCount < 3) {
         _refreshCount++;
         debugInfo.value = '[$reason] 重新解析线路…';
@@ -158,18 +163,11 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
-  /// 用 ExoPlayer 打开线路（带浏览器头，dtv 同款）
+  /// 用 ExoPlayer 打开线路（dtv 同款：裸请求，不带自定义头）
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
-    final c = VideoPlayerController.networkUrl(
-      Uri.parse(url),
-      httpHeaders: const {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Referer': 'https://www.huya.com/',
-      },
-    );
+    final c = VideoPlayerController.networkUrl(Uri.parse(url));
     c.addListener(() {
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
@@ -183,8 +181,7 @@ class LivePlayController extends GetxController {
       _controller = c;
       await c.play();
       _playing = true;
-      _stallCount = 0;
-      _lastPos = Duration.zero;
+      _bufferingSince = null;
       _vw = c.value.size.width.toInt();
       _vh = c.value.size.height.toInt();
       _lastError = '';
@@ -197,6 +194,7 @@ class LivePlayController extends GetxController {
     }
   }
 
+  // ================= 调试弹窗 =================
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -237,6 +235,7 @@ class LivePlayController extends GetxController {
     );
   }
 
+  // ================= 交互 =================
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -268,9 +267,10 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
+  // ================= 播放器组件 =================
   Widget videoWidget() {
     return Obx(() {
-      // 依赖 playerVersion，换线路后自动重建画面
+      // 依赖 playerVersion：换线路后自动重建画面
       playerVersion.value;
       final c = _controller;
       return GestureDetector(
