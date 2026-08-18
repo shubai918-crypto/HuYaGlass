@@ -96,14 +96,15 @@ class LivePlayController extends GetxController {
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
+      // 解码失败（HEVC 硬解打不开等）→ 自动切软件解码，
+      // 之后所有线路都能解，不会再浪费尝试次数
+      if ('$err'.toLowerCase().contains('codec')) {
+        try {
+          (player.platform as dynamic).setProperty('hwdec', 'no');
+        } catch (_) {}
+      }
       final alive =
           DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 4);
-      if (alive) {
-        _scheduleRecoverCheck();
-      } else {
-        _advance('出错');
-      }
-    });
 
     // 卡顿 watchdog：持续缓冲 15 秒才重连当前地址
     player.stream.buffering.listen((b) {
