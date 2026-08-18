@@ -5,13 +5,15 @@ class StreamQuality {
   final String hlsUrl;
   final String suffix;
   final String antiCode;
+  final List<String> candidates;
 
   StreamQuality({
     required this.name,
     required this.bitrate,
-    required this.flvUrl,
+    this.flvUrl = '',
     this.hlsUrl = '',
     this.suffix = '',
     this.antiCode = '',
+    this.candidates = const [],
   });
 }
