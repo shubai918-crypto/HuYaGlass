@@ -207,14 +207,7 @@ class LivePlayController extends GetxController {
     final url = _candidates.removeAt(0);
     _currentUrl = url;
     debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
-    player.open(
-      Media(url, httpHeaders: {
-        'User-Agent':
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
-        'Referer': 'https://www.huya.com/',
-      }),
-      play: true,
-    );
+    player.open(Media(url), play: true);
     _playTimeout = Timer(const Duration(seconds: 8), () {
       if (!_playing) _advance('超时');
     });
