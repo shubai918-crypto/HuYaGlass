@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
-/// 弹幕消息（字段名对齐 UI 层 danmaku_view.dart）
+/// 弹幕消息
 class DanmakuMessage {
   final String nickname;
   final String content;
@@ -12,23 +12,37 @@ class DanmakuMessage {
   DanmakuMessage({required this.nickname, required this.content, this.fontColor = 0xFFFFFFFF});
 }
 
-/// 虎牙弹幕客户端（WebSocket + Tars，对齐 dtv_mobile / pure_live）
+/// 虎牙弹幕客户端
+/// - 节点：wsapi.huya.com（新网页协议）→ cdnws.api.huya.com（旧）自动切换
+/// - 支持单条 message_notice 与批量推送两种格式
+/// - 断线自动重连、空闲重发注册包（dtv 同款）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
+  static const _endpoints = [
+    'wss://wsapi.huya.com/',
+    'wss://cdnws.api.huya.com/',
+  ];
+
   WebSocket? _ws;
   Timer? _heartTimer;
   Timer? _idleTimer;
+  Timer? _reconnectTimer;
   bool _closed = false;
   Uint8List _registerPayload = Uint8List(0);
+  int _topSid = 0;
+  int _subSid = 0;
+  int _uid = 0;
+
+  /// 状态回报：连接中 / 已连接 / 收到推送 / 连接失败 / 断线重连
+  void Function(String)? onStatus;
 
   final StreamController<DanmakuMessage> _controller =
       StreamController<DanmakuMessage>.broadcast();
 
   Stream<DanmakuMessage> get danmakuStream => _controller.stream;
 
-  /// pure_live 同款：获取匿名 uid（没有它服务器不推弹幕）
   Future<int> _fetchAnonymousUid() async {
     try {
       final res = await http
@@ -62,35 +76,74 @@ class HuyaDanmakuClient {
 
   Future<void> connect({required int topSid, required int subSid, int uid = 0}) async {
     _closed = false;
+    _topSid = topSid;
+    _subSid = subSid;
     var realUid = uid;
     if (realUid <= 0) realUid = await _fetchAnonymousUid();
     if (realUid <= 0) {
       realUid = 1400000000000 + (DateTime.now().millisecondsSinceEpoch % 10000000000);
     }
+    _uid = realUid;
     print('DANMAKU connect topSid=$topSid subSid=$subSid uid=$realUid');
     _registerPayload = _buildRegister(topSid, subSid, realUid);
-    try {
-      _ws = await WebSocket.connect(
-        'wss://cdnws.api.huya.com/',
-        headers: {
-          'Origin': 'https://www.huya.com',
-          'User-Agent': _ua,
-          'Cookie': 'huya_ua=webh5&0.1.0&websocket',
-        },
-      ).timeout(const Duration(seconds: 8));
-    } catch (e) {
-      print('DANMAKU connect failed: $e');
+
+    onStatus?.call('弹幕连接中…');
+    WebSocket? ws;
+    for (final ep in _endpoints) {
+      if (_closed) return;
+      try {
+        ws = await WebSocket.connect(
+          ep,
+          headers: {
+            'Origin': 'https://www.huya.com',
+            'User-Agent': _ua,
+            'Cookie': 'huya_ua=webh5&0.1.0&websocket',
+          },
+        ).timeout(const Duration(seconds: 6));
+        print('DANMAKU connected: $ep');
+        break;
+      } catch (e) {
+        print('DANMAKU endpoint failed: $ep -> $e');
+      }
+    }
+    if (ws == null) {
+      onStatus?.call('弹幕连接失败');
+      _scheduleReconnect();
       return;
     }
-    _ws!.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
+    _ws = ws;
+    onStatus?.call('弹幕已连接，等待消息…');
+    ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
     _send(_registerPayload);
 
+    _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       _send(_buildHeartbeat());
     });
+    _idleTimer?.cancel();
     _idleTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      // dtv：空闲时重发注册包
       _send(_registerPayload);
     });
+  }
+
+  void _scheduleReconnect() {
+    if (_closed) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+      if (!_closed) {
+        onStatus?.call('弹幕断线重连…');
+        connect(topSid: _topSid, subSid: _subSid, uid: _uid);
+      }
+    });
+  }
+
+  void _onDone() {
+    _heartTimer?.cancel();
+    _idleTimer?.cancel();
+    if (_closed) return;
+    onStatus?.call('弹幕断线，准备重连…');
+    _scheduleReconnect();
   }
 
   void _send(List<int> data) {
@@ -101,17 +154,11 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  void _onDone() {
-    if (_closed) return;
-    _closed = true;
-    _heartTimer?.cancel();
-    _idleTimer?.cancel();
-  }
-
   void disconnect() {
     _closed = true;
     _heartTimer?.cancel();
     _idleTimer?.cancel();
+    _reconnectTimer?.cancel();
     try {
       _ws?.close();
     } catch (_) {}
@@ -134,24 +181,45 @@ class HuyaDanmakuClient {
             final nr = _TarsReader(
                 Uint8List.fromList(vData.map((e) => (e as int) & 0xFF).toList()));
             final nf = nr.readFields();
-            if (uri.contains('message_notice')) {
-              final sender = nf[0];
-              final content = nf[3];
-              if (content is String && content.isNotEmpty) {
-                var nick = '';
-                if (sender is Map<int, Object?>) nick = '${sender[2] ?? ''}';
-                print('DANMAKU recv: $nick: $content');
-                _controller.add(DanmakuMessage(
-                  nickname: nick,
-                  content: content,
-                  fontColor: 0xFFFFFFFF,
-                ));
-              }
+            if (uri.contains('message_notice') || uri.contains('batch')) {
+              final count = _extractMessages(nf);
+              if (count > 0) onStatus?.call('弹幕已接收');
             }
           }
         }
       }
     } catch (_) {}
+  }
+
+  /// 兼容单条与批量推送，返回提取到的条数
+  int _extractMessages(Map<int, Object?> nf) {
+    var count = 0;
+    // 单条：tag3 = 内容
+    final single = nf[3];
+    if (single is String && single.isNotEmpty) {
+      final sender = nf[0];
+      final nick = sender is Map<int, Object?> ? '${sender[2] ?? ''}' : '';
+      _controller.add(DanmakuMessage(nickname: nick, content: single));
+      count++;
+      return count;
+    }
+    // 批量：在任意 List 字段里找 message_notice 结构
+    for (final v in nf.values) {
+      if (v is List) {
+        for (final item in v) {
+          if (item is Map<int, Object?>) {
+            final c = item[3];
+            if (c is String && c.isNotEmpty) {
+              final sender = item[0];
+              final nick = sender is Map<int, Object?> ? '${sender[2] ?? ''}' : '';
+              _controller.add(DanmakuMessage(nickname: nick, content: c));
+              count++;
+            }
+          }
+        }
+      }
+    }
+    return count;
   }
 
   // ================= 发包构造 =================
