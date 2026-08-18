@@ -27,7 +27,10 @@ class LivePlayController extends GetxController {
   late final VideoController videoController = VideoController(player);
 
   final List<String> _candidates = [];
+  String _currentUrl = '';
   bool _playing = false;
+  int _vw = 0;
+  int _vh = 0;
   Timer? _playTimeout;
 
   HuyaDanmakuClient? _danmakuClient;
@@ -43,17 +46,34 @@ class LivePlayController extends GetxController {
   }
 
   void _setupPlayer() {
+    // 关键：强制软件解码，避免硬解黑屏
+    try {
+      player.setProperty('hwdec', 'no');
+    } catch (_) {}
+
     player.stream.playing.listen((p) {
       if (p) {
         _playing = true;
         _playTimeout?.cancel();
-        debugInfo.value = '播放中 ✔';
+        _updateDebug();
       }
+    });
+    player.stream.width.listen((w) {
+      _vw = w;
+      _updateDebug();
+    });
+    player.stream.height.listen((h) {
+      _vh = h;
+      _updateDebug();
     });
     player.stream.error.listen((err) {
       debugPrint('PLAYER ERROR: $err');
       _tryNext('出错');
     });
+  }
+
+  void _updateDebug() {
+    if (_playing) debugInfo.value = '播放中 ✔ ${_vw}x$_vh';
   }
 
   Future<void> _loadStream() async {
@@ -67,10 +87,6 @@ class LivePlayController extends GetxController {
       streamerName.value = info.streamerInfo.nickname;
       streamerAvatar.value = info.streamerInfo.avatar;
       fansCount.value = info.streamerInfo.fansCount;
-      if (fansCount.value == 0) {
-        final fans = await _resolver.fetchFansCount(roomId);
-        if (fans > 0) fansCount.value = fans;
-      }
       isLive.value = info.isLive;
       qualities.assignAll(info.qualities);
 
@@ -94,6 +110,8 @@ class LivePlayController extends GetxController {
       ..clear()
       ..addAll(q.candidates);
     _playing = false;
+    _vw = 0;
+    _vh = 0;
     _tryNext('首条线路');
   }
 
@@ -108,8 +126,8 @@ class LivePlayController extends GetxController {
       return;
     }
     final url = _candidates.removeAt(0);
-    debugInfo.value =
-        '[$reason] 尝试: ${url.length > 50 ? '${url.substring(0, 50)}…' : url}';
+    _currentUrl = url;
+    debugInfo.value = '[$reason] 尝试: ${url.length > 50 ? '${url.substring(0, 50)}…' : url}';
     player.open(
       Media(url, httpHeaders: {
         'User-Agent':
@@ -161,7 +179,6 @@ class LivePlayController extends GetxController {
           fit: BoxFit.contain,
           controls: (state) => const SizedBox.shrink(),
         ),
-        // 诊断信息：截图时带上它
         Positioned(
           left: 8,
           bottom: 8,
