@@ -15,6 +15,6 @@ export 'src/huya/huya_follow.dart';
 
 // 模型
 export 'src/model/live_room.dart';
-export 'src/model/danmaku_message.dart';
+export 'src/model/danmaku_message.dart' hide DanmakuMessage;
 export 'src/model/stream_quality.dart';
 export 'src/model/streamer_info.dart';
