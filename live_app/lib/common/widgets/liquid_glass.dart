@@ -1,7 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
-/// 液态玻璃容器（参考 AndroidLiquidGlass 项目）
+/// 液态玻璃容器 (使用 liquid_glass_widgets 包)
 class LiquidGlass extends StatelessWidget {
   final Widget child;
   final double borderRadius;
@@ -26,31 +26,12 @@ class LiquidGlass extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: margin,
-      child: ClipRRect(
+      child: lg.LiquidGlass(
+        // 使用包提供的液态玻璃效果
         borderRadius: BorderRadius.circular(borderRadius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(opacity),
-              borderRadius: BorderRadius.circular(borderRadius),
-              border: showBorder
-                  ? Border.all(
-                      color: Colors.white.withOpacity(0.18),
-                      width: 1,
-                    )
-                  : null,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.white.withOpacity(0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: child,
-          ),
+        child: Padding(
+          padding: padding ?? EdgeInsets.zero,
+          child: child,
         ),
       ),
     );
