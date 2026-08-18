@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
-import '../../common/widgets/liquid_glass.dart';
 import '../../common/widgets/danmaku_view.dart';
+import '../../common/widgets/liquid_glass.dart';
 import 'live_play_controller.dart';
 
 class LivePlayPage extends StatelessWidget {
@@ -12,64 +11,40 @@ class LivePlayPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(LivePlayController());
-
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Obx(() {
-        if (controller.loading.value) {
-          return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF00D2FF)),
-          );
-        }
-        return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle.light,
-          child: Stack(
+      backgroundColor: const Color(0xFF0A0A0F),
+      body: SafeArea(
+        child: Obx(() {
+          if (controller.loading.value) {
+            return const Center(
+                child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+          }
+          return Column(
             children: [
-              // 视频播放器
-              Positioned.fill(child: controller.videoWidget()),
-
-              // 弹幕层
-              if (controller.showDanmaku.value && controller.danmakuStream != null)
-                Positioned(
-                  top: MediaQuery.of(context).padding.top + 70,
-                  left: 0,
-                  right: 0,
-                  child: DanmakuView(
-                    danmakuStream: controller.danmakuStream!,
-                    height: 240,
-                    fontSize: controller.danmakuFontSize.value,
-                  ),
-                ),
-
-              // 顶部信息栏（液态玻璃）
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(child: _buildTopBar(context, controller)),
-              ),
-
-              // 底部控制栏（液态玻璃）
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(child: _buildBottomBar(context, controller)),
-              ),
+              _buildTopBar(controller),
+              _buildVideoArea(controller),
+              Expanded(child: _DanmakuList(controller: controller)),
+              _buildBottomBar(controller),
             ],
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 
-  Widget _buildTopBar(BuildContext context, LivePlayController controller) {
+  Widget _defaultAvatar() => Container(
+        width: 44,
+        height: 44,
+        color: const Color(0xFF2D2D44),
+        child: const Icon(Icons.person, color: Colors.white54),
+      );
+
+  Widget _buildTopBar(LivePlayController controller) {
     return LiquidGlass(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          // 主播头像
           ClipOval(
             child: controller.streamerAvatar.value.isNotEmpty
                 ? Image.network(
@@ -77,41 +52,33 @@ class LivePlayPage extends StatelessWidget {
                     width: 44,
                     height: 44,
                     fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _defaultAvatar(),
                   )
-                : Container(
-                    width: 44,
-                    height: 44,
-                    color: const Color(0xFF2D2D44),
-                    child: const Icon(Icons.person, color: Colors.white54),
-                  ),
+                : _defaultAvatar(),
           ),
-          const SizedBox(width: 12),
-          // 主播信息
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  controller.streamerName.value,
+                  controller.streamerName.value.isEmpty
+                      ? '虎牙主播'
+                      : controller.streamerName.value,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   '粉丝 ${_formatCount(controller.fansCount.value)}',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
                 ),
               ],
             ),
           ),
-          // 订阅按钮
           LiquidGlassButton(
             text: controller.isFollowed.value ? '已订阅' : '订阅',
             selected: controller.isFollowed.value,
@@ -119,56 +86,63 @@ class LivePlayPage extends StatelessWidget {
             onTap: () => controller.toggleFollow(),
           ),
           const SizedBox(width: 8),
-          // 关闭
-          LiquidGlassIconButton(
-            icon: Icons.close,
-            size: 36,
-            onTap: () => Get.back(),
-          ),
+          LiquidGlassIconButton(icon: Icons.close, size: 36, onTap: () => Get.back()),
         ],
       ),
     );
   }
 
-  Widget _buildBottomBar(BuildContext context, LivePlayController controller) {
+  Widget _buildVideoArea(LivePlayController controller) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Stack(
+        children: [
+          Positioned.fill(child: controller.videoWidget()),
+          if (controller.showDanmaku.value && controller.danmakuStream != null)
+            Positioned(
+              top: 4,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: DanmakuView(
+                  danmakuStream: controller.danmakuStream!,
+                  height: 140,
+                  fontSize: controller.danmakuFontSize.value,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(LivePlayController controller) {
     return LiquidGlass(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 画质切换
           if (controller.qualities.isNotEmpty)
-            Row(
-              children: [
-                Text(
-                  '画质',
-                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: controller.qualities.map((q) {
-                        final selected = q.name == controller.currentQuality.value;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: LiquidGlassButton(
-                            text: q.name,
-                            selected: selected,
-                            fontSize: 12,
-                            onTap: () => controller.switchQuality(q),
-                          ),
-                        );
-                      }).toList(),
+            SizedBox(
+              height: 34,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: controller.qualities.map((q) {
+                  final selected = q.name == controller.currentQuality.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: LiquidGlassButton(
+                      text: q.name,
+                      selected: selected,
+                      fontSize: 12,
+                      onTap: () => controller.switchQuality(q),
                     ),
-                  ),
-                ),
-              ],
+                  );
+                }).toList(),
+              ),
             ),
-          const SizedBox(height: 12),
-          // 弹幕输入框
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -177,18 +151,15 @@ class LivePlayPage extends StatelessWidget {
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: '发送弹幕...',
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     filled: true,
                     fillColor: Colors.white.withOpacity(0.08),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      borderSide: BorderSide.none,
-                    ),
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none),
                   ),
-                  onSubmitted: (text) => controller.sendDanmaku(text),
+                  onSubmitted: (t) => controller.sendDanmaku(t),
                 ),
               ),
               const SizedBox(width: 8),
@@ -206,9 +177,72 @@ class LivePlayPage extends StatelessWidget {
   }
 
   String _formatCount(int count) {
-    if (count >= 10000) {
-      return '${(count / 10000).toStringAsFixed(1)}万';
-    }
+    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
     return '$count';
+  }
+}
+
+/// 视频下方的弹幕列表（自动滚动到底部）
+class _DanmakuList extends StatefulWidget {
+  final LivePlayController controller;
+  const _DanmakuList({required this.controller});
+
+  @override
+  State<_DanmakuList> createState() => _DanmakuListState();
+}
+
+class _DanmakuListState extends State<_DanmakuList> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final list = widget.controller.danmakuList;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scroll.hasClients && _scroll.position.maxScrollExtent > 0) {
+          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+        }
+      });
+      if (list.isEmpty) {
+        return const Center(
+          child: Text('弹幕连接中…',
+              style: TextStyle(color: Colors.white24, fontSize: 12)),
+        );
+      }
+      return ListView.builder(
+        controller: _scroll,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        itemCount: list.length,
+        itemBuilder: (c, i) {
+          final m = list[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${m.nickname}: ',
+                    style: const TextStyle(
+                        color: Color(0xFF00D2FF),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  TextSpan(
+                    text: m.content,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    });
   }
 }
