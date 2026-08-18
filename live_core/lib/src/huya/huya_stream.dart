@@ -238,7 +238,9 @@ if (_i(out['topSid']) == 0) {
     }
     
     // 昵称/头像兜底：多组正则扫全页
-    if (_s(out['nickname']).isEmpty) {
+    if (_s(meta['nickname']).isEmpty ||
+          _s(meta['avatar']).isEmpty ||
+          _i(meta['fans']) == 0) {
       for (final re in [
         RegExp(r'"sNick"\s*:\s*"([^"]+)"'),
         RegExp(r'"nick"\s*:\s*"([^"]+)"'),
@@ -444,7 +446,8 @@ if (_i(out['topSid']) == 0) {
             [];
       }
 
-      final qualities = <StreamQuality>[];
+      var qualities = <StreamQuality>[];
+      try {
       if (baseList.isNotEmpty) {
         final rateList = rates.isNotEmpty
             ? rates
@@ -475,6 +478,7 @@ if (_i(out['topSid']) == 0) {
           qualities.add(StreamQuality(name: name, bitrate: bitrate, candidates: urls));
         }
       }
+      } catch (_) {}
 
       return HuyaStreamResult(
         roomId: roomId,
