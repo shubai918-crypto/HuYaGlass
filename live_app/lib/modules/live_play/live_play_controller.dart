@@ -11,6 +11,7 @@ class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
+  // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
@@ -25,6 +26,7 @@ class LivePlayController extends GetxController {
   final qualities = <StreamQuality>[].obs;
   Stream<DanmakuMessage>? danmakuStream;
 
+  // ---------- 播放器 ----------
   final Player player = Player();
   late final VideoController videoController = VideoController(
     player,
@@ -33,6 +35,7 @@ class LivePlayController extends GetxController {
     ),
   );
 
+  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -59,6 +62,7 @@ class LivePlayController extends GetxController {
     _loadStream();
   }
 
+  // ================= 播放器监听 =================
   void _setupPlayer() {
     _tunePlayer();
 
@@ -66,7 +70,10 @@ class LivePlayController extends GetxController {
       if (p) {
         _playing = true;
         _playTimeout?.cancel();
+        _lastError = '';
         _updateDebug();
+      } else {
+        _playing = false;
       }
     });
     player.stream.width.listen((w) {
@@ -77,28 +84,32 @@ class LivePlayController extends GetxController {
       _vh = h ?? 0;
       _updateDebug();
     });
-    // 打开失败 → 换下一条线路（不重试坏地址）
+    // 关键：正在播放时收到的错误属于"上一条线路的迟到错误"，忽略，
+    // 避免误切断当前健康的流（重连连锁的根因）
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
+      if (player.state.playing) return;
       _advance('出错');
     });
-    // 播放中卡住 → 重试当前地址（它刚才在播）
+    // 卡顿 watchdog：缓冲超过 15 秒才重连当前地址
     player.stream.buffering.listen((b) {
       if (b) {
         _stallTimer?.cancel();
-        _stallTimer = Timer(const Duration(seconds: 10), () {
+        _stallTimer = Timer(const Duration(seconds: 15), () {
           if (_playing) _retryCurrent('卡顿');
         });
       } else {
         _stallTimer?.cancel();
       }
     });
+    // 流意外结束：仅在没在播放时才重连
     player.stream.completed.listen((c) {
-      if (c) _retryCurrent('结束');
+      if (c && !player.state.playing) _retryCurrent('结束');
     });
   }
 
+  /// 底层 mpv 调优：让 ffmpeg 自己自动重连
   Future<void> _tunePlayer() async {
     try {
       final native = player.platform as dynamic;
@@ -114,7 +125,7 @@ class LivePlayController extends GetxController {
     return false;
   }
 
-  /// 出错：跳到下一条候选
+  /// 出错：跳到下一条候选（不重试坏地址）
   void _advance(String reason) {
     if (_throttled()) return;
     _playing = false;
@@ -122,7 +133,7 @@ class LivePlayController extends GetxController {
     _tryNext(reason);
   }
 
-  /// 卡顿/结束：把当前地址插回队首重试
+  /// 卡顿/结束：把当前地址插回队首重试（它刚才在播）
   void _retryCurrent(String reason) {
     if (_throttled()) return;
     _playing = false;
@@ -140,6 +151,7 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
+  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -157,7 +169,7 @@ class LivePlayController extends GetxController {
       if (qualities.isNotEmpty) {
         final keep = currentQuality.value;
         final q = qualities.firstWhere(
-          (e) => e.name == keep,
+          (e) => e.name == keep && keep.isNotEmpty,
           orElse: () => qualities.first,
         );
         currentQuality.value = q.name;
@@ -193,7 +205,7 @@ class LivePlayController extends GetxController {
     _playTimeout?.cancel();
     if (_playing) return;
     if (_candidates.isEmpty) {
-      // 全部失败 → 重新解析一批新地址（最多3轮）
+      // 全部失败 → 重新解析一批新地址（最多 3 轮）
       if (_refreshCount < 3) {
         _refreshCount++;
         debugInfo.value = '[$reason] 重新解析线路…';
@@ -213,6 +225,7 @@ class LivePlayController extends GetxController {
     });
   }
 
+  // ================= 调试弹窗 =================
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -253,6 +266,7 @@ class LivePlayController extends GetxController {
     );
   }
 
+  // ================= 交互 =================
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -284,6 +298,7 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
+  // ================= 播放器组件 =================
   Widget videoWidget() {
     return GestureDetector(
       onTap: _showUrlDialog,
