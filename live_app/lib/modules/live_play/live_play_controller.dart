@@ -2,13 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
-  // 状态
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
@@ -19,16 +19,16 @@ class LivePlayController extends GetxController {
   final danmakuFontSize = 14.0.obs;
   final currentQuality = ''.obs;
 
-  // 数据
   final qualities = <StreamQuality>[].obs;
   Stream<DanmakuMessage>? danmakuStream;
 
-  // 控制器
-  VideoPlayerController? _videoController;
+  // media_kit 播放器
+  final Player player = Player();
+  late final VideoController videoController = VideoController(player);
+
   HuyaDanmakuClient? _danmakuClient;
   final inputController = TextEditingController();
   final HuyaStreamResolver _streamResolver = HuyaStreamResolver();
-  final HuyaApi _api = HuyaApi();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
 
   @override
@@ -41,8 +41,8 @@ class LivePlayController extends GetxController {
     try {
       final info = await _streamResolver.resolveStream(roomId);
       if (info == null) {
-        Get.snackbar('错误', '无法获取直播流', snackPosition: SnackPosition.TOP);
         loading.value = false;
+        Get.snackbar('错误', '无法获取直播流', snackPosition: SnackPosition.TOP);
         return;
       }
 
@@ -54,14 +54,12 @@ class LivePlayController extends GetxController {
 
       if (qualities.isNotEmpty) {
         currentQuality.value = qualities.first.name;
-        await _playStream(qualities.first);
+        _playStream(qualities.first);
       }
 
-      // 连接弹幕
       if (isLive.value) {
         _connectDanmaku(info.presenterUid);
       }
-
       loading.value = false;
     } catch (e) {
       loading.value = false;
@@ -69,28 +67,28 @@ class LivePlayController extends GetxController {
     }
   }
 
-  Future<void> _playStream(StreamQuality quality) async {
-    _videoController?.dispose();
-    _videoController = VideoPlayerController.networkUrl(
-      Uri.parse(quality.flvUrl),
+  void _playStream(StreamQuality quality) {
+    // 优先 HLS，失败时 media_kit 也能播 FLV
+    final url = quality.hlsUrl.isNotEmpty ? quality.hlsUrl : quality.flvUrl;
+    player.open(
+      Media(url, httpHeaders: {
+        'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Referer': 'https://www.huya.com/',
+      }),
+      play: true,
     );
-    await _videoController!.initialize();
-    await _videoController!.play();
-    update();
-  }
-
-  void _connectDanmaku(int presenterUid) {
-    _danmakuClient = HuyaDanmakuClient(_loginManager);
-    _danmakuClient!.connect(
-      roomId: roomId,
-      presenterUid: presenterUid,
-    );
-    danmakuStream = _danmakuClient!.danmakuStream;
   }
 
   void switchQuality(StreamQuality quality) {
     currentQuality.value = quality.name;
     _playStream(quality);
+  }
+
+  void _connectDanmaku(int presenterUid) {
+    _danmakuClient = HuyaDanmakuClient(_loginManager);
+    _danmakuClient!.connect(roomId: roomId, presenterUid: presenterUid);
+    danmakuStream = _danmakuClient!.danmakuStream;
   }
 
   void sendDanmaku(String text) {
@@ -108,28 +106,22 @@ class LivePlayController extends GetxController {
       Get.snackbar('提示', '订阅需要先登录');
       return;
     }
-    // TODO: 调用 ModRelationReq 实现订阅
     isFollowed.value = !isFollowed.value;
   }
 
+  /// 播放器组件
   Widget videoWidget() {
-    if (_videoController == null || !_videoController!.value.isInitialized) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF00D2FF)),
-      );
-    }
-    return Center(
-      child: AspectRatio(
-        aspectRatio: _videoController!.value.aspectRatio,
-        child: VideoPlayer(_videoController!),
-      ),
+    return Video(
+      controller: videoController,
+      fit: BoxFit.contain,
+      controls: (state) => const SizedBox.shrink(),
     );
   }
 
   @override
   void onClose() {
-    _videoController?.dispose();
     _danmakuClient?.disconnect();
+    player.dispose();
     inputController.dispose();
     super.onClose();
   }
