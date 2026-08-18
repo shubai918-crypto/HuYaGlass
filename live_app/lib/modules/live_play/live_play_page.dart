@@ -210,9 +210,11 @@ class _DanmakuListState extends State<_DanmakuList> {
         }
       });
       if (list.isEmpty) {
-        return const Center(
-          child: Text('弹幕连接中…',
-              style: TextStyle(color: Colors.white24, fontSize: 12)),
+        return Center(
+          child: Obx(() => Text(
+                widget.controller.danmakuStatus.value,
+                style: const TextStyle(color: Colors.white24, fontSize: 12),
+              )),
         );
       }
       return ListView.builder(
