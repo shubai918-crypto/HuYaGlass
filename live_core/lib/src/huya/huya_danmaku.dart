@@ -13,9 +13,10 @@ class DanmakuMessage {
 }
 
 /// 虎牙弹幕客户端
-/// - 节点：wsapi.huya.com（新网页协议）→ cdnws.api.huya.com（旧）自动切换
-/// - 支持单条 message_notice 与批量推送两种格式
-/// - 断线自动重连、空闲重发注册包（dtv 同款）
+/// - 节点：wsapi.huya.com（新网页协议）→ cdnws.api.huya.com 自动切换
+/// - 注册：同时注册 live://tid、chat:sid、live:uid、chat:uid 四种房间组（新旧协议兼容）
+/// - 双 UA 注册：webh5 + huya_lanmu_web
+/// - 递归解析单条/批量推送
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -28,14 +29,15 @@ class HuyaDanmakuClient {
   WebSocket? _ws;
   Timer? _heartTimer;
   Timer? _idleTimer;
+  Timer? _secondRegTimer;
   Timer? _reconnectTimer;
   bool _closed = false;
-  Uint8List _registerPayload = Uint8List(0);
+  int _recvCount = 0;
   int _topSid = 0;
   int _subSid = 0;
+  int _ayyuid = 0;
   int _uid = 0;
 
-  /// 状态回报：连接中 / 已连接 / 收到推送 / 连接失败 / 断线重连
   void Function(String)? onStatus;
 
   final StreamController<DanmakuMessage> _controller =
@@ -76,16 +78,17 @@ class HuyaDanmakuClient {
 
   Future<void> connect({required int topSid, required int subSid, int uid = 0}) async {
     _closed = false;
+    _recvCount = 0;
     _topSid = topSid;
     _subSid = subSid;
+    _ayyuid = uid;
     var realUid = uid;
     if (realUid <= 0) realUid = await _fetchAnonymousUid();
     if (realUid <= 0) {
       realUid = 1400000000000 + (DateTime.now().millisecondsSinceEpoch % 10000000000);
     }
     _uid = realUid;
-    print('DANMAKU connect topSid=$topSid subSid=$subSid uid=$realUid');
-    _registerPayload = _buildRegister(topSid, subSid, realUid);
+    print('DANMAKU connect topSid=$topSid subSid=$subSid ayyuid=$uid anon=$_uid');
 
     onStatus?.call('弹幕连接中…');
     WebSocket? ws;
@@ -114,7 +117,14 @@ class HuyaDanmakuClient {
     _ws = ws;
     onStatus?.call('弹幕已连接，等待消息…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
-    _send(_registerPayload);
+
+    // 第一次注册：webh5 UA
+    _send(_buildRegister('webh5&0.1.0&websocket'));
+    // 1 秒后再用 lanmu UA 注册一次（双保险）
+    _secondRegTimer?.cancel();
+    _secondRegTimer = Timer(const Duration(seconds: 1), () {
+      _send(_buildRegister('huya_lanmu_web_2101'));
+    });
 
     _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 20), (_) {
@@ -122,8 +132,7 @@ class HuyaDanmakuClient {
     });
     _idleTimer?.cancel();
     _idleTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      // dtv：空闲时重发注册包
-      _send(_registerPayload);
+      _send(_buildRegister('webh5&0.1.0&websocket'));
     });
   }
 
@@ -133,7 +142,7 @@ class HuyaDanmakuClient {
     _reconnectTimer = Timer(const Duration(seconds: 5), () {
       if (!_closed) {
         onStatus?.call('弹幕断线重连…');
-        connect(topSid: _topSid, subSid: _subSid, uid: _uid);
+        connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid);
       }
     });
   }
@@ -141,6 +150,7 @@ class HuyaDanmakuClient {
   void _onDone() {
     _heartTimer?.cancel();
     _idleTimer?.cancel();
+    _secondRegTimer?.cancel();
     if (_closed) return;
     onStatus?.call('弹幕断线，准备重连…');
     _scheduleReconnect();
@@ -158,6 +168,7 @@ class HuyaDanmakuClient {
     _closed = true;
     _heartTimer?.cancel();
     _idleTimer?.cancel();
+    _secondRegTimer?.cancel();
     _reconnectTimer?.cancel();
     try {
       _ws?.close();
@@ -165,9 +176,11 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  // ================= 收包解析 =================
+  // ================= 收包 =================
   void _onData(dynamic data) {
     try {
+      _recvCount++;
+      onStatus?.call('弹幕已连接，收包$_recvCount');
       final bytes = Uint8List.fromList((data as List).cast<int>());
       final r = _TarsReader(bytes);
       final fields = r.readFields();
@@ -175,64 +188,63 @@ class HuyaDanmakuClient {
       if (cmd == 6) {
         final push = fields[1];
         if (push is Map<int, Object?>) {
-          final uri = '${push[2]}';
           final vData = push[3];
           if (vData is List) {
             final nr = _TarsReader(
                 Uint8List.fromList(vData.map((e) => (e as int) & 0xFF).toList()));
             final nf = nr.readFields();
-            if (uri.contains('message_notice') || uri.contains('batch')) {
-              final count = _extractMessages(nf);
-              if (count > 0) onStatus?.call('弹幕已接收');
+            final msgs = <DanmakuMessage>[];
+            _scan(nf, msgs);
+            for (final m in msgs) {
+              _controller.add(m);
             }
+            if (msgs.isNotEmpty) onStatus?.call('弹幕已接收');
           }
         }
       }
     } catch (_) {}
   }
 
-  /// 兼容单条与批量推送，返回提取到的条数
-  int _extractMessages(Map<int, Object?> nf) {
-    var count = 0;
-    // 单条：tag3 = 内容
-    final single = nf[3];
-    if (single is String && single.isNotEmpty) {
-      final sender = nf[0];
-      final nick = sender is Map<int, Object?> ? '${sender[2] ?? ''}' : '';
-      _controller.add(DanmakuMessage(nickname: nick, content: single));
-      count++;
-      return count;
-    }
-    // 批量：在任意 List 字段里找 message_notice 结构
-    for (final v in nf.values) {
-      if (v is List) {
-        for (final item in v) {
-          if (item is Map<int, Object?>) {
-            final c = item[3];
-            if (c is String && c.isNotEmpty) {
-              final sender = item[0];
-              final nick = sender is Map<int, Object?> ? '${sender[2] ?? ''}' : '';
-              _controller.add(DanmakuMessage(nickname: nick, content: c));
-              count++;
-            }
-          }
-        }
+  /// 递归扫描单条/批量推送结构
+  void _scan(Object? node, List<DanmakuMessage> out) {
+    if (node is Map<int, Object?>) {
+      final c = node[3];
+      if (c is String && c.isNotEmpty) {
+        final sender = node[0];
+        var nick = '';
+        if (sender is Map<int, Object?>) nick = '${sender[2] ?? ''}';
+        out.add(DanmakuMessage(nickname: nick, content: c));
+      }
+      for (final v in node.values) {
+        _scan(v, out);
+      }
+    } else if (node is List) {
+      for (final v in node) {
+        _scan(v, out);
       }
     }
-    return count;
   }
 
-  // ================= 发包构造 =================
-  Uint8List _buildRegister(int topSid, int subSid, int uid) {
+  // ================= 发包 =================
+  /// 注册包：四种房间组格式全注册（新旧协议兼容）
+  Uint8List _buildRegister(String sUA) {
+    final groups = <String>{};
+    if (_topSid > 0) groups.add('live://$_topSid');
+    if (_subSid > 0) groups.add('chat:$_subSid');
+    if (_ayyuid > 0) {
+      groups.add('live:$_ayyuid');
+      groups.add('chat:$_ayyuid');
+    }
+
     final user = _TarsWriter();
-    user.writeInt(0, uid);
+    user.writeInt(0, _uid);
     user.writeString(1, '');
     user.writeString(2, '');
 
     final payload = _TarsWriter();
     payload.writeStruct(0, user);
-    payload.writeStringList(1, ['live://$topSid', 'chat:$subSid']);
-    payload.writeString(2, 'webh5&0.1.0&websocket');
+    payload.writeStringList(1, groups.toList());
+    payload.writeString(2, sUA);
 
     final cmd = _TarsWriter();
     cmd.writeInt(0, 0); // C2S_RegisterGroupReq
