@@ -24,6 +24,7 @@ class LivePlayController extends GetxController {
   final playerVersion = 0.obs;
 
   final qualities = <StreamQuality>[].obs;
+  final danmakuList = <DanmakuMessage>[].obs;
   Stream<DanmakuMessage>? danmakuStream;
 
   VideoPlayerController? _controller;
@@ -257,6 +258,12 @@ class LivePlayController extends GetxController {
     _danmakuClient = HuyaDanmakuClient();
     _danmakuClient!.connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid);
     danmakuStream = _danmakuClient!.danmakuStream;
+    danmakuStream!.listen((m) {
+      danmakuList.add(m);
+      if (danmakuList.length > 200) {
+        danmakuList.removeRange(0, danmakuList.length - 200);
+      }
+    });
   }
 
   void sendDanmaku(String text) {
