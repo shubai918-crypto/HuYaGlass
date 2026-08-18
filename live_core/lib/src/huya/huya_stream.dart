@@ -27,10 +27,12 @@ class HuyaStreamResolver {
 
   String _md5(String input) => md5.convert(utf8.encode(input)).toString();
 
+  /// dtv: enforceHttp —— 规避 TLS/SNI 问题
   static String enforceHttp(String url) => url.startsWith('https://')
       ? url.replaceFirst('https://', 'http://')
       : url;
 
+  // ================= dtv: parseQuery =================
   Map<String, String> _parseQuery(String qs) {
     var trimmed = qs.trim();
     while (trimmed.startsWith('?') || trimmed.startsWith('&')) {
@@ -54,7 +56,7 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= dtv: generateWebAntiCode =================
+  // ================= dtv: generateWebAntiCode（逐行对齐） =================
   String generateWebAntiCode(String streamName, String antiCode) {
     try {
       final sanitized = antiCode.replaceAll('&amp;', '&');
@@ -104,6 +106,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= dtv: adjustTxStreamUrl =================
   String _adjustTxStreamUrl(String url, String cdn) {
     if (cdn.toLowerCase() != 'tx') return enforceHttp(url);
     var s = url.replaceAll('&ctype=tars_mp', '&ctype=huya_webh5');
@@ -111,6 +114,7 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
+  // ================= dtv: fetchHtml（桌面优先） =================
   Future<String> _fetchHtml(String roomId, bool mobile) async {
     final res = await http.get(
       Uri.parse('https://www.huya.com/$roomId'),
@@ -185,7 +189,7 @@ class HuyaStreamResolver {
     return rates ?? [];
   }
 
-  // ============ 新增：从网页 HNF_GLOBAL_INIT 解析主播信息 ============
+  // ============ 从网页 HNF_GLOBAL_INIT 解析主播信息 ============
   Map<String, dynamic> _parseMeta(String body) {
     final out = <String, dynamic>{
       'nickname': '',
@@ -199,7 +203,7 @@ class HuyaStreamResolver {
     };
     try {
       final m = RegExp(
-        r'window\.HNF_GLOBAL_INIT\s*=\s*\{(.*?)\}\s*</script>',
+        r'window\.HNF_GLOBAL_INIT\s*=\s*\{(.*?)\}\s*;?\s*</script>',
         dotAll: true,
       ).firstMatch(body);
       if (m != null) {
@@ -214,11 +218,20 @@ class HuyaStreamResolver {
           out['title'] = _s(liveInfo['sIntroduction']);
           out['isLive'] = _i(liveInfo['eLiveStatus']) == 2;
           out['uid'] = _i(profile['lUid']);
-          out['topSid'] = _i(liveInfo['lChannelId'] ?? liveInfo['lYyid'] ?? profile['lChannelId']);
+          out['topSid'] = _i(liveInfo['lChannelId'] ?? profile['lChannelId']);
           out['subSid'] = _i(liveInfo['lSubChannelId']);
         }
       }
     } catch (_) {}
+    // 昵称/头像兜底：直接正则扫全页
+    if (_s(out['nickname']).isEmpty) {
+      final m = RegExp(r'"sNick"\s*:\s*"([^"]*)"').firstMatch(body);
+      if (m != null) out['nickname'] = m.group(1)!;
+    }
+    if (_s(out['avatar']).isEmpty) {
+      final m = RegExp(r'"sAvatar180"\s*:\s*"([^"]*)"').firstMatch(body);
+      if (m != null) out['avatar'] = m.group(1)!;
+    }
     // 粉丝数兜底：正则扫全页
     if (_i(out['fans']) == 0) {
       for (final key in ['lFansCount', 'lSubscribeCount', 'iSubscribeCount', 'totalCount']) {
@@ -232,7 +245,7 @@ class HuyaStreamResolver {
     return out;
   }
 
-  // ================= dtv: resolve（现在同时带主播信息） =================
+  // ================= dtv: resolve（线路 + 主播信息一体） =================
   Future<HuyaStreamResult?> _resolveByDtv(String roomId) async {
     try {
       var html = await _fetchHtml(roomId, false);
@@ -247,7 +260,6 @@ class HuyaStreamResolver {
       }
       if (candidates.isEmpty) return null;
 
-      // 从同一份网页解析主播信息（不再依赖 API）
       final meta = _parseMeta(html);
 
       int cdnRank(String cdn) {
