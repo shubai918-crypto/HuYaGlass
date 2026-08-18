@@ -5,17 +5,15 @@ import 'package:http/http.dart' as http;
 import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 
-/// 虎牙直播流解析（完全对齐 pure_live 的实现）
 class HuyaStreamResolver {
   static const _ua =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 
-static  final Random _random = Random();
+  static final Random _random = Random();
 
   int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
   String _s(dynamic v) => v?.toString() ?? '';
 
-  // ================= 入口 =================
   Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
     final api = await _resolveByApi(roomId, loginUid);
     final web = await _resolveByWeb(roomId, loginUid);
@@ -43,7 +41,6 @@ static  final Random _random = Random();
     );
   }
 
-  // ================= 官方 profileRoom API =================
   Future<HuyaStreamResult?> _resolveByApi(String roomId, int loginUid) async {
     try {
       final res = await http.get(
@@ -109,7 +106,6 @@ static  final Random _random = Random();
     }
   }
 
-  // ================= 移动端网页兜底 =================
   Future<HuyaStreamResult?> _resolveByWeb(String roomId, int loginUid) async {
     try {
       final res = await http.get(
@@ -176,7 +172,7 @@ static  final Random _random = Random();
     }
   }
 
-  // ============ pure_live 同款：multiLine 线路组装 ============
+  // ============ 线路组装 ============
   List<StreamQuality> _buildQualities({
     required List<dynamic> baseList,
     List<dynamic>? flvLines,
@@ -191,67 +187,83 @@ static  final Random _random = Random();
         ? rates
         : <dynamic>[{'sDisplayName': '原画', 'iBitRate': 0}];
 
+    Map<String, dynamic> baseForCdn(String cdn) {
+      for (final e in baseList) {
+        final em = e as Map<String, dynamic>;
+        if (_s(em['sCdnType']) == cdn) return em;
+      }
+      return baseList.first as Map<String, dynamic>;
+    }
+
+    // 关键修复：multiLine 的 url 可能已是“带路径+旧签名”的完整地址，
+    // 必须拆开复用，只重算 wsSecret，不能再拼一层
+    String composeUrl(
+      String lineUrl,
+      Map<String, dynamic> base,
+      String suffix,
+      String fallbackAnti,
+      String ratio,
+    ) {
+      final streamName = _s(base['sStreamName']);
+      if (streamName.isEmpty || lineUrl.isEmpty) return '';
+      try {
+        final u = Uri.parse(lineUrl);
+        String path = u.path;
+        final file = '$streamName.$suffix';
+        if (!path.endsWith(file)) {
+          if (!path.endsWith('/')) path += '/';
+          path += file;
+        }
+        final antiSource = u.query.isNotEmpty ? u.query : fallbackAnti;
+        final processed = processAnticode(antiSource, streamName, loginUid);
+        if (processed.isEmpty) return '';
+        return '${u.scheme}://${u.authority}$path?$processed$ratio';
+      } catch (_) {
+        return '';
+      }
+    }
+
     for (final r in rateList) {
       final rr = r as Map<String, dynamic>;
       final bitrate = _i(rr['iBitRate']);
       final ratio = bitrate > 0 ? '&ratio=$bitrate' : '';
       final urls = <String>[];
 
-      Map<String, dynamic> baseForCdn(String cdn) {
-        for (final e in baseList) {
-          final em = e as Map<String, dynamic>;
-          if (_s(em['sCdnType']) == cdn) return em;
-        }
-        return baseList.first as Map<String, dynamic>;
-      }
-
-      // FLV 线路（pure_live: flv.multiLine 按 cdnType 匹配 baseSteamInfoList）
       if (flvLines != null && flvLines.isNotEmpty) {
         for (final l in flvLines) {
           final lm = l as Map<String, dynamic>;
-          final lineUrl = _s(lm['url']).trim();
-          final cdn = _s(lm['cdnType']);
-          if (lineUrl.isEmpty) continue;
-          final base = baseForCdn(cdn);
-          final streamName = _s(base['sStreamName']);
-          if (streamName.isEmpty) continue;
+          final base = baseForCdn(_s(lm['cdnType']));
           final suffix = _s(base['sFlvUrlSuffix']).isEmpty ? 'flv' : _s(base['sFlvUrlSuffix']);
-          final anti = processAnticode(_s(base['sFlvAntiCode']), streamName, loginUid);
-          urls.add('$lineUrl/$streamName.$suffix?$anti$ratio');
+          final url = composeUrl(_s(lm['url']).trim(), base, suffix, _s(base['sFlvAntiCode']), ratio);
+          if (url.isNotEmpty) urls.add(url);
         }
       }
 
-      // HLS 线路
       if (hlsLines != null && hlsLines.isNotEmpty) {
         for (final l in hlsLines) {
           final lm = l as Map<String, dynamic>;
-          final lineUrl = _s(lm['url']).trim();
-          final cdn = _s(lm['cdnType']);
-          if (lineUrl.isEmpty) continue;
-          final base = baseForCdn(cdn);
-          final streamName = _s(base['sStreamName']);
-          if (streamName.isEmpty) continue;
+          final base = baseForCdn(_s(lm['cdnType']));
           final suffix = _s(base['sHlsUrlSuffix']).isEmpty ? 'm3u8' : _s(base['sHlsUrlSuffix']);
-          final anti = processAnticode(_s(base['sHlsAntiCode']), streamName, loginUid);
-          urls.add('$lineUrl/$streamName.$suffix?$anti$ratio');
+          final url = composeUrl(_s(lm['url']).trim(), base, suffix, _s(base['sHlsAntiCode']), ratio);
+          if (url.isNotEmpty) urls.add(url);
         }
       }
 
-      // 兜底：没有 multiLine 时直接用 baseSteamInfoList 自带的地址
+      // 兜底：没有 multiLine 时用 baseSteamInfoList 自带地址
       if (urls.isEmpty) {
         for (final b in baseList) {
           final bm = b as Map<String, dynamic>;
-          final streamName = _s(bm['sStreamName']);
-          if (streamName.isEmpty) continue;
           final sFlvUrl = _s(bm['sFlvUrl']).trim();
           final sHlsUrl = _s(bm['sHlsUrl']).trim();
           if (sFlvUrl.isNotEmpty) {
             final suffix = _s(bm['sFlvUrlSuffix']).isEmpty ? 'flv' : _s(bm['sFlvUrlSuffix']);
-            urls.add('$sFlvUrl/$streamName.$suffix?${processAnticode(_s(bm['sFlvAntiCode']), streamName, loginUid)}$ratio');
+            final url = composeUrl(sFlvUrl, bm, suffix, _s(bm['sFlvAntiCode']), ratio);
+            if (url.isNotEmpty) urls.add(url);
           }
           if (sHlsUrl.isNotEmpty) {
             final suffix = _s(bm['sHlsUrlSuffix']).isEmpty ? 'm3u8' : _s(bm['sHlsUrlSuffix']);
-            urls.add('$sHlsUrl/$streamName.$suffix?${processAnticode(_s(bm['sHlsAntiCode']), streamName, loginUid)}$ratio');
+            final url = composeUrl(sHlsUrl, bm, suffix, _s(bm['sHlsAntiCode']), ratio);
+            if (url.isNotEmpty) urls.add(url);
           }
         }
       }
@@ -266,7 +278,7 @@ static  final Random _random = Random();
     return qualities;
   }
 
-  // ============ pure_live 同款 anti-code：原样保留参数，只换 wsSecret ============
+  // ============ anti-code：原样保留参数，只重算 wsSecret ============
   static String processAnticode(String anticode, String streamName, int loginUid) {
     if (anticode.isEmpty) return '';
     final parts = anticode.split('&');
@@ -283,7 +295,7 @@ static  final Random _random = Random();
       }
       if (k == 'wsSecret' || k == 'sStreamName') continue;
       if (k == 'wsTime') wsTime = Uri.decodeComponent(v);
-      kept.add(p); // 原样保留，不重新编码
+      kept.add(p);
     }
 
     String hash = '';
@@ -301,8 +313,7 @@ static  final Random _random = Random();
     return kept.join('&');
   }
 
-  // ============ uid 取值（pure_live getUUid 同款） ============
-static  int _uidFor(int loginUid, String streamName) {
+  static int _uidFor(int loginUid, String streamName) {
     if (loginUid > 0) return loginUid;
     final parts = streamName.split('-');
     if (parts.isNotEmpty) {
@@ -312,7 +323,6 @@ static  int _uidFor(int loginUid, String streamName) {
     return 1400000000000 + _random.nextInt(100000000000);
   }
 
-  // ============ 粉丝数 ============
   Future<int> fetchFansCount(String roomId) async {
     try {
       final res = await http.get(
