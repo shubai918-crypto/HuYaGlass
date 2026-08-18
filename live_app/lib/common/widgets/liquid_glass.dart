@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
-/// 液态玻璃容器 (使用 liquid_glass_widgets 包)
+/// 液态玻璃容器（基于 liquid_glass_widgets 的 GlassCard）
 class LiquidGlass extends StatelessWidget {
   final Widget child;
   final double borderRadius;
@@ -26,19 +26,15 @@ class LiquidGlass extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: margin,
-      child: lg.LiquidGlass(
-        // 使用包提供的液态玻璃效果
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: Padding(
-          padding: padding ?? EdgeInsets.zero,
-          child: child,
-        ),
+      child: lg.GlassCard(
+        padding: padding ?? const EdgeInsets.all(0),
+        child: child,
       ),
     );
   }
 }
 
-/// 液态玻璃按钮
+/// 液态玻璃按钮（保持原接口不变）
 class LiquidGlassButton extends StatelessWidget {
   final String text;
   final VoidCallback onTap;
@@ -64,14 +60,10 @@ class LiquidGlassButton extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? accent.withOpacity(0.25)
-              : Colors.white.withOpacity(0.06),
+          color: selected ? accent.withOpacity(0.25) : Colors.white.withOpacity(0.06),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected
-                ? accent.withOpacity(0.5)
-                : Colors.white.withOpacity(0.12),
+            color: selected ? accent.withOpacity(0.5) : Colors.white.withOpacity(0.12),
             width: 1,
           ),
         ),
@@ -88,7 +80,7 @@ class LiquidGlassButton extends StatelessWidget {
   }
 }
 
-/// 液态玻璃图标按钮
+/// 液态玻璃图标按钮（保持原接口不变）
 class LiquidGlassIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -113,16 +105,9 @@ class LiquidGlassIconButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.08),
           shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withOpacity(0.15),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.15), width: 1),
         ),
-        child: Icon(
-          icon,
-          size: size * 0.5,
-          color: color ?? Colors.white,
-        ),
+        child: Icon(icon, size: size * 0.5, color: color ?? Colors.white),
       ),
     );
   }
