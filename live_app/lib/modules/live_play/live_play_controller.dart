@@ -11,7 +11,6 @@ class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
-  // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
@@ -26,7 +25,6 @@ class LivePlayController extends GetxController {
   final qualities = <StreamQuality>[].obs;
   Stream<DanmakuMessage>? danmakuStream;
 
-  // ---------- 播放器 ----------
   final Player player = Player();
   late final VideoController videoController = VideoController(
     player,
@@ -35,7 +33,6 @@ class LivePlayController extends GetxController {
     ),
   );
 
-  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -47,7 +44,8 @@ class LivePlayController extends GetxController {
   int _vw = 0;
   int _vh = 0;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime _lastPlayingAt = DateTime.fromMillisecondsSinceEpoch(0);
+  // 关键：用"时间轴是否走动"作为存活信号（state.playing 在 open 失败时也会是 true，不可靠）
+  DateTime _lastAliveAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _playTimeout;
   Timer? _stallTimer;
   Timer? _recoverTimer;
@@ -64,14 +62,18 @@ class LivePlayController extends GetxController {
     _loadStream();
   }
 
-  // ================= 播放器监听 =================
   void _setupPlayer() {
     _tunePlayer();
 
+    // position 走动 = 真正在播
+    player.stream.position.listen((pos) {
+      if (pos > Duration.zero) {
+        _lastAliveAt = DateTime.now();
+      }
+    });
     player.stream.playing.listen((p) {
       if (p) {
         _playing = true;
-        _lastPlayingAt = DateTime.now();
         _playTimeout?.cancel();
         _lastError = '';
         _updateDebug();
@@ -89,20 +91,18 @@ class LivePlayController extends GetxController {
     });
 
     // 错误处理：
-    // - 正在播放 → 忽略（迟到错误）
-    // - 刚播过(<5秒) → 瞬间抖动，给 mpv 自己的 reconnect 一次恢复机会，
-    //   6秒后还没恢复才切线路（避免"自己杀自己"的卡顿循环）
-    // - 长时间没播过 → 立即换线路
+    // - 4秒内时间轴走动过 → 真播放中的瞬间抖动，给 6 秒恢复期，不立即切线
+    // - 否则（open 失败/死线路）→ 立即换下一条
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
-      if (player.state.playing) return;
-      final sincePlay = DateTime.now().difference(_lastPlayingAt);
-      if (sincePlay < const Duration(seconds: 5)) {
+      final alive =
+          DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 4);
+      if (alive) {
         _scheduleRecoverCheck();
-        return;
+      } else {
+        _advance('出错');
       }
-      _advance('出错');
     });
 
     // 卡顿 watchdog：持续缓冲 15 秒才重连当前地址
@@ -121,14 +121,12 @@ class LivePlayController extends GetxController {
   void _scheduleRecoverCheck() {
     _recoverTimer ??= Timer(const Duration(seconds: 6), () {
       _recoverTimer = null;
-      if (!_playing &&
-          DateTime.now().difference(_lastPlayingAt) > const Duration(seconds: 6)) {
-        _advance('未恢复');
-      }
+      final alive =
+          DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
+      if (!alive && !_playing) _advance('未恢复');
     });
   }
 
-  /// 底层 mpv 调优：ffmpeg 自动重连 + 网络超时
   Future<void> _tunePlayer() async {
     try {
       final native = player.platform as dynamic;
@@ -143,12 +141,11 @@ class LivePlayController extends GetxController {
 
   bool _throttled() {
     final now = DateTime.now();
-    if (now.difference(_lastAt).inMilliseconds < 2000) return true;
+    if (now.difference(_lastAt).inMilliseconds < 1500) return true;
     _lastAt = now;
     return false;
   }
 
-  /// 出错：跳到下一条候选（不重试坏地址）
   void _advance(String reason) {
     if (_throttled()) return;
     _playing = false;
@@ -156,7 +153,6 @@ class LivePlayController extends GetxController {
     _tryNext(reason);
   }
 
-  /// 卡顿/结束：把当前地址插回队首重试（它刚才在播）
   void _retryCurrent(String reason) {
     if (_throttled()) return;
     _playing = false;
@@ -174,7 +170,6 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
-  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -228,7 +223,6 @@ class LivePlayController extends GetxController {
     _playTimeout?.cancel();
     if (_playing) return;
     if (_candidates.isEmpty) {
-      // 全部失败 → 重新解析一批新地址（最多 3 轮）
       if (_refreshCount < 3) {
         _refreshCount++;
         debugInfo.value = '[$reason] 重新解析线路…';
@@ -241,15 +235,17 @@ class LivePlayController extends GetxController {
     _candidateIndex++;
     final url = _candidates.removeAt(0);
     _currentUrl = url;
+    // 每条新线路重置存活信号，保证 open 失败时错误能被识别为"死线路"
+    _lastAliveAt = DateTime.fromMillisecondsSinceEpoch(0);
     debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
-    // 对齐 pure_live：裸请求，不带任何自定义头
     player.open(Media(url), play: true);
-    _playTimeout = Timer(const Duration(seconds: 8), () {
-      if (!_playing) _advance('超时');
+    _playTimeout = Timer(const Duration(seconds: 6), () {
+      final alive =
+          DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
+      if (!_playing && !alive) _advance('超时');
     });
   }
 
-  // ================= 调试弹窗 =================
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -290,7 +286,6 @@ class LivePlayController extends GetxController {
     );
   }
 
-  // ================= 交互 =================
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -322,7 +317,6 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
-  // ================= 播放器组件 =================
   Widget videoWidget() {
     return GestureDetector(
       onTap: _showUrlDialog,
