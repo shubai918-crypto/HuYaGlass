@@ -74,58 +74,34 @@ class HuyaStreamResolver {
   }
 
   // ================= 移动端网页兜底 =================
-  Future<HuyaStreamResult?> _resolveByWeb(String roomId) async {
-    try {
-      final res = await http.get(
-        Uri.parse('https://m.huya.com/$roomId'),
-        headers: {'User-Agent': _ua, 'Referer': 'https://m.huya.com/'},
-      );
-      if (res.statusCode != 200) return null;
-      final m = RegExp(
-        r'window\.HNF_GLOBAL_INIT\s*=\s*(\{.*?\})\s*</script>',
-        dotAll: true,
-      ).firstMatch(res.body);
-      if (m == null) return null;
-      final json = jsonDecode(m.group(1)!) as Map<String, dynamic>;
+  Future<HuyaStreamResult?> resolveStream(String roomId) async {
+    final api = await _resolveByApi(roomId);
+    final web = await _resolveByWeb(roomId);
 
-      final roomInfo = json['roomInfo'] as Map<String, dynamic>?;
-      if (roomInfo == null) return null;
-      final profile = (roomInfo['tProfileInfo'] as Map<String, dynamic>?) ?? {};
-      final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
-      final streamRoot = json['stream'] as Map<String, dynamic>?;
-      final streamData = streamRoot?['data'] as Map<String, dynamic>?;
+    if (api == null) return web;
+    if (web == null) return api;
 
-      final baseList = (streamRoot?['baseSteamInfoList'] as List<dynamic>?) ??
-          (streamRoot?['gameStreamInfoList'] as List<dynamic>?) ??
-          (streamData?['baseSteamInfoList'] as List<dynamic>?) ??
-          (streamData?['gameStreamInfoList'] as List<dynamic>?) ??
-          [];
-      final multi = (streamRoot?['vMultiStreamInfo'] as List<dynamic>?) ??
-          (streamData?['vMultiStreamInfo'] as List<dynamic>?) ??
-          [];
-
-      final qualities = <StreamQuality>[];
-      if (baseList.isNotEmpty) {
-        qualities.addAll(_buildQualities(baseList[0] as Map<String, dynamic>, multi));
-      }
-
-      return HuyaStreamResult(
-        roomId: roomId,
-        presenterUid: _i(profile['lUid']),
-        streamerInfo: StreamerInfo(
-          uid: _i(profile['lUid']),
-          nickname: _s(profile['sNick']),
-          avatar: _s(profile['sAvatar180']),
-          fansCount: _i(profile['lFansCount'] ?? profile['iFansCount']),
-          isLive: _i(liveInfo['eLiveStatus']) == 2,
-        ),
-        title: _s(liveInfo['sIntroduction']),
-        isLive: _i(liveInfo['eLiveStatus']) == 2,
-        qualities: qualities,
-      );
-    } catch (_) {
-      return null;
-    }
+    // 合并：线路优先用 API 的，主播信息用网页补全
+    return HuyaStreamResult(
+      roomId: roomId,
+      presenterUid: api.presenterUid != 0 ? api.presenterUid : web.presenterUid,
+      streamerInfo: StreamerInfo(
+        uid: api.presenterUid != 0 ? api.presenterUid : web.presenterUid,
+        nickname: api.streamerInfo.nickname.isNotEmpty
+            ? api.streamerInfo.nickname
+            : web.streamerInfo.nickname,
+        avatar: api.streamerInfo.avatar.isNotEmpty
+            ? api.streamerInfo.avatar
+            : web.streamerInfo.avatar,
+        fansCount: api.streamerInfo.fansCount > 0
+            ? api.streamerInfo.fansCount
+            : web.streamerInfo.fansCount,
+        isLive: api.isLive || web.isLive,
+      ),
+      title: api.title.isNotEmpty ? api.title : web.title,
+      isLive: api.isLive || web.isLive,
+      qualities: api.qualities.isNotEmpty ? api.qualities : web.qualities,
+    );
   }
 
   // ================= 组装多线路 =================
