@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -25,17 +26,25 @@ class LivePlayController extends GetxController {
   Stream<DanmakuMessage>? danmakuStream;
 
   final Player player = Player();
-  late final VideoController videoController = VideoController(player);
+  late final VideoController videoController = VideoController(
+    player,
+    configuration: const VideoControllerConfiguration(
+      androidAttachSurfaceAfterVideoParameters: false,
+    ),
+  );
 
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
   int _candidateIndex = 0;
   int _candidateTotal = 0;
+  int _reconnectCount = 0;
   bool _playing = false;
   int _vw = 0;
   int _vh = 0;
+  DateTime _lastReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _playTimeout;
+  Timer? _stallTimer;
 
   HuyaDanmakuClient? _danmakuClient;
   final inputController = TextEditingController();
@@ -50,6 +59,8 @@ class LivePlayController extends GetxController {
   }
 
   void _setupPlayer() {
+    _tunePlayer();
+
     player.stream.playing.listen((p) {
       if (p) {
         _playing = true;
@@ -65,16 +76,60 @@ class LivePlayController extends GetxController {
       _vh = h ?? 0;
       _updateDebug();
     });
+    // 关键1：出错立即重连（不再因为 _playing 而忽略）
     player.stream.error.listen((err) {
       _lastError = '$err';
       debugPrint('PLAYER ERROR: $err');
-      _tryNext('出错');
+      _reconnect('出错');
     });
+    // 关键2：卡顿 watchdog —— 直播中持续缓冲超过10秒就重连
+    player.stream.buffering.listen((b) {
+      if (b) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer(const Duration(seconds: 10), () {
+          if (_playing) _reconnect('卡顿');
+        });
+      } else {
+        _stallTimer?.cancel();
+      }
+    });
+    // 关键3：流意外结束也重连
+    player.stream.completed.listen((c) {
+      if (c) _reconnect('结束');
+    });
+  }
+
+  /// 底层 mpv 调优：让 ffmpeg 自己自动重连
+  Future<void> _tunePlayer() async {
+    try {
+      final native = player.platform as dynamic;
+      await native.setProperty('stream-lavf-options',
+          'reconnect=1,reconnect_streamed=1,reconnect_delay_max=3');
+    } catch (_) {}
+    try {
+      final native = player.platform as dynamic;
+      await native.setProperty('demuxer-readahead-secs', '2');
+    } catch (_) {}
+  }
+
+  /// 断线重连：优先重试当前地址，失败再轮换线路
+  void _reconnect(String reason) {
+    final now = DateTime.now();
+    if (now.difference(_lastReconnectAt).inMilliseconds < 1500) return;
+    _lastReconnectAt = now;
+    _playing = false;
+    _reconnectCount++;
+    if (_currentUrl.isNotEmpty && !_candidates.contains(_currentUrl)) {
+      _candidates.insert(0, _currentUrl);
+      _candidateTotal = _candidates.length;
+      _candidateIndex = max(0, _candidateIndex - 1);
+    }
+    _tryNext(reason);
   }
 
   void _updateDebug() {
     debugInfo.value =
-        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh (点我复制地址)';
+        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
   Future<void> _loadStream() async {
@@ -143,12 +198,12 @@ class LivePlayController extends GetxController {
     });
   }
 
-  /// 点按视频区域：弹出当前地址，可复制去浏览器验证
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('当前播放地址', style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text('当前播放地址',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,7 +214,7 @@ class LivePlayController extends GetxController {
             ),
             const SizedBox(height: 8),
             Text(
-              '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh\n错误:$_lastError',
+              '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n错误:$_lastError',
               style: const TextStyle(color: Colors.white38, fontSize: 11),
             ),
           ],
@@ -169,9 +224,10 @@ class LivePlayController extends GetxController {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: _currentUrl));
               Get.back();
-              Get.snackbar('已复制', '把地址粘贴到浏览器打开，看显示什么');
+              Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
             },
-            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
+            child: const Text('复制地址',
+                style: TextStyle(color: Color(0xFF00D2FF))),
           ),
           TextButton(
             onPressed: () => Get.back(),
@@ -239,6 +295,7 @@ class LivePlayController extends GetxController {
   @override
   void onClose() {
     _playTimeout?.cancel();
+    _stallTimer?.cancel();
     _danmakuClient?.disconnect();
     player.dispose();
     inputController.dispose();
