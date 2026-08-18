@@ -198,13 +198,21 @@ class HuyaStreamResolver {
         final hlsSuffix = _s(bm['sHlsUrlSuffix']).isEmpty ? 'm3u8' : _s(bm['sHlsUrlSuffix']);
         final uid = _uidFor(loginUid, streamName);
 
+        void addBoth(String url) {
+          // https 优先，http 兜底
+          if (url.startsWith('http://')) {
+            candidates.add(url.replaceFirst('http://', 'https://'));
+          }
+          candidates.add(url);
+        }
+
         if (sFlvUrl.isNotEmpty) {
           final anti = processAnticode(_s(bm['sFlvAntiCode']), streamName, uid);
-          candidates.add('$sFlvUrl/$streamName.$flvSuffix?$anti&codec=264$ratio');
+          addBoth('$sFlvUrl/$streamName.$flvSuffix?$anti&codec=264$ratio');
         }
         if (sHlsUrl.isNotEmpty) {
           final anti = processAnticode(_s(bm['sHlsAntiCode']), streamName, uid);
-          candidates.add('$sHlsUrl/$streamName.$hlsSuffix?$anti$ratio');
+          addBoth('$sHlsUrl/$streamName.$hlsSuffix?$anti$ratio');
         }
       }
 
