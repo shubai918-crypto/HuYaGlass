@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:video_player/video_player.dart';
 
+/// 播放内核：video_player（Android 底层 = Media3 ExoPlayer，与 dtv_mobile 同款）
 class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
@@ -21,17 +20,12 @@ class LivePlayController extends GetxController {
   final danmakuFontSize = 14.0.obs;
   final currentQuality = ''.obs;
   final debugInfo = ''.obs;
+  final playerVersion = 0.obs;
 
   final qualities = <StreamQuality>[].obs;
   Stream<DanmakuMessage>? danmakuStream;
 
-  final Player player = Player();
-  late final VideoController videoController = VideoController(
-    player,
-    configuration: const VideoControllerConfiguration(
-      androidAttachSurfaceAfterVideoParameters: false,
-    ),
-  );
+  VideoPlayerController? _controller;
 
   final List<String> _candidates = [];
   String _currentUrl = '';
@@ -40,14 +34,13 @@ class LivePlayController extends GetxController {
   int _candidateTotal = 0;
   int _reconnectCount = 0;
   int _refreshCount = 0;
-  bool _playing = false;
+  int _stallCount = 0;
   int _vw = 0;
   int _vh = 0;
+  bool _playing = false;
+  Duration _lastPos = Duration.zero;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime _lastAliveAt = DateTime.fromMillisecondsSinceEpoch(0);
-  Timer? _playTimeout;
   Timer? _stallTimer;
-  Timer? _recoverTimer;
 
   HuyaDanmakuClient? _danmakuClient;
   final inputController = TextEditingController();
@@ -57,92 +50,25 @@ class LivePlayController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _setupPlayer();
+    // 卡顿 watchdog：每3秒检查进度，连续3次不动就换线路
+    _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _loadStream();
   }
 
-  void _setupPlayer() {
-    _tunePlayer();
-
-    player.stream.position.listen((pos) {
-      if (pos > Duration.zero) {
-        _lastAliveAt = DateTime.now();
+  void _checkStall(Timer t) {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || !_playing) return;
+    final pos = c.value.position;
+    if (pos == _lastPos) {
+      _stallCount++;
+      if (_stallCount >= 3) {
+        _stallCount = 0;
+        _advance('卡顿');
       }
-    });
-    player.stream.playing.listen((p) {
-      if (p) {
-        _playing = true;
-        _playTimeout?.cancel();
-        _lastError = '';
-        _updateDebug();
-      } else {
-        _playing = false;
-      }
-    });
-    player.stream.width.listen((w) {
-      _vw = w ?? 0;
-      _updateDebug();
-    });
-    player.stream.height.listen((h) {
-      _vh = h ?? 0;
-      _updateDebug();
-    });
-
-    player.stream.error.listen((err) {
-      _lastError = '$err';
-      debugPrint('PLAYER ERROR: $err');
-      
-      // 遇到 codec 错误（如 HEVC 硬解失败）自动切软解
-      if ('$err'.toLowerCase().contains('codec')) {
-        try {
-          (player.platform as dynamic).setProperty('hwdec', 'no');
-        } catch (_) {}
-      }
-
-      final alive = DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 4);
-      if (alive) {
-        _scheduleRecoverCheck();
-      } else {
-        _advance('出错');
-      }
-    });
-
-    player.stream.buffering.listen((b) {
-      if (b) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer(const Duration(seconds: 15), () {
-          if (_playing) _retryCurrent('卡顿');
-        });
-      } else {
-        _stallTimer?.cancel();
-      }
-    });
-  }
-
-  void _scheduleRecoverCheck() {
-    _recoverTimer ??= Timer(const Duration(seconds: 6), () {
-      _recoverTimer = null;
-      final alive = DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
-      if (!alive && !_playing) _advance('未恢复');
-    });
-  }
-
-  Future<void> _tunePlayer() async {
-    try {
-      final native = player.platform as dynamic;
-      await native.setProperty(
-          'stream-lavf-options',
-          'reconnect=1,reconnect_streamed=1,reconnect_delay_max=2,'
-              'reconnect_at_eof=1,reconnect_on_network_error=1');
-    } catch (_) {}
-    try {
-      final native = player.platform as dynamic;
-      await native.setProperty('network-timeout', '5');
-    } catch (_) {}
-    try {
-      final native = player.platform as dynamic;
-      await native.setProperty('demuxer-max-bytes', '32MiB');
-    } catch (_) {}
+    } else {
+      _stallCount = 0;
+    }
+    _lastPos = pos;
   }
 
   bool _throttled() {
@@ -156,18 +82,6 @@ class LivePlayController extends GetxController {
     if (_throttled()) return;
     _playing = false;
     _reconnectCount++;
-    _tryNext(reason);
-  }
-
-  void _retryCurrent(String reason) {
-    if (_throttled()) return;
-    _playing = false;
-    _reconnectCount++;
-    if (_currentUrl.isNotEmpty && !_candidates.contains(_currentUrl)) {
-      _candidates.insert(0, _currentUrl);
-      _candidateTotal = _candidates.length;
-      _candidateIndex = max(0, _candidateIndex - 1);
-    }
     _tryNext(reason);
   }
 
@@ -226,7 +140,6 @@ class LivePlayController extends GetxController {
   }
 
   void _tryNext(String reason) {
-    _playTimeout?.cancel();
     if (_playing) return;
     if (_candidates.isEmpty) {
       if (_refreshCount < 3) {
@@ -241,20 +154,55 @@ class LivePlayController extends GetxController {
     _candidateIndex++;
     final url = _candidates.removeAt(0);
     _currentUrl = url;
-    _lastAliveAt = DateTime.fromMillisecondsSinceEpoch(0);
     debugInfo.value = '[$reason] 尝试 $_candidateIndex/$_candidateTotal …';
-    player.open(Media(url), play: true);
-    _playTimeout = Timer(const Duration(seconds: 6), () {
-      final alive = DateTime.now().difference(_lastAliveAt) < const Duration(seconds: 6);
-      if (!_playing && !alive) _advance('超时');
+    _openUrl(url);
+  }
+
+  /// 用 ExoPlayer 打开线路（带浏览器头，dtv 同款）
+  Future<void> _openUrl(String url) async {
+    final old = _controller;
+    _controller = null;
+    final c = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: const {
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Referer': 'https://www.huya.com/',
+      },
+    );
+    c.addListener(() {
+      if (c.value.hasError) {
+        _lastError = c.value.errorDescription ?? '播放器错误';
+        debugPrint('PLAYER ERROR: $_lastError');
+        _advance('出错');
+      }
     });
+    try {
+      await c.initialize().timeout(const Duration(seconds: 8));
+      await old?.dispose();
+      _controller = c;
+      await c.play();
+      _playing = true;
+      _stallCount = 0;
+      _lastPos = Duration.zero;
+      _vw = c.value.size.width.toInt();
+      _vh = c.value.size.height.toInt();
+      _lastError = '';
+      playerVersion.value++;
+      _updateDebug();
+    } catch (e) {
+      _lastError = '$e';
+      await c.dispose();
+      _advance('打开失败');
+    }
   }
 
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('当前播放地址', style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text('当前播放地址',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,7 +225,8 @@ class LivePlayController extends GetxController {
               Get.back();
               Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
             },
-            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
+            child: const Text('复制地址',
+                style: TextStyle(color: Color(0xFF00D2FF))),
           ),
           TextButton(
             onPressed: () => Get.back(),
@@ -320,36 +269,41 @@ class LivePlayController extends GetxController {
   }
 
   Widget videoWidget() {
-    return GestureDetector(
-      onTap: _showUrlDialog,
-      child: Stack(
-        children: [
-          Video(
-            controller: videoController,
-            fit: BoxFit.contain,
-            controls: (state) => const SizedBox.shrink(),
-          ),
-          Positioned(
-            left: 8,
-            bottom: 130,
-            right: 8,
-            child: Obx(() => Text(
-                  debugInfo.value,
-                  style: const TextStyle(color: Colors.white38, fontSize: 10),
-                )),
-          ),
-        ],
-      ),
-    );
+    return Obx(() {
+      // 依赖 playerVersion，换线路后自动重建画面
+      playerVersion.value;
+      final c = _controller;
+      return GestureDetector(
+        onTap: _showUrlDialog,
+        child: Stack(
+          children: [
+            if (c != null && c.value.isInitialized)
+              Center(
+                child: AspectRatio(
+                  aspectRatio: c.value.aspectRatio,
+                  child: VideoPlayer(c),
+                ),
+              ),
+            Positioned(
+              left: 8,
+              bottom: 130,
+              right: 8,
+              child: Text(
+                debugInfo.value,
+                style: const TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   @override
   void onClose() {
-    _playTimeout?.cancel();
     _stallTimer?.cancel();
-    _recoverTimer?.cancel();
     _danmakuClient?.disconnect();
-    player.dispose();
+    _controller?.dispose();
     inputController.dispose();
     super.onClose();
   }
