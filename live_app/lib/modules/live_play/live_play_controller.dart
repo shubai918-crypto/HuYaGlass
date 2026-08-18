@@ -46,11 +46,6 @@ class LivePlayController extends GetxController {
   }
 
   void _setupPlayer() {
-    // 关键：强制软件解码，避免硬解黑屏
-    try {
-      player.setProperty('hwdec', 'no');
-    } catch (_) {}
-
     player.stream.playing.listen((p) {
       if (p) {
         _playing = true;
@@ -59,11 +54,11 @@ class LivePlayController extends GetxController {
       }
     });
     player.stream.width.listen((w) {
-      _vw = w;
+      _vw = w ?? 0; // ✅ 修复：处理 null
       _updateDebug();
     });
     player.stream.height.listen((h) {
-      _vh = h;
+      _vh = h ?? 0; // ✅ 修复：处理 null
       _updateDebug();
     });
     player.stream.error.listen((err) {
