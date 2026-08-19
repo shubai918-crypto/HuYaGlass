@@ -530,7 +530,8 @@ class LivePlayController extends GetxController {
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
-    SystemChrome.setPreferredOrientations([Orientation.portraitUp]);
+    // 恢复竖屏（已修正为 DeviceOrientation）
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.onClose();
   }
