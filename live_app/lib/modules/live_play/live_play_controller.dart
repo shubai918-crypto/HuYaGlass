@@ -87,36 +87,6 @@ class LivePlayController extends GetxController {
     _tryNext(reason);
   }
 
-  /// 播放器错误分流：解码能力超限 → 自动降清晰度；其他 → 换线路
-  void _handlePlayerError() {
-    final d = _lastError.toLowerCase();
-    if (d.contains('exceeds_capabilities') ||
-        d.contains('mediacodec') ||
-        d.contains('decoder')) {
-      _downgradeQuality();
-    } else {
-      _advance('出错');
-    }
-  }
-
-  /// 自动降一档清晰度（30M→20M→8M→…），到底后换线路
-  void _downgradeQuality() {
-    final qs = qualities.toList();
-    final idx = qs.indexWhere((e) => e.name == currentQuality.value);
-    if (idx >= 0 && idx + 1 < qs.length) {
-      final next = qs[idx + 1];
-      debugPrint('DOWNGRADE: ${currentQuality.value} -> ${next.name}');
-      Get.snackbar('提示', '当前清晰度超出解码能力，已自动切换到 ${next.name}',
-          snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 2));
-      currentQuality.value = next.name;
-      _playing = false;
-      _playStream(next);
-    } else {
-      _advance('出错');
-    }
-  }
-
   void _updateDebug() {
     debugInfo.value =
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
@@ -140,11 +110,7 @@ class LivePlayController extends GetxController {
         final keep = currentQuality.value;
         final q = qualities.firstWhere(
           (e) => e.name == keep && keep.isNotEmpty,
-          // 默认 ≤8M：避免 2K 超解码能力；想看清可手动点高画质（失败会自动降回）
-          orElse: () => qualities.firstWhere(
-            (e) => e.bitrate > 0 && e.bitrate <= 8000,
-            orElse: () => qualities.first,
-          ),
+          orElse: () => qualities.first,
         );
         currentQuality.value = q.name;
         _playStream(q);
@@ -206,7 +172,7 @@ class LivePlayController extends GetxController {
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
         debugPrint('PLAYER ERROR: $_lastError');
-        _handlePlayerError();
+        _advance('出错');
       }
     });
     try {
@@ -224,7 +190,7 @@ class LivePlayController extends GetxController {
     } catch (e) {
       _lastError = '$e';
       await c.dispose();
-      _handlePlayerError();
+      _advance('打开失败');
     }
   }
 
