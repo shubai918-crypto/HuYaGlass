@@ -39,6 +39,7 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
+  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -73,8 +74,11 @@ class LivePlayPage extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '粉丝 ${_formatCount(controller.fansCount.value)}',
-                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                  '粉丝 ${_formatCount(controller.fansCount.value)} · 热度 ${_formatCount(controller.heatCount.value)}',
+                  style: TextStyle(
+                      color: Colors.white.withOpacity(0.6), fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -86,12 +90,14 @@ class LivePlayPage extends StatelessWidget {
             onTap: () => controller.toggleFollow(),
           ),
           const SizedBox(width: 8),
-          LiquidGlassIconButton(icon: Icons.close, size: 36, onTap: () => Get.back()),
+          LiquidGlassIconButton(
+              icon: Icons.close, size: 36, onTap: () => Get.back()),
         ],
       ),
     );
   }
 
+  // ================= 视频区 + 滚动弹幕 =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -116,6 +122,7 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
+  // ================= 底部：画质 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -167,7 +174,8 @@ class LivePlayPage extends StatelessWidget {
                 icon: Icons.send_rounded,
                 size: 42,
                 color: const Color(0xFF00D2FF),
-                onTap: () => controller.sendDanmaku(controller.inputController.text),
+                onTap: () =>
+                    controller.sendDanmaku(controller.inputController.text),
               ),
             ],
           ),
