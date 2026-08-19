@@ -13,9 +13,8 @@ class DanmakuMessage {
 }
 
 /// 虎牙弹幕客户端
-/// 关键：服务器对注册包格式非常挑剔，这里用「多变体探测」——
-/// cmd(0/1) × UA(webh5/lanmu) 四种组合依次尝试，收到任意回包即锁定；
-/// 心跳带 tid/sid/pid（pure_live v2.0.26 同款 OnUserHeartBeat 思路）。
+/// 多变体注册探测：cmd(0/1) × UA(webh5/lanmu)，收到任意回包即锁定；
+/// 心跳带 tid/sid/pid；状态实时回报参数便于诊断。
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -129,7 +128,6 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，注册中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // 发出第一个注册变体，并启动探测调度
     _sendRegisterVariant();
     _probeTimer?.cancel();
     _probeTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
@@ -139,17 +137,17 @@ class HuyaDanmakuClient {
       }
       if (_probeStep < _variants.length - 1) {
         _probeStep++;
-        onStatus?.call('弹幕注册尝试 ${_probeStep + 1}/${_variants.length}…');
+        onStatus?.call('注册尝试${_probeStep + 1}/${_variants.length} ts=$_topSid ss=$_subSid uid=$_uid');
         _sendRegisterVariant();
+      } else {
+        onStatus?.call('注册无响应 ts=$_topSid ss=$_subSid uid=$_uid');
       }
     });
 
-    // 心跳：带 tid/sid/pid
     _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       _send(_buildHeartbeat());
     });
-    // 空闲重发注册（dtv 同款）
     _idleTimer?.cancel();
     _idleTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       _sendRegisterVariant();
