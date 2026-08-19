@@ -13,10 +13,9 @@ class DanmakuMessage {
 }
 
 /// 虎牙弹幕客户端
-/// - 节点：wsapi.huya.com（新网页协议）→ cdnws.api.huya.com 自动切换
-/// - 注册：同时注册 live://tid、chat:sid、live:uid、chat:uid 四种房间组（新旧协议兼容）
-/// - 双 UA 注册：webh5 + huya_lanmu_web
-/// - 递归解析单条/批量推送
+/// 关键：服务器对注册包格式非常挑剔，这里用「多变体探测」——
+/// cmd(0/1) × UA(webh5/lanmu) 四种组合依次尝试，收到任意回包即锁定；
+/// 心跳带 tid/sid/pid（pure_live v2.0.26 同款 OnUserHeartBeat 思路）。
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -26,13 +25,23 @@ class HuyaDanmakuClient {
     'wss://cdnws.api.huya.com/',
   ];
 
+  /// 注册包变体：[iCmdType, sUA]
+  static const _variants = [
+    [0, 'webh5&0.1.0&websocket'],
+    [1, 'webh5&0.1.0&websocket'],
+    [0, 'huya_lanmu_web_2101'],
+    [1, 'huya_lanmu_web_2101'],
+  ];
+
   WebSocket? _ws;
   Timer? _heartTimer;
+  Timer? _probeTimer;
   Timer? _idleTimer;
-  Timer? _secondRegTimer;
   Timer? _reconnectTimer;
   bool _closed = false;
+  bool _gotFrame = false;
   int _recvCount = 0;
+  int _probeStep = 0;
   int _topSid = 0;
   int _subSid = 0;
   int _ayyuid = 0;
@@ -79,6 +88,8 @@ class HuyaDanmakuClient {
   Future<void> connect({required int topSid, required int subSid, int uid = 0}) async {
     _closed = false;
     _recvCount = 0;
+    _gotFrame = false;
+    _probeStep = 0;
     _topSid = topSid;
     _subSid = subSid;
     _ayyuid = uid;
@@ -88,7 +99,7 @@ class HuyaDanmakuClient {
       realUid = 1400000000000 + (DateTime.now().millisecondsSinceEpoch % 10000000000);
     }
     _uid = realUid;
-    print('DANMAKU connect topSid=$topSid subSid=$subSid ayyuid=$uid anon=$_uid');
+    print('DANMAKU connect topSid=$topSid subSid=$subSid ayyuid=$uid anon=$realUid');
 
     onStatus?.call('弹幕连接中…');
     WebSocket? ws;
@@ -115,25 +126,40 @@ class HuyaDanmakuClient {
       return;
     }
     _ws = ws;
-    onStatus?.call('弹幕已连接，等待消息…');
+    onStatus?.call('弹幕已连接，注册中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // 第一次注册：webh5 UA
-    _send(_buildRegister('webh5&0.1.0&websocket'));
-    // 1 秒后再用 lanmu UA 注册一次（双保险）
-    _secondRegTimer?.cancel();
-    _secondRegTimer = Timer(const Duration(seconds: 1), () {
-      _send(_buildRegister('huya_lanmu_web_2101'));
+    // 发出第一个注册变体，并启动探测调度
+    _sendRegisterVariant();
+    _probeTimer?.cancel();
+    _probeTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (_gotFrame) {
+        _probeTimer?.cancel();
+        return;
+      }
+      if (_probeStep < _variants.length - 1) {
+        _probeStep++;
+        onStatus?.call('弹幕注册尝试 ${_probeStep + 1}/${_variants.length}…');
+        _sendRegisterVariant();
+      }
     });
 
+    // 心跳：带 tid/sid/pid
     _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      _send(_buildHeartbeat());
+      _sendHeartbeat();
     });
+    // 空闲重发注册（dtv 同款）
     _idleTimer?.cancel();
     _idleTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      _send(_buildRegister('webh5&0.1.0&websocket'));
+      _sendRegisterVariant();
+      _sendHeartbeat();
     });
+  }
+
+  void _sendRegisterVariant() {
+    final v = _variants[_probeStep.clamp(0, _variants.length - 1)];
+    _send(_buildRegister(v[0] as int, v[1] as String));
   }
 
   void _scheduleReconnect() {
@@ -150,7 +176,7 @@ class HuyaDanmakuClient {
   void _onDone() {
     _heartTimer?.cancel();
     _idleTimer?.cancel();
-    _secondRegTimer?.cancel();
+    _probeTimer?.cancel();
     if (_closed) return;
     onStatus?.call('弹幕断线，准备重连…');
     _scheduleReconnect();
@@ -168,7 +194,7 @@ class HuyaDanmakuClient {
     _closed = true;
     _heartTimer?.cancel();
     _idleTimer?.cancel();
-    _secondRegTimer?.cancel();
+    _probeTimer?.cancel();
     _reconnectTimer?.cancel();
     try {
       _ws?.close();
@@ -180,6 +206,7 @@ class HuyaDanmakuClient {
   void _onData(dynamic data) {
     try {
       _recvCount++;
+      _gotFrame = true;
       onStatus?.call('弹幕已连接，收包$_recvCount');
       final bytes = Uint8List.fromList((data as List).cast<int>());
       final r = _TarsReader(bytes);
@@ -205,7 +232,6 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// 递归扫描单条/批量推送结构
   void _scan(Object? node, List<DanmakuMessage> out) {
     if (node is Map<int, Object?>) {
       final c = node[3];
@@ -226,8 +252,7 @@ class HuyaDanmakuClient {
   }
 
   // ================= 发包 =================
-  /// 注册包：四种房间组格式全注册（新旧协议兼容）
-  Uint8List _buildRegister(String sUA) {
+  Uint8List _buildRegister(int cmdType, String sUA) {
     final groups = <String>{};
     if (_topSid > 0) groups.add('live://$_topSid');
     if (_subSid > 0) groups.add('chat:$_subSid');
@@ -247,15 +272,20 @@ class HuyaDanmakuClient {
     payload.writeString(2, sUA);
 
     final cmd = _TarsWriter();
-    cmd.writeInt(0, 0); // C2S_RegisterGroupReq
+    cmd.writeInt(0, cmdType);
     cmd.writeStruct(1, payload);
     return cmd.toBytes();
   }
 
+  /// 心跳：HuyaHeartBeatData { lTid, lSid, lPid }
   Uint8List _buildHeartbeat() {
+    final beat = _TarsWriter();
+    beat.writeInt(0, _topSid);
+    beat.writeInt(1, _subSid);
+    beat.writeInt(2, _uid);
     final cmd = _TarsWriter();
     cmd.writeInt(0, 2); // C2S_HeartBeatReq
-    cmd.writeStruct(1, _TarsWriter());
+    cmd.writeStruct(1, beat);
     return cmd.toBytes();
   }
 
