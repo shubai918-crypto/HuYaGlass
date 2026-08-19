@@ -274,11 +274,11 @@ class LivePlayController extends GetxController {
     isFullscreen.value = !isFullscreen.value;
     if (isFullscreen.value) {
       SystemChrome.setPreferredOrientations(
-          [Orientation.landscapeLeft, Orientation.landscapeRight]);
+          [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
       isLocked.value = false;
-      SystemChrome.setPreferredOrientations([Orientation.portraitUp]);
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     showControls.value = true;
