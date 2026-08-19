@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// 弹幕消息
 class DanmakuMessage {
   final String nickname;
   final String content;
@@ -11,13 +10,12 @@ class DanmakuMessage {
   DanmakuMessage({required this.nickname, required this.content, this.fontColor = 0xFFFFFFFF});
 }
 
-/// 虎牙弹幕客户端 —— 逐行对齐 pure_live/core/danmaku/huya_danmaku.dart
-/// 注册 cmd=16，心跳 cmd=20，注册 payload 为 ['live:$uid', 'chat:$uid']
+/// 虎牙弹幕客户端（对齐 pure_live：cmd16 注册 / cmd20 心跳 / wsapi 节点）
+/// 增强：双格式注册 + 收包 type/uri 诊断
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
-  // pure_live 同款节点
   static const _endpoints = [
     'wss://wsapi.huya.com',
     'wss://cdnws.api.huya.com',
@@ -25,10 +23,15 @@ class HuyaDanmakuClient {
 
   WebSocket? _ws;
   Timer? _heartTimer;
+  Timer? _secondRegTimer;
   Timer? _reconnectTimer;
   bool _closed = false;
   int _recvCount = 0;
+  int _lastType = -1;
+  int _lastUri = -1;
   int _endpointIndex = 0;
+  int _topSid = 0;
+  int _subSid = 0;
   int _ayyuid = 0;
 
   void Function(String)? onStatus;
@@ -41,9 +44,12 @@ class HuyaDanmakuClient {
   Future<void> connect({required int topSid, required int subSid, int uid = 0}) async {
     _closed = false;
     _recvCount = 0;
-    // pure_live: uid 就是主播的 yyid
+    _lastType = -1;
+    _lastUri = -1;
+    _topSid = topSid;
+    _subSid = subSid;
     _ayyuid = uid > 0 ? uid : topSid;
-    print('DANMAKU connect ayyuid=$_ayyuid');
+    print('DANMAKU connect ayyuid=$_ayyuid topSid=$_topSid subSid=$_subSid');
 
     onStatus?.call('弹幕连接中…');
     WebSocket? ws;
@@ -53,13 +59,9 @@ class HuyaDanmakuClient {
       try {
         ws = await WebSocket.connect(
           ep,
-          headers: {
-            'Origin': 'https://www.huya.com',
-            'User-Agent': _ua,
-          },
+          headers: {'Origin': 'https://www.huya.com', 'User-Agent': _ua},
         ).timeout(const Duration(seconds: 6));
         _endpointIndex = (_endpointIndex + i) % _endpoints.length;
-        print('DANMAKU connected: $ep');
         break;
       } catch (e) {
         print('DANMAKU endpoint failed: $ep -> $e');
@@ -74,23 +76,27 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，注册中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // pure_live: 连接后立即发注册，然后定时心跳
-    _sendRegister();
+    // 注册格式1（pure_live 同款）
+    _sendRegister(['live:$_ayyuid', 'chat:$_ayyuid']);
+    // 1秒后补发注册格式2（旧版 live://topSid / chat:subSid）
+    _secondRegTimer?.cancel();
+    _secondRegTimer = Timer(const Duration(seconds: 1), () {
+      _sendRegister(['live://$_topSid', 'chat:$_subSid']);
+    });
+
     _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       _sendHeartbeat();
     });
   }
 
-  // ================= pure_live 同款 payload =================
-  void _sendRegister() {
+  void _sendRegister(List<String> groups) {
     try {
       final group = _TarsWriter();
-      group.writeStringList(0, ['live:$_ayyuid', 'chat:$_ayyuid']);
+      group.writeStringList(0, groups);
       group.writeString(1, '');
-
       final command = _TarsWriter();
-      command.writeInt(0, 16); // EWSCmdC2S_RegisterGroupReq
+      command.writeInt(0, 16);
       command.writeBytes(1, group.toBytes());
       _send(command.toBytes());
     } catch (e) {
@@ -101,12 +107,10 @@ class HuyaDanmakuClient {
   void _sendHeartbeat() {
     try {
       final command = _TarsWriter();
-      command.writeInt(0, 20); // EWSCmdC2S_HeartBeatReq
+      command.writeInt(0, 20);
       command.writeBytes(1, []);
       _send(command.toBytes());
-    } catch (e) {
-      print('DANMAKU heartbeat error: $e');
-    }
+    } catch (_) {}
   }
 
   void _scheduleReconnect() {
@@ -115,14 +119,14 @@ class HuyaDanmakuClient {
     _reconnectTimer = Timer(const Duration(seconds: 5), () {
       if (!_closed) {
         _endpointIndex = (_endpointIndex + 1) % _endpoints.length;
-        onStatus?.call('弹幕断线重连…');
-        connect(topSid: _ayyuid, subSid: _ayyuid, uid: _ayyuid);
+        connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid);
       }
     });
   }
 
   void _onDone() {
     _heartTimer?.cancel();
+    _secondRegTimer?.cancel();
     if (_closed) return;
     onStatus?.call('弹幕断线，准备重连…');
     _scheduleReconnect();
@@ -130,15 +134,14 @@ class HuyaDanmakuClient {
 
   void _send(List<int> data) {
     try {
-      if (_ws != null && _ws!.readyState == WebSocket.open) {
-        _ws!.add(data);
-      }
+      if (_ws != null && _ws!.readyState == WebSocket.open) _ws!.add(data);
     } catch (_) {}
   }
 
   void disconnect() {
     _closed = true;
     _heartTimer?.cancel();
+    _secondRegTimer?.cancel();
     _reconnectTimer?.cancel();
     try {
       _ws?.close();
@@ -146,73 +149,90 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  // ================= 收包（pure_live 同款解析） =================
+  // ================= 收包（带诊断） =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
-      onStatus?.call('弹幕已连接，收包$_recvCount');
       final bytes = Uint8List.fromList((data as List).cast<int>());
       final reader = _TarsReader(bytes);
       final fields = reader.readFields();
-      
-      final type = fields[0];
-      if (type == 7) {
+      final type = fields[0] is int ? fields[0] as int : -1;
+      _lastType = type;
+
+      if (type == 7 || type == 22) {
         final payloadBytes = fields[1];
         if (payloadBytes is List) {
-          final pushReader = _TarsReader(Uint8List.fromList(payloadBytes.map((e) => (e as int) & 0xFF).toList()));
-          final pushFields = pushReader.readFields();
-          final uri = pushFields[1] as int? ?? 0;
-          final msg = pushFields[2];
-          if (msg is List) {
-            _decodePush(uri, msg.map((e) => (e as int) & 0xFF).toList());
-          }
-        }
-      } else if (type == 22) {
-        final payloadBytes = fields[1];
-        if (payloadBytes is List) {
-          final pushReader = _TarsReader(Uint8List.fromList(payloadBytes.map((e) => (e as int) & 0xFF).toList()));
-          final pushFields = pushReader.readFields();
-          final items = pushFields[1];
-          if (items is List) {
-            for (final item in items) {
-              if (item is Map<int, Object?>) {
-                final uri = item[0] as int? ?? 0;
-                final msg = item[1];
-                if (msg is List) {
-                  _decodePush(uri, msg.map((e) => (e as int) & 0xFF).toList());
+          final pr = _TarsReader(Uint8List.fromList(payloadBytes.map((e) => (e as int) & 0xFF).toList()));
+          final pf = pr.readFields();
+          if (type == 7) {
+            final uri = pf[1] is int ? pf[1] as int : 0;
+            _lastUri = uri;
+            final msg = pf[2];
+            if (msg is List) _decodePush(uri, msg.map((e) => (e as int) & 0xFF).toList());
+          } else {
+            final items = pf[1];
+            if (items is List) {
+              for (final item in items) {
+                if (item is Map<int, Object?>) {
+                  final uri = item[0] is int ? item[0] as int : 0;
+                  _lastUri = uri;
+                  final msg = item[1];
+                  if (msg is List) _decodePush(uri, msg.map((e) => (e as int) & 0xFF).toList());
                 }
               }
             }
           }
         }
       }
+      onStatus?.call('收包$_recvCount type=$_lastType uri=$_lastUri');
     } catch (e) {
       print('DANMAKU decode error: $e');
     }
   }
 
-  /// uri == 1400: MessageNotice (弹幕)
   void _decodePush(int uri, List<int> payload) {
-    if (uri == 1400) {
-      try {
-        final reader = _TarsReader(Uint8List.fromList(payload));
-        final fields = reader.readFields();
+    if (uri != 1400) return;
+    try {
+      final reader = _TarsReader(Uint8List.fromList(payload));
+      final fields = reader.readFields();
+      final msgs = <DanmakuMessage>[];
+      final content = fields[3];
+      if (content is String && content.isNotEmpty) {
         final userInfo = fields[0] as Map<int, Object?>?;
-        final nickName = userInfo?[2] as String? ?? '';
-        final content = fields[3] as String? ?? '';
-        final bulletFormat = fields[6] as Map<int, Object?>?;
-        final fontColor = bulletFormat?[0] as int? ?? 0;
+        final nick = userInfo?[2] as String? ?? '';
+        final bf = fields[6] as Map<int, Object?>?;
+        final color = bf?[0] is int ? bf![0] as int : 0;
+        msgs.add(DanmakuMessage(
+          nickname: nick,
+          content: content,
+          fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
+        ));
+      } else {
+        _scan(fields, msgs);
+      }
+      for (final m in msgs) {
+        _controller.add(m);
+      }
+      if (msgs.isNotEmpty) onStatus?.call('弹幕已接收');
+    } catch (e) {
+      print('DANMAKU parse 1400 error: $e');
+    }
+  }
 
-        if (content.isNotEmpty) {
-          _controller.add(DanmakuMessage(
-            nickname: nickName,
-            content: content,
-            fontColor: fontColor <= 0 ? 0xFFFFFFFF : (fontColor | 0xFF000000),
-          ));
-          onStatus?.call('弹幕已接收');
-        }
-      } catch (e) {
-        print('DANMAKU parse 1400 error: $e');
+  void _scan(Object? node, List<DanmakuMessage> out) {
+    if (node is Map<int, Object?>) {
+      final c = node[3];
+      if (c is String && c.isNotEmpty) {
+        final sender = node[0];
+        final nick = sender is Map<int, Object?> ? '${sender[2] ?? ''}' : '';
+        out.add(DanmakuMessage(nickname: nick, content: c));
+      }
+      for (final v in node.values) {
+        _scan(v, out);
+      }
+    } else if (node is List) {
+      for (final v in node) {
+        _scan(v, out);
       }
     }
   }
@@ -222,7 +242,7 @@ class HuyaDanmakuClient {
   }
 }
 
-// ================= Tars 编码（支持 SIMPLE_LIST 字节流） =================
+// ================= Tars 编码 =================
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
 
@@ -236,7 +256,7 @@ class _TarsWriter {
   }
 
   int _intType(int v) {
-    if (v == 0) return 12; // ZERO_TAG
+    if (v == 0) return 12;
     if (v >= -128 && v <= 127) return 0;
     if (v >= -32768 && v <= 32767) return 1;
     if (v >= -2147483648 && v <= 2147483647) return 2;
@@ -251,7 +271,7 @@ class _TarsWriter {
 
   void _intValue(int v) {
     final t = _intType(v);
-    if (t == 12) return; // ZERO_TAG 不需要值
+    if (t == 12) return;
     _b.addByte(t);
     _add(v, [1, 2, 4, 8][t]);
   }
@@ -259,7 +279,7 @@ class _TarsWriter {
   void writeInt(int tag, int v) {
     final t = _intType(v);
     _head(tag, t);
-    if (t == 12) return; // ZERO_TAG
+    if (t == 12) return;
     _add(v, [1, 2, 4, 8][t]);
   }
 
@@ -276,17 +296,16 @@ class _TarsWriter {
   }
 
   void writeStringList(int tag, List<String> items) {
-    _head(tag, 9); // LIST
+    _head(tag, 9);
     _intValue(items.length);
     for (final s in items) {
       writeString(0, s);
     }
   }
 
-  /// 字节向量 = Tars SIMPLE_LIST (type 13)
   void writeBytes(int tag, List<int> bytes) {
     _head(tag, 13);
-    _head(0, 0); // 内部元素类型 int8，tag 固定 0
+    _head(0, 0);
     _intValue(bytes.length);
     _b.add(bytes);
   }
@@ -301,7 +320,6 @@ class _TarsReader {
   _TarsReader(this._d);
 
   bool get hasMore => _pos < _d.length;
-
   int _byte() => _d[_pos++];
 
   int _readIntN(int n) {
@@ -316,18 +334,12 @@ class _TarsReader {
   int _readValueInt() {
     final t = _byte();
     switch (t) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0; // ZERO_TAG
-      default:
-        throw FormatException('tars: not an int, type=$t');
+      case 0: return _readIntN(1);
+      case 1: return _readIntN(2);
+      case 2: return _readIntN(4);
+      case 3: return _readIntN(8);
+      case 12: return 0;
+      default: throw FormatException('tars: not an int, type=$t');
     }
   }
 
@@ -336,7 +348,7 @@ class _TarsReader {
     while (hasMore) {
       final h = _byte();
       final type = h & 0x0F;
-      if (type == 11) return m; // STRUCT_END
+      if (type == 11) return m;
       var tag = (h >> 4) & 0x0F;
       if (tag == 15) tag = _byte();
       m[tag] = _readValue(type);
@@ -346,16 +358,11 @@ class _TarsReader {
 
   Object? _readValue(int type) {
     switch (type) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
+      case 0: return _readIntN(1);
+      case 1: return _readIntN(2);
+      case 2: return _readIntN(4);
+      case 3: return _readIntN(8);
+      case 12: return 0;
       case 4:
         final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
         _pos += 4;
@@ -374,13 +381,13 @@ class _TarsReader {
         final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
         _pos += n;
         return s;
-      case 13: // SIMPLE_LIST
-        _byte(); // skip inner head (usually 0x00)
+      case 13:
+        _byte();
         final n = _readValueInt();
         final bytes = _d.sublist(_pos, _pos + n);
         _pos += n;
         return bytes;
-      case 9: // LIST
+      case 9:
         final size = _readValueInt();
         final list = <Object?>[];
         for (var i = 0; i < size; i++) {
@@ -390,7 +397,7 @@ class _TarsReader {
           list.add(_readValue(h & 0x0F));
         }
         return list;
-      case 10: // STRUCT
+      case 10:
         return readFields();
       default:
         throw FormatException('tars: unknown type $type');
