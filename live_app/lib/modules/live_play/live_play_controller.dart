@@ -308,10 +308,8 @@ class LivePlayController extends GetxController {
   void _connectDanmaku() {
     _danmakuClient = HuyaDanmakuClient();
     _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
-    final roomNum = int.tryParse(roomId) ?? 0;
-    final ts = _topSid != 0 ? _topSid : (roomNum != 0 ? roomNum : _ayyuid);
-    final ss = _subSid != 0 ? _subSid : ts;
-    _danmakuClient!.connect(topSid: ts, subSid: ss, uid: _ayyuid);
+    _danmakuClient!.onPopularity = (v) => heatCount.value = v;
+    _danmakuClient!.connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: roomId);
     danmakuStream = _danmakuClient!.danmakuStream;
     danmakuStream!.listen((m) {
       danmakuList.add(m);
@@ -321,19 +319,24 @@ class LivePlayController extends GetxController {
     });
   }
 
-  void sendDanmaku(String text) {
+  void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
-      Get.snackbar('提示', '发送弹幕需要先登录');
+      Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
-    _danmakuClient?.sendDanmaku(text);
-    inputController.clear();
+    final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
+    if (ok) {
+      inputController.clear();
+      Get.snackbar('已发送', text, snackPosition: SnackPosition.BOTTOM);
+    } else {
+      Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
+    }
   }
 
   void toggleFollow() {
     if (!_loginManager.isLoggedIn) {
-      Get.snackbar('提示', '订阅需要先登录');
+      Get.snackbar('提示', '订阅需要先登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
     isFollowed.value = !isFollowed.value;
@@ -530,7 +533,6 @@ class LivePlayController extends GetxController {
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
-    // 恢复竖屏（已修正为 DeviceOrientation）
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.onClose();
