@@ -7,6 +7,7 @@ import '../model/streamer_info.dart';
 
 /// 虎牙直播流解析
 /// 核心算法逐行移植自 dtv_mobile 的 HuyaStreamUrlResolverAndroid.kt
+/// 粉丝 = 订阅数；热度 = totalCount/userCount（pure_live/dtv 同款口径）
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -25,7 +26,7 @@ class HuyaStreamResolver {
   int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
   String _s(dynamic v) => v?.toString() ?? '';
 
-  /// 返回第一个 >0 的值（修复"字段存在但为0时不 fallback"的 bug）
+  /// 返回第一个 >0 的值
   int _firstNonZero(List<dynamic> vals) {
     for (final v in vals) {
       final n = _i(v);
@@ -41,7 +42,6 @@ class HuyaStreamResolver {
       ? url.replaceFirst('https://', 'http://')
       : url;
 
-  // ================= dtv: parseQuery =================
   Map<String, String> _parseQuery(String qs) {
     var trimmed = qs.trim();
     while (trimmed.startsWith('?') || trimmed.startsWith('&')) {
@@ -65,7 +65,7 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= dtv: generateWebAntiCode（逐行对齐） =================
+  // ================= dtv: generateWebAntiCode =================
   String generateWebAntiCode(String streamName, String antiCode) {
     try {
       final sanitized = antiCode.replaceAll('&amp;', '&');
@@ -115,7 +115,6 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= dtv: adjustTxStreamUrl =================
   String _adjustTxStreamUrl(String url, String cdn) {
     if (cdn.toLowerCase() != 'tx') return enforceHttp(url);
     var s = url.replaceAll('&ctype=tars_mp', '&ctype=huya_webh5');
@@ -123,7 +122,6 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
-  // ================= dtv: fetchHtml（桌面优先） =================
   Future<String> _fetchHtml(String roomId, bool mobile) async {
     final res = await http.get(
       Uri.parse('https://www.huya.com/$roomId'),
@@ -204,6 +202,7 @@ class HuyaStreamResolver {
       'nickname': '',
       'avatar': '',
       'fans': 0,
+      'heat': 0,
       'title': '',
       'isLive': false,
       'uid': 0,
@@ -223,11 +222,19 @@ class HuyaStreamResolver {
           final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
           out['nickname'] = _s(profile['sNick']);
           out['avatar'] = _s(profile['sAvatar180'] ?? profile['sAvatar']);
+          // 虎牙的粉丝数 = 订阅数
           out['fans'] = _firstNonZero([
-            profile['lFansCount'],
-            profile['iFansCount'],
             profile['lSubscribeCount'],
             profile['iSubscribeCount'],
+            profile['lFansCount'],
+            profile['iFansCount'],
+          ]);
+          // 热度 = totalCount / userCount
+          out['heat'] = _firstNonZero([
+            liveInfo['totalCount'],
+            liveInfo['userCount'],
+            liveInfo['iAttendeeCount'],
+            profile['totalCount'],
           ]);
           out['title'] = _s(liveInfo['sIntroduction']);
           out['isLive'] = _i(liveInfo['eLiveStatus']) == 2;
@@ -238,7 +245,7 @@ class HuyaStreamResolver {
       }
     } catch (_) {}
 
-    // 昵称/头像兜底：多组正则扫全页
+    // 昵称/头像兜底
     if (_s(out['nickname']).isEmpty) {
       for (final re in [
         RegExp(r'"sNick"\s*:\s*"([^"]+)"'),
@@ -278,15 +285,15 @@ class HuyaStreamResolver {
       final m = RegExp(r'"lPresenterUid"\s*:\s*(\d+)').firstMatch(body);
       if (m != null) out['uid'] = int.parse(m.group(1)!);
     }
-    // 粉丝数兜底：只匹配非零值
+    // 粉丝（订阅数）兜底：只匹配非零
     if (_i(out['fans']) == 0) {
       for (final key in [
-        'lFansCount',
         'lSubscribeCount',
         'iSubscribeCount',
+        'lFansCount',
+        'iFansCount',
         'lFollowCount',
-        'fansCount',
-        'lFollowersCount'
+        'fansCount'
       ]) {
         final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
         if (m != null) {
@@ -295,10 +302,25 @@ class HuyaStreamResolver {
         }
       }
     }
+    // 热度兜底：只匹配非零
+    if (_i(out['heat']) == 0) {
+      for (final key in [
+        'totalCount',
+        'lUserCount',
+        'iAttendeeCount',
+        'userCount'
+      ]) {
+        final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
+        if (m != null) {
+          out['heat'] = int.parse(m.group(1)!);
+          break;
+        }
+      }
+    }
     return out;
   }
 
-  // ================= dtv: resolve（线路 + 主播信息一体） =================
+  // ================= dtv: resolve =================
   Future<HuyaStreamResult?> _resolveByDtv(String roomId) async {
     try {
       var html = await _fetchHtml(roomId, false);
@@ -313,17 +335,18 @@ class HuyaStreamResolver {
       }
       if (candidates.isEmpty) return null;
 
-      // 桌面页缺信息时用移动页补全
       var meta = _parseMeta(html);
       if (_s(meta['nickname']).isEmpty ||
           _s(meta['avatar']).isEmpty ||
-          _i(meta['fans']) == 0) {
+          _i(meta['fans']) == 0 ||
+          _i(meta['heat']) == 0) {
         final mHtml = await _fetchHtml(roomId, true);
         if (mHtml.isNotEmpty) {
           final mMeta = _parseMeta(mHtml);
           if (_s(meta['nickname']).isEmpty) meta['nickname'] = mMeta['nickname'];
           if (_s(meta['avatar']).isEmpty) meta['avatar'] = mMeta['avatar'];
           if (_i(meta['fans']) == 0) meta['fans'] = mMeta['fans'];
+          if (_i(meta['heat']) == 0) meta['heat'] = mMeta['heat'];
           if (_i(meta['uid']) == 0) meta['uid'] = mMeta['uid'];
           if (_i(meta['topSid']) == 0) meta['topSid'] = mMeta['topSid'];
           if (_i(meta['subSid']) == 0) meta['subSid'] = mMeta['subSid'];
@@ -332,7 +355,6 @@ class HuyaStreamResolver {
         }
       }
 
-      // dtv: CDN 优先级 al > hs > tx
       int cdnRank(String cdn) {
         switch (cdn.toLowerCase()) {
           case 'al':
@@ -383,6 +405,7 @@ class HuyaStreamResolver {
         ),
         title: _s(meta['title']),
         isLive: meta['isLive'] == true,
+        heat: _i(meta['heat']),
         qualities: qualities,
       );
     } catch (_) {
@@ -410,7 +433,6 @@ class HuyaStreamResolver {
         avatar: dtv.streamerInfo.avatar.isNotEmpty
             ? dtv.streamerInfo.avatar
             : api.streamerInfo.avatar,
-        // 两个数据源取较大值
         fansCount: api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
             ? api.streamerInfo.fansCount
             : dtv.streamerInfo.fansCount,
@@ -418,6 +440,7 @@ class HuyaStreamResolver {
       ),
       title: dtv.title.isNotEmpty ? dtv.title : api.title,
       isLive: dtv.isLive || api.isLive,
+      heat: api.heat >= dtv.heat ? api.heat : dtv.heat,
       qualities: dtv.qualities.isNotEmpty ? dtv.qualities : api.qualities,
     );
   }
@@ -443,6 +466,15 @@ class HuyaStreamResolver {
       final stream = (data['stream'] as Map<String, dynamic>?) ?? {};
 
       final isLive = _s(data['liveStatus']) == 'ON' || _i(liveInfo['eLiveStatus']) == 2;
+
+      // 热度（dtv 同款：liveData.totalCount）
+      final heat = _firstNonZero([
+        liveData['totalCount'],
+        liveData['userCount'],
+        liveData['iAttendeeCount'],
+        liveInfo['totalCount'],
+        liveInfo['userCount'],
+      ]);
 
       final baseList = (stream['baseSteamInfoList'] as List<dynamic>?) ??
           (stream['gameStreamInfoList'] as List<dynamic>?) ??
@@ -513,17 +545,18 @@ class HuyaStreamResolver {
           uid: _i(profile['yyid'] ?? profile['lUid']),
           nickname: _s(profile['sNick'] ?? profile['sPresenterNick']),
           avatar: _s(profile['sAvatar180'] ?? profile['sAvatar']),
+          // 虎牙粉丝 = 订阅数
           fansCount: _firstNonZero([
-            profile['lFansCount'],
-            profile['iFansCount'],
             profile['lSubscribeCount'],
             profile['iSubscribeCount'],
-            liveInfo['lFansCount'],
+            profile['lFansCount'],
+            profile['iFansCount'],
           ]),
           isLive: isLive,
         ),
         title: _s(liveInfo['sIntroduction'] ?? liveInfo['sRoomName']),
         isLive: isLive,
+        heat: heat,
         qualities: qualities,
       );
     } catch (_) {
@@ -531,7 +564,6 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= 粉丝数单独查询 =================
   Future<int> fetchFansCount(String roomId) async {
     try {
       final res = await http.get(
@@ -543,10 +575,10 @@ class HuyaStreamResolver {
       final p = (d?['profileInfo'] as Map<String, dynamic>?) ??
           (d?['streamerInfo'] as Map<String, dynamic>?);
       return _firstNonZero([
-        p?['lFansCount'],
-        p?['iFansCount'],
         p?['lSubscribeCount'],
         p?['iSubscribeCount'],
+        p?['lFansCount'],
+        p?['iFansCount'],
       ]);
     } catch (_) {
       return 0;
@@ -563,6 +595,7 @@ class HuyaStreamResult {
   final StreamerInfo streamerInfo;
   final String title;
   final bool isLive;
+  final int heat;
   final List<StreamQuality> qualities;
 
   HuyaStreamResult({
@@ -574,6 +607,7 @@ class HuyaStreamResult {
     required this.streamerInfo,
     required this.title,
     required this.isLive,
+    this.heat = 0,
     required this.qualities,
   });
 }
