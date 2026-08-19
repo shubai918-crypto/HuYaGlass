@@ -75,8 +75,8 @@ class LivePlayPage extends StatelessWidget {
                 ),
                 Text(
                   '粉丝 ${_formatCount(controller.fansCount.value)} · 热度 ${_formatCount(controller.heatCount.value)}',
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.6), fontSize: 12),
+                  style:
+                      TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -122,7 +122,7 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 底部：画质 + 发送 =================
+  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -130,7 +130,7 @@ class LivePlayPage extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (controller.qualities.isNotEmpty)
+          if (controller.qualities.isNotEmpty) ...[
             SizedBox(
               height: 34,
               child: ListView(
@@ -149,6 +149,26 @@ class LivePlayPage extends StatelessWidget {
                 }).toList(),
               ),
             ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 30,
+              child: Obx(() => ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: List.generate(controller.lines.length, (i) {
+                      final selected = i == controller.currentLine.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: LiquidGlassButton(
+                          text: '线路${i + 1}',
+                          selected: selected,
+                          fontSize: 11,
+                          onTap: () => controller.switchLine(i),
+                        ),
+                      );
+                    }),
+                  )),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -158,8 +178,8 @@ class LivePlayPage extends StatelessWidget {
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: '发送弹幕...',
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                     filled: true,
                     fillColor: Colors.white.withOpacity(0.08),
                     border: OutlineInputBorder(
