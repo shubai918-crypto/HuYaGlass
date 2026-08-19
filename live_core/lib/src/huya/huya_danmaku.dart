@@ -147,13 +147,13 @@ class HuyaDanmakuClient {
     // 心跳：带 tid/sid/pid
     _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      _sendHeartbeat();
+      _send(_buildHeartbeat());
     });
     // 空闲重发注册（dtv 同款）
     _idleTimer?.cancel();
     _idleTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       _sendRegisterVariant();
-      _sendHeartbeat();
+      _send(_buildHeartbeat());
     });
   }
 
