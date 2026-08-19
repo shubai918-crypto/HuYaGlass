@@ -4,10 +4,9 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
+import 'huya_login.dart';
 
-/// 虎牙直播流解析
-/// 核心算法逐行移植自 dtv_mobile 的 HuyaStreamUrlResolverAndroid.kt
-/// 粉丝 = 订阅数；热度 = totalCount/userCount
+/// 虎牙直播流解析（dtv 同款签名 + 登录后注入 Cookie 拿真实订阅数）
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -120,7 +119,9 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
+  // ================= 网页抓取（登录 Cookie 优先） =================
   Future<String> _fetchHtml(String roomId, bool mobile) async {
+    final loginCookie = HuyaLoginManager().cookie;
     final res = await http.get(
       Uri.parse('https://www.huya.com/$roomId'),
       headers: {
@@ -128,7 +129,7 @@ class HuyaStreamResolver {
         'Accept': mobile ? _acceptMobile : _acceptDesktop,
         'Referer': mobile ? 'https://m.huya.com/' : 'https://www.huya.com/',
         'Accept-Language': _acceptLanguage,
-        'Cookie': _huyaWebh5Cookie,
+        'Cookie': loginCookie.isNotEmpty ? loginCookie : _huyaWebh5Cookie,
       },
     );
     if (res.statusCode != 200) return '';
@@ -220,7 +221,6 @@ class HuyaStreamResolver {
           final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
           out['nickname'] = _s(profile['sNick']);
           out['avatar'] = _s(profile['sAvatar180'] ?? profile['sAvatar']);
-          // 虎牙的粉丝数 = 订阅数
           out['fans'] = _firstNonZero([
             profile['lSubscribeCount'],
             profile['iSubscribeCount'],
@@ -242,7 +242,6 @@ class HuyaStreamResolver {
       }
     } catch (_) {}
 
-    // 昵称/头像兜底
     if (_s(out['nickname']).isEmpty) {
       for (final re in [
         RegExp(r'"sNick"\s*:\s*"([^"]+)"'),
@@ -269,7 +268,6 @@ class HuyaStreamResolver {
         }
       }
     }
-    // 弹幕注册 ID 兜底
     if (_i(out['topSid']) == 0) {
       final m = RegExp(r'"lChannelId"\s*:\s*(\d+)').firstMatch(body);
       if (m != null) out['topSid'] = int.parse(m.group(1)!);
@@ -287,10 +285,8 @@ class HuyaStreamResolver {
         }
       }
     }
-    // 虎牙 topSid/subSid 通常等于主播 yyid
     if (_i(out['topSid']) == 0) out['topSid'] = out['uid'];
     if (_i(out['subSid']) == 0) out['subSid'] = out['topSid'];
-    // 粉丝（订阅数）兜底：只匹配非零
     if (_i(out['fans']) == 0) {
       for (final key in [
         'lSubscribeCount',
@@ -307,7 +303,6 @@ class HuyaStreamResolver {
         }
       }
     }
-    // 热度兜底：只匹配非零
     if (_i(out['heat']) == 0) {
       for (final key in ['totalCount', 'lUserCount', 'iAttendeeCount', 'userCount']) {
         final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
@@ -413,44 +408,17 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= 入口：dtv 优先，API 补全 =================
-  Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
-    final dtv = await _resolveByDtv(roomId);
-    final api = await _resolveByApi(roomId);
-    if (dtv == null) return api;
-    if (api == null) return dtv;
-    return HuyaStreamResult(
-      roomId: roomId,
-      ayyuid: dtv.ayyuid != 0 ? dtv.ayyuid : api.ayyuid,
-      topSid: dtv.topSid != 0 ? dtv.topSid : api.topSid,
-      subSid: dtv.subSid != 0 ? dtv.subSid : api.subSid,
-      presenterUid: dtv.presenterUid != 0 ? dtv.presenterUid : api.presenterUid,
-      streamerInfo: StreamerInfo(
-        uid: dtv.presenterUid != 0 ? dtv.presenterUid : api.presenterUid,
-        nickname: dtv.streamerInfo.nickname.isNotEmpty
-            ? dtv.streamerInfo.nickname
-            : api.streamerInfo.nickname,
-        avatar: dtv.streamerInfo.avatar.isNotEmpty
-            ? dtv.streamerInfo.avatar
-            : api.streamerInfo.avatar,
-        fansCount: api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
-            ? api.streamerInfo.fansCount
-            : dtv.streamerInfo.fansCount,
-        isLive: dtv.isLive || api.isLive,
-      ),
-      title: dtv.title.isNotEmpty ? dtv.title : api.title,
-      isLive: dtv.isLive || api.isLive,
-      heat: api.heat >= dtv.heat ? api.heat : dtv.heat,
-      qualities: dtv.qualities.isNotEmpty ? dtv.qualities : api.qualities,
-    );
-  }
-
-  // ================= 官方 profileRoom API（兜底） =================
+  // ================= 官方 API（登录 Cookie 注入） =================
   Future<HuyaStreamResult?> _resolveByApi(String roomId) async {
     try {
+      final loginCookie = HuyaLoginManager().cookie;
       final res = await http.get(
         Uri.parse('https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
-        headers: {'User-Agent': _iosMobileUa, 'Referer': 'https://www.huya.com/'},
+        headers: {
+          'User-Agent': _iosMobileUa,
+          'Referer': 'https://www.huya.com/',
+          if (loginCookie.isNotEmpty) 'Cookie': loginCookie,
+        },
       );
       if (res.statusCode != 200) return null;
       final root = jsonDecode(res.body) as Map<String, dynamic>;
@@ -461,6 +429,7 @@ class HuyaStreamResolver {
       final profile = (data['profileInfo'] as Map<String, dynamic>?) ??
           (data['streamerInfo'] as Map<String, dynamic>?) ??
           {};
+      final profile2 = (data['streamerInfo'] as Map<String, dynamic>?);
       final liveInfo = (data['liveInfo'] as Map<String, dynamic>?) ?? {};
       final liveData = (data['liveData'] as Map<String, dynamic>?) ?? {};
       final stream = (data['stream'] as Map<String, dynamic>?) ?? {};
@@ -549,6 +518,8 @@ class HuyaStreamResolver {
             profile['iSubscribeCount'],
             profile['lFansCount'],
             profile['iFansCount'],
+            profile2?['lSubscribeCount'],
+            profile2?['lFansCount'],
             liveInfo['lFansCount'],
           ]),
           isLive: isLive,
@@ -563,11 +534,47 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= 入口 =================
+  Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
+    final dtv = await _resolveByDtv(roomId);
+    final api = await _resolveByApi(roomId);
+    if (dtv == null) return api;
+    if (api == null) return dtv;
+    return HuyaStreamResult(
+      roomId: roomId,
+      ayyuid: dtv.ayyuid != 0 ? dtv.ayyuid : api.ayyuid,
+      topSid: dtv.topSid != 0 ? dtv.topSid : api.topSid,
+      subSid: dtv.subSid != 0 ? dtv.subSid : api.subSid,
+      presenterUid: dtv.presenterUid != 0 ? dtv.presenterUid : api.presenterUid,
+      streamerInfo: StreamerInfo(
+        uid: dtv.presenterUid != 0 ? dtv.presenterUid : api.presenterUid,
+        nickname: dtv.streamerInfo.nickname.isNotEmpty
+            ? dtv.streamerInfo.nickname
+            : api.streamerInfo.nickname,
+        avatar: dtv.streamerInfo.avatar.isNotEmpty
+            ? dtv.streamerInfo.avatar
+            : api.streamerInfo.avatar,
+        fansCount: api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
+            ? api.streamerInfo.fansCount
+            : dtv.streamerInfo.fansCount,
+        isLive: dtv.isLive || api.isLive,
+      ),
+      title: dtv.title.isNotEmpty ? dtv.title : api.title,
+      isLive: dtv.isLive || api.isLive,
+      heat: api.heat >= dtv.heat ? api.heat : dtv.heat,
+      qualities: dtv.qualities.isNotEmpty ? dtv.qualities : api.qualities,
+    );
+  }
+
   Future<int> fetchFansCount(String roomId) async {
     try {
+      final loginCookie = HuyaLoginManager().cookie;
       final res = await http.get(
         Uri.parse('https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
-        headers: {'User-Agent': _iosMobileUa},
+        headers: {
+          'User-Agent': _iosMobileUa,
+          if (loginCookie.isNotEmpty) 'Cookie': loginCookie,
+        },
       );
       final j = jsonDecode(res.body) as Map<String, dynamic>;
       final d = j['data'] as Map<String, dynamic>?;
