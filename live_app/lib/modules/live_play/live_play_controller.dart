@@ -9,7 +9,6 @@ class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
-  // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
@@ -30,7 +29,6 @@ class LivePlayController extends GetxController {
 
   VideoPlayerController? _controller;
 
-  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -45,7 +43,6 @@ class LivePlayController extends GetxController {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
-  // ---------- 弹幕参数 ----------
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
@@ -62,7 +59,6 @@ class LivePlayController extends GetxController {
     _loadStream();
   }
 
-  // 直播流 position 不前进，只能用 isBuffering 判断卡顿
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
@@ -97,7 +93,6 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
-  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -170,7 +165,6 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
-  // ================= ExoPlayer 播放 =================
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -202,7 +196,6 @@ class LivePlayController extends GetxController {
     }
   }
 
-  // ================= 调试弹窗 =================
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -243,7 +236,6 @@ class LivePlayController extends GetxController {
     );
   }
 
-  // ================= 交互 =================
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -254,8 +246,9 @@ class LivePlayController extends GetxController {
   void _connectDanmaku() {
     _danmakuClient = HuyaDanmakuClient();
     _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
-    final ts = _topSid != 0 ? _topSid : _ayyuid;
-    final ss = _subSid != 0 ? _subSid : _topSid;
+    final roomNum = int.tryParse(roomId) ?? 0;
+    final ts = _topSid != 0 ? _topSid : (roomNum != 0 ? roomNum : _ayyuid);
+    final ss = _subSid != 0 ? _subSid : ts;
     _danmakuClient!.connect(topSid: ts, subSid: ss, uid: _ayyuid);
     danmakuStream = _danmakuClient!.danmakuStream;
     danmakuStream!.listen((m) {
@@ -284,7 +277,6 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
-  // ================= 播放器组件 =================
   Widget videoWidget() {
     return Obx(() {
       playerVersion.value;
