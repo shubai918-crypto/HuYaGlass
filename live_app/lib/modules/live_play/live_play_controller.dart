@@ -9,11 +9,13 @@ class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
+  // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
   final streamerName = ''.obs;
   final streamerAvatar = ''.obs;
   final fansCount = 0.obs;
+  final heatCount = 0.obs;
   final isFollowed = false.obs;
   final showDanmaku = true.obs;
   final danmakuFontSize = 14.0.obs;
@@ -28,6 +30,7 @@ class LivePlayController extends GetxController {
 
   VideoPlayerController? _controller;
 
+  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -42,6 +45,7 @@ class LivePlayController extends GetxController {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
+  // ---------- 弹幕参数 ----------
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
@@ -58,6 +62,7 @@ class LivePlayController extends GetxController {
     _loadStream();
   }
 
+  // 直播流 position 不前进，只能用 isBuffering 判断卡顿
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
@@ -92,6 +97,7 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
   }
 
+  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -103,6 +109,7 @@ class LivePlayController extends GetxController {
       streamerName.value = info.streamerInfo.nickname;
       streamerAvatar.value = info.streamerInfo.avatar;
       fansCount.value = info.streamerInfo.fansCount;
+      heatCount.value = info.heat;
       isLive.value = info.isLive;
       qualities.assignAll(info.qualities);
 
@@ -163,6 +170,7 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
+  // ================= ExoPlayer 播放 =================
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -194,6 +202,7 @@ class LivePlayController extends GetxController {
     }
   }
 
+  // ================= 调试弹窗 =================
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -234,6 +243,7 @@ class LivePlayController extends GetxController {
     );
   }
 
+  // ================= 交互 =================
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -274,6 +284,7 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
+  // ================= 播放器组件 =================
   Widget videoWidget() {
     return Obx(() {
       playerVersion.value;
