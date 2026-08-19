@@ -532,12 +532,41 @@ class HuyaStreamResolver {
     }
   }
 
+  /// 订阅数专用接口尝试
+  Future<int> _fetchSubscribeCount(String roomId) async {
+    final cookie = HuyaLoginManager().cookie;
+    for (final host in ['https://www.huya.com', 'https://mp.huya.com']) {
+      try {
+        final res = await http.get(
+          Uri.parse('$host/cache.php?m=Subscribe&do=getSubscribeCount&roomId=$roomId'),
+          headers: {
+            'User-Agent': _desktopUa,
+            'Referer': 'https://www.huya.com/',
+            if (cookie.isNotEmpty) 'Cookie': cookie,
+          },
+        );
+        if (res.statusCode == 200) {
+          final body = res.body.trim();
+          final direct = int.tryParse(body);
+          if (direct != null && direct > 0) return direct;
+          final m = RegExp(r'"(?:count|num|subscribeCount|lSubscribeCount)"\s*:\s*(\d+)').firstMatch(body);
+          if (m != null) return int.parse(m.group(1)!);
+        }
+      } catch (_) {}
+    }
+    return 0;
+  }
+
   // ================= 入口 =================
   Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
     final dtv = await _resolveByDtv(roomId);
     final api = await _resolveByApi(roomId);
     if (dtv == null) return api;
     if (api == null) return dtv;
+    var fans = api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
+        ? api.streamerInfo.fansCount
+        : dtv.streamerInfo.fansCount;
+    if (fans == 0) fans = await _fetchSubscribeCount(roomId);
     return HuyaStreamResult(
       roomId: roomId,
       ayyuid: dtv.ayyuid != 0 ? dtv.ayyuid : api.ayyuid,
@@ -552,9 +581,7 @@ class HuyaStreamResolver {
         avatar: dtv.streamerInfo.avatar.isNotEmpty
             ? dtv.streamerInfo.avatar
             : api.streamerInfo.avatar,
-        fansCount: api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
-            ? api.streamerInfo.fansCount
-            : dtv.streamerInfo.fansCount,
+        fansCount: fans,
         isLive: dtv.isLive || api.isLive,
       ),
       title: dtv.title.isNotEmpty ? dtv.title : api.title,
