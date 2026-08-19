@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/danmaku_view.dart';
 import '../../common/widgets/liquid_glass.dart';
+import '../settings/huya_login_page.dart';
 import 'live_play_controller.dart';
 
 class LivePlayPage extends StatelessWidget {
@@ -71,6 +72,7 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
+  // ================= 顶栏（含登录入口） =================
   Widget _buildTopBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -111,6 +113,24 @@ class LivePlayPage extends StatelessWidget {
               ],
             ),
           ),
+          // 登录入口：返回后自动刷新真实粉丝数
+          LiquidGlassIconButton(
+            icon: HuyaLoginManager().isLoggedIn ? Icons.person : Icons.login,
+            size: 36,
+            onTap: () async {
+              await Get.to(() => const HuyaLoginPage());
+              if (HuyaLoginManager().isLoggedIn) {
+                final info = await HuyaStreamResolver().resolveStream(controller.roomId);
+                if (info != null) {
+                  controller.fansCount.value = info.streamerInfo.fansCount;
+                  controller.heatCount.value = info.heat;
+                }
+                Get.snackbar('已登录', '粉丝数已刷新为真实订阅数',
+                    snackPosition: SnackPosition.BOTTOM);
+              }
+            },
+          ),
+          const SizedBox(width: 8),
           LiquidGlassButton(
             text: controller.isFollowed.value ? '已订阅' : '订阅',
             selected: controller.isFollowed.value,
