@@ -13,23 +13,16 @@ class DanmakuMessage {
 }
 
 /// 虎牙弹幕客户端
-/// 多变体注册探测：cmd(0/1) × UA(webh5/lanmu)，收到任意回包即锁定；
-/// 心跳带 tid/sid/pid；状态实时回报参数便于诊断。
+/// - 节点：cdnws.api.huya.com 优先（dtv 同款），wsapi 兜底
+/// - 注册格式轮发：旧 HuyaWSPayload(cmd0/1) + dtv buildJoinPacket(包装cmd0/1/裸包)
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
+  // dtv 同款节点优先
   static const _endpoints = [
-    'wss://wsapi.huya.com/',
     'wss://cdnws.api.huya.com/',
-  ];
-
-  /// 注册包变体：[iCmdType, sUA]
-  static const _variants = [
-    [0, 'webh5&0.1.0&websocket'],
-    [1, 'webh5&0.1.0&websocket'],
-    [0, 'huya_lanmu_web_2101'],
-    [1, 'huya_lanmu_web_2101'],
+    'wss://wsapi.huya.com/',
   ];
 
   WebSocket? _ws;
@@ -45,6 +38,7 @@ class HuyaDanmakuClient {
   int _subSid = 0;
   int _ayyuid = 0;
   int _uid = 0;
+  List<Uint8List> _variants = [];
 
   void Function(String)? onStatus;
 
@@ -98,6 +92,7 @@ class HuyaDanmakuClient {
       realUid = 1400000000000 + (DateTime.now().millisecondsSinceEpoch % 10000000000);
     }
     _uid = realUid;
+    _variants = _buildRegisterVariants();
     print('DANMAKU connect topSid=$topSid subSid=$subSid ayyuid=$uid anon=$realUid');
 
     onStatus?.call('弹幕连接中…');
@@ -137,7 +132,7 @@ class HuyaDanmakuClient {
       }
       if (_probeStep < _variants.length - 1) {
         _probeStep++;
-        onStatus?.call('注册尝试${_probeStep + 1}/${_variants.length} ts=$_topSid ss=$_subSid uid=$_uid');
+        onStatus?.call('注册尝试${_probeStep + 1}/${_variants.length} ts=$_topSid ss=$_subSid');
         _sendRegisterVariant();
       } else {
         onStatus?.call('注册无响应 ts=$_topSid ss=$_subSid uid=$_uid');
@@ -156,8 +151,79 @@ class HuyaDanmakuClient {
   }
 
   void _sendRegisterVariant() {
-    final v = _variants[_probeStep.clamp(0, _variants.length - 1)];
-    _send(_buildRegister(v[0] as int, v[1] as String));
+    if (_variants.isEmpty) return;
+    _send(_variants[_probeStep.clamp(0, _variants.length - 1)]);
+  }
+
+  /// 5 种注册格式：旧 HuyaWSPayload(cmd0/1) + dtv join 包(cmd0/cmd1/裸)
+  List<Uint8List> _buildRegisterVariants() {
+    final list = <Uint8List>[];
+    // A/B：旧版 HuyaWSPayload
+    for (final cmd in [0, 1]) {
+      list.add(_buildRegisterOld(cmd, 'webh5&0.1.0&websocket'));
+    }
+    // C/D/E：dtv buildJoinPacket 结构
+    final join = _buildJoinPacket();
+    for (final cmd in [0, 1]) {
+      final w = _TarsWriter();
+      w.writeInt(0, cmd);
+      w.writeRawStruct(1, join);
+      list.add(w.toBytes());
+    }
+    list.add(join);
+    return list;
+  }
+
+  /// dtv_mobile buildJoinPacket 逐行移植：
+  /// 0:yyid(long) 1:true 2:"" 3:"" 4:topSid 5:subSid 6:sUA
+  Uint8List _buildJoinPacket() {
+    final w = _TarsWriter();
+    w.writeInt(0, _ayyuid > 0 ? _ayyuid : _topSid);
+    w.writeInt(1, 1); // writeBool(true)
+    w.writeString(2, '');
+    w.writeString(3, '');
+    w.writeInt(4, _topSid);
+    w.writeInt(5, _subSid);
+    w.writeString(6, 'webh5&0.1.0&websocket');
+    return w.toBytes();
+  }
+
+  /// 旧版 HuyaWSPayload 注册包
+  Uint8List _buildRegisterOld(int cmdType, String sUA) {
+    final groups = <String>{};
+    if (_topSid > 0) groups.add('live://$_topSid');
+    if (_subSid > 0) groups.add('chat:$_subSid');
+    if (_ayyuid > 0) {
+      groups.add('live:$_ayyuid');
+      groups.add('chat:$_ayyuid');
+    }
+
+    final user = _TarsWriter();
+    user.writeInt(0, _uid);
+    user.writeString(1, '');
+    user.writeString(2, '');
+
+    final payload = _TarsWriter();
+    payload.writeStruct(0, user);
+    payload.writeStringList(1, groups.toList());
+    payload.writeString(2, sUA);
+
+    final cmd = _TarsWriter();
+    cmd.writeInt(0, cmdType);
+    cmd.writeStruct(1, payload);
+    return cmd.toBytes();
+  }
+
+  /// 心跳：HuyaHeartBeatData { lTid, lSid, lPid }
+  Uint8List _buildHeartbeat() {
+    final beat = _TarsWriter();
+    beat.writeInt(0, _topSid);
+    beat.writeInt(1, _subSid);
+    beat.writeInt(2, _uid);
+    final cmd = _TarsWriter();
+    cmd.writeInt(0, 2); // C2S_HeartBeatReq
+    cmd.writeStruct(1, beat);
+    return cmd.toBytes();
   }
 
   void _scheduleReconnect() {
@@ -249,44 +315,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  // ================= 发包 =================
-  Uint8List _buildRegister(int cmdType, String sUA) {
-    final groups = <String>{};
-    if (_topSid > 0) groups.add('live://$_topSid');
-    if (_subSid > 0) groups.add('chat:$_subSid');
-    if (_ayyuid > 0) {
-      groups.add('live:$_ayyuid');
-      groups.add('chat:$_ayyuid');
-    }
-
-    final user = _TarsWriter();
-    user.writeInt(0, _uid);
-    user.writeString(1, '');
-    user.writeString(2, '');
-
-    final payload = _TarsWriter();
-    payload.writeStruct(0, user);
-    payload.writeStringList(1, groups.toList());
-    payload.writeString(2, sUA);
-
-    final cmd = _TarsWriter();
-    cmd.writeInt(0, cmdType);
-    cmd.writeStruct(1, payload);
-    return cmd.toBytes();
-  }
-
-  /// 心跳：HuyaHeartBeatData { lTid, lSid, lPid }
-  Uint8List _buildHeartbeat() {
-    final beat = _TarsWriter();
-    beat.writeInt(0, _topSid);
-    beat.writeInt(1, _subSid);
-    beat.writeInt(2, _uid);
-    final cmd = _TarsWriter();
-    cmd.writeInt(0, 2); // C2S_HeartBeatReq
-    cmd.writeStruct(1, beat);
-    return cmd.toBytes();
-  }
-
   void sendDanmaku(String text) {
     print('DANMAKU send (login required): $text');
   }
@@ -345,6 +373,13 @@ class _TarsWriter {
   void writeStruct(int tag, _TarsWriter inner) {
     _head(tag, 10);
     _b.add(inner._b.toBytes());
+    _b.addByte(0x0C);
+  }
+
+  /// 直接嵌入已编码的 struct 字节（用于包装 join 包）
+  void writeRawStruct(int tag, List<int> bytes) {
+    _head(tag, 10);
+    _b.add(bytes);
     _b.addByte(0x0C);
   }
 
