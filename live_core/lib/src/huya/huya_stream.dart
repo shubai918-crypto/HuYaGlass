@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 
+/// 虎牙直播流解析
+/// 核心算法逐行移植自 dtv_mobile 的 HuyaStreamUrlResolverAndroid.kt
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -23,12 +25,23 @@ class HuyaStreamResolver {
   int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
   String _s(dynamic v) => v?.toString() ?? '';
 
+  /// 返回第一个 >0 的值（修复"字段存在但为0时不 fallback"的 bug）
+  int _firstNonZero(List<dynamic> vals) {
+    for (final v in vals) {
+      final n = _i(v);
+      if (n > 0) return n;
+    }
+    return 0;
+  }
+
   String _md5(String input) => md5.convert(utf8.encode(input)).toString();
 
+  /// dtv: enforceHttp —— 规避 TLS/SNI 问题
   static String enforceHttp(String url) => url.startsWith('https://')
       ? url.replaceFirst('https://', 'http://')
       : url;
 
+  // ================= dtv: parseQuery =================
   Map<String, String> _parseQuery(String qs) {
     var trimmed = qs.trim();
     while (trimmed.startsWith('?') || trimmed.startsWith('&')) {
@@ -52,6 +65,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= dtv: generateWebAntiCode（逐行对齐） =================
   String generateWebAntiCode(String streamName, String antiCode) {
     try {
       final sanitized = antiCode.replaceAll('&amp;', '&');
@@ -101,6 +115,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= dtv: adjustTxStreamUrl =================
   String _adjustTxStreamUrl(String url, String cdn) {
     if (cdn.toLowerCase() != 'tx') return enforceHttp(url);
     var s = url.replaceAll('&ctype=tars_mp', '&ctype=huya_webh5');
@@ -108,6 +123,7 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
+  // ================= dtv: fetchHtml（桌面优先） =================
   Future<String> _fetchHtml(String roomId, bool mobile) async {
     final res = await http.get(
       Uri.parse('https://www.huya.com/$roomId'),
@@ -182,6 +198,7 @@ class HuyaStreamResolver {
     return rates ?? [];
   }
 
+  // ============ 从网页 HNF_GLOBAL_INIT 解析主播信息 ============
   Map<String, dynamic> _parseMeta(String body) {
     final out = <String, dynamic>{
       'nickname': '',
@@ -206,7 +223,12 @@ class HuyaStreamResolver {
           final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
           out['nickname'] = _s(profile['sNick']);
           out['avatar'] = _s(profile['sAvatar180'] ?? profile['sAvatar']);
-          out['fans'] = _i(profile['lFansCount'] ?? profile['iFansCount']);
+          out['fans'] = _firstNonZero([
+            profile['lFansCount'],
+            profile['iFansCount'],
+            profile['lSubscribeCount'],
+            profile['iSubscribeCount'],
+          ]);
           out['title'] = _s(liveInfo['sIntroduction']);
           out['isLive'] = _i(liveInfo['eLiveStatus']) == 2;
           out['uid'] = _i(profile['lUid']);
@@ -215,7 +237,8 @@ class HuyaStreamResolver {
         }
       }
     } catch (_) {}
-    
+
+    // 昵称/头像兜底：多组正则扫全页
     if (_s(out['nickname']).isEmpty) {
       for (final re in [
         RegExp(r'"sNick"\s*:\s*"([^"]+)"'),
@@ -242,6 +265,7 @@ class HuyaStreamResolver {
         }
       }
     }
+    // 弹幕注册 ID 兜底
     if (_i(out['topSid']) == 0) {
       final m = RegExp(r'"lChannelId"\s*:\s*(\d+)').firstMatch(body);
       if (m != null) out['topSid'] = int.parse(m.group(1)!);
@@ -254,6 +278,7 @@ class HuyaStreamResolver {
       final m = RegExp(r'"lPresenterUid"\s*:\s*(\d+)').firstMatch(body);
       if (m != null) out['uid'] = int.parse(m.group(1)!);
     }
+    // 粉丝数兜底：只匹配非零值
     if (_i(out['fans']) == 0) {
       for (final key in [
         'lFansCount',
@@ -263,7 +288,7 @@ class HuyaStreamResolver {
         'fansCount',
         'lFollowersCount'
       ]) {
-        final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+        final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
         if (m != null) {
           out['fans'] = int.parse(m.group(1)!);
           break;
@@ -273,6 +298,7 @@ class HuyaStreamResolver {
     return out;
   }
 
+  // ================= dtv: resolve（线路 + 主播信息一体） =================
   Future<HuyaStreamResult?> _resolveByDtv(String roomId) async {
     try {
       var html = await _fetchHtml(roomId, false);
@@ -287,6 +313,7 @@ class HuyaStreamResolver {
       }
       if (candidates.isEmpty) return null;
 
+      // 桌面页缺信息时用移动页补全
       var meta = _parseMeta(html);
       if (_s(meta['nickname']).isEmpty ||
           _s(meta['avatar']).isEmpty ||
@@ -305,6 +332,7 @@ class HuyaStreamResolver {
         }
       }
 
+      // dtv: CDN 优先级 al > hs > tx
       int cdnRank(String cdn) {
         switch (cdn.toLowerCase()) {
           case 'al':
@@ -362,6 +390,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= 入口：dtv 优先，API 补全 =================
   Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
     final dtv = await _resolveByDtv(roomId);
     final api = await _resolveByApi(roomId);
@@ -381,6 +410,7 @@ class HuyaStreamResolver {
         avatar: dtv.streamerInfo.avatar.isNotEmpty
             ? dtv.streamerInfo.avatar
             : api.streamerInfo.avatar,
+        // 两个数据源取较大值
         fansCount: api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
             ? api.streamerInfo.fansCount
             : dtv.streamerInfo.fansCount,
@@ -392,6 +422,7 @@ class HuyaStreamResolver {
     );
   }
 
+  // ================= 官方 profileRoom API（兜底） =================
   Future<HuyaStreamResult?> _resolveByApi(String roomId) async {
     try {
       final res = await http.get(
@@ -482,7 +513,13 @@ class HuyaStreamResolver {
           uid: _i(profile['yyid'] ?? profile['lUid']),
           nickname: _s(profile['sNick'] ?? profile['sPresenterNick']),
           avatar: _s(profile['sAvatar180'] ?? profile['sAvatar']),
-          fansCount: _i(profile['lFansCount'] ?? profile['iFansCount'] ?? liveInfo['lFansCount']),
+          fansCount: _firstNonZero([
+            profile['lFansCount'],
+            profile['iFansCount'],
+            profile['lSubscribeCount'],
+            profile['iSubscribeCount'],
+            liveInfo['lFansCount'],
+          ]),
           isLive: isLive,
         ),
         title: _s(liveInfo['sIntroduction'] ?? liveInfo['sRoomName']),
@@ -494,6 +531,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= 粉丝数单独查询 =================
   Future<int> fetchFansCount(String roomId) async {
     try {
       final res = await http.get(
@@ -504,7 +542,12 @@ class HuyaStreamResolver {
       final d = j['data'] as Map<String, dynamic>?;
       final p = (d?['profileInfo'] as Map<String, dynamic>?) ??
           (d?['streamerInfo'] as Map<String, dynamic>?);
-      return _i(p?['lFansCount'] ?? p?['iFansCount'] ?? p?['lSubscribeCount']);
+      return _firstNonZero([
+        p?['lFansCount'],
+        p?['iFansCount'],
+        p?['lSubscribeCount'],
+        p?['iSubscribeCount'],
+      ]);
     } catch (_) {
       return 0;
     }
