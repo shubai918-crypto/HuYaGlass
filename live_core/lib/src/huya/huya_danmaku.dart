@@ -11,7 +11,7 @@ class DanmakuMessage {
   DanmakuMessage({required this.nickname, required this.content, this.fontColor = 0xFFFFFFFF});
 }
 
-/// 虎牙弹幕客户端（pure_live 同款接收 + 网页端同款 WUP 发送）
+/// 虎牙弹幕客户端（pure_live 同款接收 + 网页端同款 WUP 发送探测）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -35,6 +35,7 @@ class HuyaDanmakuClient {
   int _ayyuid = 0;
   int _reqId = 0;
   String? _pendingDanmaku;
+  String _sendDebug = '';
 
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
@@ -104,20 +105,22 @@ class HuyaDanmakuClient {
     _send(command.toBytes());
   }
 
-  // ================= 真实发送弹幕（网页端同款 WUP liveui/sendMessage） =================
+  // ================= 真实发送弹幕探测 =================
   Future<bool> sendDanmaku(String text) async {
     if (_ws == null || _ws!.readyState != WebSocket.open) return false;
-    // 关键：lPid 必须是【登录账号】的 yyuid，从 Cookie 里取
     final cookie = HuyaLoginManager().cookie;
     final m = RegExp(r'yyuid=(\d+)').firstMatch(cookie) ??
         RegExp(r'udb_uid=(\d+)').firstMatch(cookie);
     if (m == null) return false;
     final senderUid = int.parse(m.group(1)!);
     try {
-      // 两种参数名各发一帧，提高命中率
-      _send(_buildSendWup(text, senderUid, 'req'));
-      _send(_buildSendWup(text, senderUid, 'sendMessage'));
+      _sendDebug = '';
       _pendingDanmaku = text;
+      final nick = RegExp(r'username=([^;]+)').firstMatch(cookie)?.group(1) ?? '';
+      // 多种参数名各发一帧，提高命中率并抓取回包
+      for (final key in ['tReq', 'req', 'sendMessage']) {
+        _send(_buildSendWup(text, senderUid, key, nick));
+      }
       return true;
     } catch (e) {
       print('DANMAKU send error: $e');
@@ -125,7 +128,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  Uint8List _buildSendWup(String text, int senderUid, String argName) {
+  Uint8List _buildSendWup(String text, int senderUid, String argName, String nick) {
     // SendMessageReq
     final req = _TarsWriter();
     req.writeInt(0, _topSid); // lTid
@@ -133,6 +136,7 @@ class HuyaDanmakuClient {
     req.writeInt(2, senderUid); // lPid = 登录用户
     req.writeString(3, text); // sContent
     req.writeInt(4, 0); // iShowMode
+    if (nick.isNotEmpty) req.writeString(5, nick); // sNickName
 
     // sBuffer: map<string, bytes>
     final map = _TarsWriter();
@@ -185,11 +189,22 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  // ================= 收包 =================
+  // ================= 收包（含发送回包诊断） =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
+      
+      // 发送后的回包诊断：捕获服务器回的第一个包头部
+      if (_pendingDanmaku != null && _sendDebug.isEmpty) {
+        final head = bytes
+            .take(24)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join(' ');
+        _sendDebug = head;
+        onStatus?.call('回包: $head');
+      }
+
       final reader = _TarsReader(bytes);
       final fields = reader.readFields();
       final type = fields[0] is int ? fields[0] as int : -1;
@@ -219,7 +234,9 @@ class HuyaDanmakuClient {
           }
         }
       }
-      onStatus?.call('收包$_recvCount type=$_lastType uri=$_lastUri');
+      if (_sendDebug.isEmpty) {
+        onStatus?.call('收包$_recvCount type=$_lastType uri=$_lastUri');
+      }
     } catch (_) {}
   }
 
