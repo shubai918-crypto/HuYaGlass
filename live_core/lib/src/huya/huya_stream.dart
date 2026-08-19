@@ -6,7 +6,7 @@ import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 import 'huya_login.dart';
 
-/// 虎牙直播流解析（dtv 同款签名 + 登录后注入 Cookie 拿真实订阅数）
+/// 虎牙直播流解析（dtv 同款签名 + 登录 Cookie 注入 + 暴力抓订阅数）
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -287,22 +287,20 @@ class HuyaStreamResolver {
     }
     if (_i(out['topSid']) == 0) out['topSid'] = out['uid'];
     if (_i(out['subSid']) == 0) out['subSid'] = out['topSid'];
+
+    // 粉丝（订阅数）兜底：全文暴力搜索，取最大值
     if (_i(out['fans']) == 0) {
-      for (final key in [
-        'lSubscribeCount',
-        'iSubscribeCount',
-        'lFansCount',
-        'iFansCount',
-        'lFollowCount',
-        'fansCount'
-      ]) {
-        final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
-        if (m != null) {
-          out['fans'] = int.parse(m.group(1)!);
-          break;
-        }
+      final matches = RegExp(
+        r'"(?:lSubscribeCount|lFansCount|fansCount|iFansCount|iSubscribeCount|followCount)"\s*:\s*(\d+)',
+      ).allMatches(body);
+      int maxFans = 0;
+      for (final m in matches) {
+        final v = int.tryParse(m.group(1)!) ?? 0;
+        if (v > maxFans) maxFans = v;
       }
+      if (maxFans > 0) out['fans'] = maxFans;
     }
+    // 热度兜底
     if (_i(out['heat']) == 0) {
       for (final key in ['totalCount', 'lUserCount', 'iAttendeeCount', 'userCount']) {
         final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
