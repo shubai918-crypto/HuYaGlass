@@ -11,25 +11,57 @@ class LivePlayPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(LivePlayController());
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
-      body: SafeArea(
-        child: Obx(() {
-          if (controller.loading.value) {
-            return const Center(
-                child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-          }
-          return Column(
-            children: [
-              _buildTopBar(controller),
-              _buildVideoArea(controller),
-              Expanded(child: _DanmakuList(controller: controller)),
-              _buildBottomBar(controller),
-            ],
-          );
-        }),
-      ),
-    );
+    return Obx(() => PopScope(
+          canPop: !controller.isFullscreen.value,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) controller.toggleFullscreen();
+          },
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0A0A0F),
+            body: Stack(
+              children: [
+                SafeArea(
+                  child: Obx(() {
+                    if (controller.loading.value) {
+                      return const Center(
+                          child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+                    }
+                    return Column(
+                      children: [
+                        _buildTopBar(controller),
+                        _buildVideoArea(controller),
+                        Expanded(child: _DanmakuList(controller: controller)),
+                        _buildBottomBar(controller),
+                      ],
+                    );
+                  }),
+                ),
+                Obx(() => controller.isFullscreen.value
+                    ? Container(
+                        color: Colors.black,
+                        child: Stack(children: [
+                          Positioned.fill(child: controller.fullscreenWidget()),
+                          if (controller.showDanmaku.value &&
+                              controller.danmakuStream != null)
+                            Positioned(
+                              top: 50,
+                              left: 0,
+                              right: 0,
+                              child: IgnorePointer(
+                                child: DanmakuView(
+                                  danmakuStream: controller.danmakuStream!,
+                                  height: 160,
+                                  fontSize: controller.danmakuFontSize.value,
+                                ),
+                              ),
+                            ),
+                        ]),
+                      )
+                    : const SizedBox.shrink()),
+              ],
+            ),
+          ),
+        ));
   }
 
   Widget _defaultAvatar() => Container(
@@ -39,7 +71,6 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
-  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -67,16 +98,13 @@ class LivePlayPage extends StatelessWidget {
                       ? '虎牙主播'
                       : controller.streamerName.value,
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold),
+                      color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   '粉丝 ${_formatCount(controller.fansCount.value)} · 热度 ${_formatCount(controller.heatCount.value)}',
-                  style:
-                      TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -90,14 +118,12 @@ class LivePlayPage extends StatelessWidget {
             onTap: () => controller.toggleFollow(),
           ),
           const SizedBox(width: 8),
-          LiquidGlassIconButton(
-              icon: Icons.close, size: 36, onTap: () => Get.back()),
+          LiquidGlassIconButton(icon: Icons.close, size: 36, onTap: () => Get.back()),
         ],
       ),
     );
   }
 
-  // ================= 视频区 + 滚动弹幕 =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -122,7 +148,6 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -178,8 +203,8 @@ class LivePlayPage extends StatelessWidget {
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: '发送弹幕...',
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     filled: true,
                     fillColor: Colors.white.withOpacity(0.08),
                     border: OutlineInputBorder(
@@ -194,8 +219,7 @@ class LivePlayPage extends StatelessWidget {
                 icon: Icons.send_rounded,
                 size: 42,
                 color: const Color(0xFF00D2FF),
-                onTap: () =>
-                    controller.sendDanmaku(controller.inputController.text),
+                onTap: () => controller.sendDanmaku(controller.inputController.text),
               ),
             ],
           ),
@@ -210,7 +234,6 @@ class LivePlayPage extends StatelessWidget {
   }
 }
 
-/// 视频下方的弹幕列表（自动滚动到底部）
 class _DanmakuList extends StatefulWidget {
   final LivePlayController controller;
   const _DanmakuList({required this.controller});
