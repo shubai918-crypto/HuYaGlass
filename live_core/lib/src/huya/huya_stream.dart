@@ -255,7 +255,14 @@ class HuyaStreamResolver {
       if (m != null) out['uid'] = int.parse(m.group(1)!);
     }
     if (_i(out['fans']) == 0) {
-      for (final key in ['lFansCount', 'lSubscribeCount', 'iSubscribeCount', 'lFollowCount']) {
+      for (final key in [
+        'lFansCount',
+        'lSubscribeCount',
+        'iSubscribeCount',
+        'lFollowCount',
+        'fansCount',
+        'lFollowersCount'
+      ]) {
         final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
         if (m != null) {
           out['fans'] = int.parse(m.group(1)!);
@@ -374,7 +381,7 @@ class HuyaStreamResolver {
         avatar: dtv.streamerInfo.avatar.isNotEmpty
             ? dtv.streamerInfo.avatar
             : api.streamerInfo.avatar,
-        fansCount: api.streamerInfo.fansCount > 0
+        fansCount: api.streamerInfo.fansCount >= dtv.streamerInfo.fansCount
             ? api.streamerInfo.fansCount
             : dtv.streamerInfo.fansCount,
         isLive: dtv.isLive || api.isLive,
