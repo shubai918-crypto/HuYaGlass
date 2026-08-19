@@ -9,6 +9,8 @@ class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
+  static const List<String> fitNames = ['自适应', '填充', '16:9', '4:3', '铺满'];
+
   // ---------- UI 状态 ----------
   final loading = true.obs;
   final isLive = false.obs;
@@ -23,6 +25,15 @@ class LivePlayController extends GetxController {
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
 
+  // ---------- 播放器控制层 ----------
+  final showControls = false.obs;
+  final isFullscreen = false.obs;
+  final isLocked = false.obs;
+  final isPaused = false.obs;
+  final isMuted = false.obs;
+  final fitMode = 0.obs;
+  Timer? _hideTimer;
+
   final qualities = <StreamQuality>[].obs;
   final lines = <String>[].obs;
   final currentLine = 0.obs;
@@ -32,7 +43,6 @@ class LivePlayController extends GetxController {
 
   VideoPlayerController? _controller;
 
-  // ---------- 线路 / 重连 ----------
   final List<String> _candidates = [];
   String _currentUrl = '';
   String _lastError = '';
@@ -47,7 +57,6 @@ class LivePlayController extends GetxController {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
-  // ---------- 弹幕参数 ----------
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
@@ -64,14 +73,12 @@ class LivePlayController extends GetxController {
     _loadStream();
   }
 
-  // 直播流 position 不前进，只能用 isBuffering 判断卡顿
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
     if (c.value.isBuffering) {
       _bufferingSince ??= DateTime.now();
-      if (DateTime.now().difference(_bufferingSince!) >
-          const Duration(seconds: 12)) {
+      if (DateTime.now().difference(_bufferingSince!) > const Duration(seconds: 12)) {
         _bufferingSince = null;
         _advance('卡顿');
       }
@@ -96,10 +103,9 @@ class LivePlayController extends GetxController {
 
   void _updateDebug() {
     debugInfo.value =
-        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount (点我复制地址)';
+        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount';
   }
 
-  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -163,7 +169,7 @@ class LivePlayController extends GetxController {
         debugInfo.value = '[$reason] 重新解析线路…';
         _loadStream();
       } else {
-        debugInfo.value = '全部线路失败 ✘ (点我查看地址)';
+        debugInfo.value = '全部线路失败 ✘';
       }
       return;
     }
@@ -174,13 +180,13 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
-  // ================= ExoPlayer 播放 =================
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
     final c = VideoPlayerController.networkUrl(Uri.parse(url));
     c.addListener(() {
       if (_controller != null && !identical(_controller, c)) return;
+      isPaused.value = !c.value.isPlaying;
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
         debugPrint('PLAYER ERROR: $_lastError');
@@ -191,8 +197,10 @@ class LivePlayController extends GetxController {
       await c.initialize().timeout(const Duration(seconds: 8));
       await old?.dispose();
       _controller = c;
+      await c.setVolume(isMuted.value ? 0 : 100);
       await c.play();
       _playing = true;
+      isPaused.value = false;
       _bufferingSince = null;
       _vw = c.value.size.width.toInt();
       _vh = c.value.size.height.toInt();
@@ -206,48 +214,77 @@ class LivePlayController extends GetxController {
     }
   }
 
-  // ================= 调试弹窗 =================
-  void _showUrlDialog() {
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('当前播放地址',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SelectableText(
-              _currentUrl.isEmpty ? '（还没有地址）' : _currentUrl,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n错误:$_lastError',
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: _currentUrl));
-              Get.back();
-              Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
-            },
-            child: const Text('复制地址',
-                style: TextStyle(color: Color(0xFF00D2FF))),
-          ),
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('关闭', style: TextStyle(color: Colors.white54)),
-          ),
-        ],
-      ),
-    );
+  // ================= 控制层交互 =================
+  void _scheduleHide(int sec) {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(Duration(seconds: sec), () {
+      showControls.value = false;
+    });
   }
 
-  // ================= 交互 =================
+  void onTapVideo() {
+    if (isLocked.value) {
+      showControls.value = true;
+      _scheduleHide(2);
+      return;
+    }
+    showControls.value = !showControls.value;
+    if (showControls.value) _scheduleHide(4);
+  }
+
+  void togglePlay() {
+    final c = _controller;
+    if (c == null) return;
+    if (isPaused.value) {
+      c.play();
+    } else {
+      c.pause();
+    }
+    _scheduleHide(4);
+  }
+
+  void toggleMute() {
+    final c = _controller;
+    if (c == null) return;
+    isMuted.value = !isMuted.value;
+    c.setVolume(isMuted.value ? 0 : 100);
+    _scheduleHide(4);
+  }
+
+  void cycleFit() {
+    fitMode.value = (fitMode.value + 1) % fitNames.length;
+    _scheduleHide(4);
+  }
+
+  void refreshPlay() {
+    if (_currentUrl.isNotEmpty) {
+      _playing = false;
+      _openUrl(_currentUrl);
+    }
+    showControls.value = false;
+  }
+
+  void toggleLock() {
+    isLocked.value = !isLocked.value;
+    showControls.value = !isLocked.value;
+    if (showControls.value) _scheduleHide(4);
+  }
+
+  void toggleFullscreen() {
+    isFullscreen.value = !isFullscreen.value;
+    if (isFullscreen.value) {
+      SystemChrome.setPreferredOrientations(
+          [Orientation.landscapeLeft, Orientation.landscapeRight]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      isLocked.value = false;
+      SystemChrome.setPreferredOrientations([Orientation.portraitUp]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+    showControls.value = true;
+    _scheduleHide(4);
+  }
+
   void switchQuality(StreamQuality q) {
     currentQuality.value = q.name;
     _playing = false;
@@ -255,7 +292,6 @@ class LivePlayController extends GetxController {
     _playStream(q);
   }
 
-  /// 手动切换 CDN 线路
   void switchLine(int i) {
     if (i < 0 || i >= lines.length) return;
     currentLine.value = i;
@@ -303,43 +339,199 @@ class LivePlayController extends GetxController {
     isFollowed.value = !isFollowed.value;
   }
 
-  // ================= 播放器组件 =================
-  Widget videoWidget() {
-    return Obx(() {
-      playerVersion.value;
-      final c = _controller;
-      return GestureDetector(
-        onTap: _showUrlDialog,
-        child: Stack(
+  void _showUrlDialog() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('当前播放地址', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (c != null && c.value.isInitialized)
-              Center(
-                child: AspectRatio(
-                  aspectRatio: c.value.aspectRatio,
-                  child: VideoPlayer(c),
-                ),
-              ),
-            Positioned(
-              left: 8,
-              bottom: 130,
-              right: 8,
-              child: Text(
-                debugInfo.value,
-                style: const TextStyle(color: Colors.white38, fontSize: 10),
-              ),
+            SelectableText(
+              _currentUrl.isEmpty ? '（还没有地址）' : _currentUrl,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n错误:$_lastError',
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
             ),
           ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: _currentUrl));
+              Get.back();
+              Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
+            },
+            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
+          ),
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('关闭', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= 视频渲染（按比例） =================
+  Widget _videoByFit(VideoPlayerController c) {
+    final va = c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9;
+    switch (fitMode.value) {
+      case 1:
+        return SizedBox.expand(child: VideoPlayer(c));
+      case 2:
+        return Center(child: AspectRatio(aspectRatio: 16 / 9, child: VideoPlayer(c)));
+      case 3:
+        return Center(child: AspectRatio(aspectRatio: 4 / 3, child: VideoPlayer(c)));
+      case 4:
+        return LayoutBuilder(builder: (ctx, cons) {
+          final cw = cons.maxWidth, ch = cons.maxHeight;
+          if (cw <= 0 || ch <= 0) {
+            return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
+          }
+          final ca = cw / ch;
+          double w, h;
+          if (va > ca) {
+            h = ch;
+            w = ch * va;
+          } else {
+            w = cw;
+            h = cw / va;
+          }
+          return Center(
+              child: ClipRect(child: SizedBox(width: w, height: h, child: VideoPlayer(c))));
+        });
+      default:
+        return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
+    }
+  }
+
+  Widget _controlBtn(IconData icon, VoidCallback onTap, {bool selected = false, double size = 40}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(selected ? 0.7 : 0.45),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: selected ? const Color(0xFF00D2FF) : Colors.white, size: size * 0.55),
+      ),
+    );
+  }
+
+  Widget _buildControls(bool fullscreen) {
+    return Stack(children: [
+      if (fullscreen)
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Row(children: [
+              _controlBtn(Icons.arrow_back, toggleFullscreen),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  streamerName.value,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              _controlBtn(Icons.lock_open, toggleLock),
+            ]),
+          ),
+        ),
+      Positioned(
+        bottom: 0,
+        left: 0,
+        right: 0,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(children: [
+            _controlBtn(isPaused.value ? Icons.play_arrow : Icons.pause, togglePlay),
+            const SizedBox(width: 8),
+            _controlBtn(Icons.refresh, refreshPlay),
+            const SizedBox(width: 8),
+            _controlBtn(
+                showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline,
+                () {
+                  showDanmaku.value = !showDanmaku.value;
+                  _scheduleHide(4);
+                }),
+            const SizedBox(width: 8),
+            _controlBtn(Icons.aspect_ratio, cycleFit),
+            const SizedBox(width: 8),
+            _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
+            const Spacer(),
+            Obx(() => Text(
+                  fitNames[fitMode.value],
+                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
+                )),
+            const SizedBox(width: 10),
+            _controlBtn(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, toggleFullscreen),
+          ]),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _videoCore({required bool fullscreen}) {
+    return Obx(() {
+      final c = _controller;
+      return GestureDetector(
+        onTap: onTapVideo,
+        onLongPress: _showUrlDialog,
+        child: Container(
+          color: Colors.black,
+          child: Stack(
+            children: [
+              if (c != null && c.value.isInitialized) Positioned.fill(child: _videoByFit(c)),
+              if (isPaused.value && !isLocked.value)
+                Center(child: _controlBtn(Icons.play_arrow, togglePlay, selected: true, size: 64)),
+              if (showControls.value && !isLocked.value) _buildControls(fullscreen),
+              if (isLocked.value && showControls.value)
+                Positioned(
+                  left: 12,
+                  top: fullscreen ? 60 : 12,
+                  child: _controlBtn(Icons.lock, toggleLock, selected: true),
+                ),
+              if (!fullscreen)
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  right: 8,
+                  child: Text(
+                    debugInfo.value,
+                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+                  ),
+                ),
+            ],
+          ),
         ),
       );
     });
   }
 
+  Widget videoWidget() => _videoCore(fullscreen: false);
+  Widget fullscreenWidget() => _videoCore(fullscreen: true);
+
   @override
   void onClose() {
+    _hideTimer?.cancel();
     _stallTimer?.cancel();
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
+    SystemChrome.setPreferredOrientations([Orientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.onClose();
   }
 }
