@@ -7,7 +7,7 @@ import '../model/streamer_info.dart';
 
 /// 虎牙直播流解析
 /// 核心算法逐行移植自 dtv_mobile 的 HuyaStreamUrlResolverAndroid.kt
-/// 粉丝 = 订阅数；热度 = totalCount/userCount（pure_live/dtv 同款口径）
+/// 粉丝 = 订阅数；热度 = totalCount/userCount
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -26,7 +26,6 @@ class HuyaStreamResolver {
   int _i(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
   String _s(dynamic v) => v?.toString() ?? '';
 
-  /// 返回第一个 >0 的值
   int _firstNonZero(List<dynamic> vals) {
     for (final v in vals) {
       final n = _i(v);
@@ -37,7 +36,6 @@ class HuyaStreamResolver {
 
   String _md5(String input) => md5.convert(utf8.encode(input)).toString();
 
-  /// dtv: enforceHttp —— 规避 TLS/SNI 问题
   static String enforceHttp(String url) => url.startsWith('https://')
       ? url.replaceFirst('https://', 'http://')
       : url;
@@ -211,7 +209,7 @@ class HuyaStreamResolver {
     };
     try {
       final m = RegExp(
-        r'window\.HNF_GLOBAL_INIT\s*=\s*\{(.*?)\}\s*;?\s*</script>',
+        r'HNF_GLOBAL_INIT\s*=\s*\{(.*?)\}\s*;?\s*</script>',
         dotAll: true,
       ).firstMatch(body);
       if (m != null) {
@@ -229,7 +227,6 @@ class HuyaStreamResolver {
             profile['lFansCount'],
             profile['iFansCount'],
           ]);
-          // 热度 = totalCount / userCount
           out['heat'] = _firstNonZero([
             liveInfo['totalCount'],
             liveInfo['userCount'],
@@ -282,9 +279,17 @@ class HuyaStreamResolver {
       if (m != null) out['subSid'] = int.parse(m.group(1)!);
     }
     if (_i(out['uid']) == 0) {
-      final m = RegExp(r'"lPresenterUid"\s*:\s*(\d+)').firstMatch(body);
-      if (m != null) out['uid'] = int.parse(m.group(1)!);
+      for (final key in ['lPresenterUid', 'lUid', 'yyid', 'lChannelId']) {
+        final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+        if (m != null) {
+          out['uid'] = int.parse(m.group(1)!);
+          break;
+        }
+      }
     }
+    // 虎牙 topSid/subSid 通常等于主播 yyid
+    if (_i(out['topSid']) == 0) out['topSid'] = out['uid'];
+    if (_i(out['subSid']) == 0) out['subSid'] = out['topSid'];
     // 粉丝（订阅数）兜底：只匹配非零
     if (_i(out['fans']) == 0) {
       for (final key in [
@@ -304,12 +309,7 @@ class HuyaStreamResolver {
     }
     // 热度兜底：只匹配非零
     if (_i(out['heat']) == 0) {
-      for (final key in [
-        'totalCount',
-        'lUserCount',
-        'iAttendeeCount',
-        'userCount'
-      ]) {
+      for (final key in ['totalCount', 'lUserCount', 'iAttendeeCount', 'userCount']) {
         final m = RegExp('"$key"\\s*:\\s*([1-9]\\d*)').firstMatch(body);
         if (m != null) {
           out['heat'] = int.parse(m.group(1)!);
@@ -467,7 +467,6 @@ class HuyaStreamResolver {
 
       final isLive = _s(data['liveStatus']) == 'ON' || _i(liveInfo['eLiveStatus']) == 2;
 
-      // 热度（dtv 同款：liveData.totalCount）
       final heat = _firstNonZero([
         liveData['totalCount'],
         liveData['userCount'],
@@ -545,12 +544,12 @@ class HuyaStreamResolver {
           uid: _i(profile['yyid'] ?? profile['lUid']),
           nickname: _s(profile['sNick'] ?? profile['sPresenterNick']),
           avatar: _s(profile['sAvatar180'] ?? profile['sAvatar']),
-          // 虎牙粉丝 = 订阅数
           fansCount: _firstNonZero([
             profile['lSubscribeCount'],
             profile['iSubscribeCount'],
             profile['lFansCount'],
             profile['iFansCount'],
+            liveInfo['lFansCount'],
           ]),
           isLive: isLive,
         ),
