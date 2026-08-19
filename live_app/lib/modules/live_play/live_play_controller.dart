@@ -328,9 +328,9 @@ class LivePlayController extends GetxController {
     final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
     if (ok) {
       inputController.clear();
-      Get.snackbar('已发送', text, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('已发送', '等待服务器确认…', snackPosition: SnackPosition.BOTTOM);
     } else {
-      Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('发送失败', '请确认已在设置中登录虎牙账号', snackPosition: SnackPosition.BOTTOM);
     }
   }
 
