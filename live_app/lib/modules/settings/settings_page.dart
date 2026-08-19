@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/liquid_glass.dart';
-import '../login/huya_login_page.dart';
+import 'huya_login_page.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
 
+class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
+    final loggedIn = HuyaLoginManager().isLoggedIn;
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0F),
       appBar: AppBar(
@@ -22,44 +27,43 @@ class SettingsPage extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              Obx(() => LiquidGlass(
-                    padding: const EdgeInsets.all(16),
-                    child: InkWell(
-                      onTap: () async {
-                        await Get.to(() => const HuyaLoginPage());
-                        // 返回后强制刷新 Obx
-                        HuyaLoginManager().instanceVersion.value++;
-                      },
-                      child: Row(
-                        children: [
-                          const Icon(Icons.account_circle,
-                              color: Color(0xFF00D2FF), size: 32),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('虎牙账号',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold)),
-                                Text(
-                                  HuyaLoginManager().isLoggedIn
-                                      ? '已登录 · 可发真实弹幕 / 看真实订阅数'
-                                      : '未登录 · 点击粘贴 Cookie 登录',
-                                  style: TextStyle(
-                                      color: Colors.white.withOpacity(0.6),
-                                      fontSize: 12),
-                                ),
-                              ],
+              LiquidGlass(
+                padding: const EdgeInsets.all(16),
+                child: InkWell(
+                  onTap: () async {
+                    await Get.to(() => const HuyaLoginPage());
+                    setState(() {}); // 返回后刷新登录状态
+                  },
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_circle,
+                          color: Color(0xFF00D2FF), size: 32),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('虎牙账号',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold)),
+                            Text(
+                              loggedIn
+                                  ? '已登录 · 可发真实弹幕 / 看真实订阅数'
+                                  : '未登录 · 点击粘贴 Cookie 登录',
+                              style: TextStyle(
+                                  color: Colors.white.withOpacity(0.6),
+                                  fontSize: 12),
                             ),
-                          ),
-                          const Icon(Icons.chevron_right, color: Colors.white38),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  )),
+                      const Icon(Icons.chevron_right, color: Colors.white38),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               LiquidGlass(
                 padding: const EdgeInsets.all(16),
