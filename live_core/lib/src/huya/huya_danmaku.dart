@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -337,9 +338,7 @@ class _TarsWriter {
   }
 
   List<int> _utf8(String s) {
-    // 避免引入 dart:convert，用 Uri 编码转 UTF-8
-    final encoded = Uri.encodeToByteArray(s);
-    return encoded;
+    return utf8.encode(s);
   }
 
   void writeStringList(int tag, List<String> items) {
@@ -481,7 +480,7 @@ class _TarsReader {
 
   String _decodeUtf8(List<int> bytes) {
     try {
-      return Uri.decodeFull(String.fromCharCodes(bytes));
+      return utf8.decode(bytes, allowMalformed: true);
     } catch (_) {
       return String.fromCharCodes(bytes);
     }
