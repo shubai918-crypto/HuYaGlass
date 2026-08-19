@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../common/widgets/liquid_glass.dart';
 import '../../app/routes.dart';
+import '../../modules/settings/settings_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -28,7 +29,7 @@ class HomePage extends StatelessWidget {
                   const Spacer(),
                   LiquidGlassIconButton(
                     icon: Icons.settings_outlined,
-                    onTap: () => Get.toNamed(AppRoutes.settings),
+                    onTap: () => Get.to(() => const SettingsPage()),
                   ),
                 ],
               ),
