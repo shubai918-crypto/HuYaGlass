@@ -17,7 +17,7 @@ class LivePlayPage extends StatelessWidget {
           },
           child: Scaffold(
             backgroundColor: const Color(0xFF0A0A0F),
-            // 关键修复：整棵树切换，竖屏/全屏永不同框
+            // 整棵树切换：竖屏/全屏永不同框
             body: controller.isFullscreen.value
                 ? _buildFullscreen(controller)
                 : _buildPortrait(controller),
