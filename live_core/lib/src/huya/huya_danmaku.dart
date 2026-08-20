@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
 import 'huya_login.dart';
 
 class DanmakuMessage {
@@ -16,27 +15,14 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端
-/// 接收：pure_live 同款（16 注册 / 20 心跳 / 7·22 推送 / 1400 弹幕 / 8006 人气）
-/// 发送：App 同款 —— POST WUP(GameLive/sendMessage, tReq) 到 wup.huya.com
-/// 成功判定：iRet==0 + 服务器回显
+/// 虎牙弹幕客户端（完全复刻网页端 WS 协议）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
-  /// App 风格 UA：adr&版本&型号&SDK
-  static const _appUa = 'adr&7.11.82&Pixel 5&31';
-
   static const _endpoints = [
     'wss://wsapi.huya.com',
     'wss://cdnws.api.huya.com',
-  ];
-
-  /// WUP 网关候选（文档：生产 https://wup.huya.com；HTTPDNS 优选 http://ip:80）
-  static const _wupUrls = [
-    'https://wup.huya.com/',
-    'http://wup.huya.com:80/',
-    'http://cdn.wup.huya.com:80/',
   ];
 
   WebSocket? _ws;
@@ -54,7 +40,6 @@ class HuyaDanmakuClient {
   int _reqId = 0;
   String? _pendingDanmaku;
 
-  // 登录态（来自 Cookie）
   int _loginUid = 0;
   String _guid = '';
   String _token = '';
@@ -118,11 +103,15 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，注册中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
+    // 1. 注册房间组 (16)
     _send(_buildRegister(_ayyuid, _ayyuid));
     _secondRegTimer?.cancel();
     _secondRegTimer = Timer(const Duration(seconds: 1), () {
       if (_topSid > 0) _send(_buildRegister(_topSid, _subSid));
+      // 2. 验证 Cookie (10)
       if (_loginUid > 0) _send(_buildVerifyCookie());
+      // 3. 网页端特有的 wsLaunch 握手 (命令字 3)
+      _send(_buildWsLaunchReq());
     });
 
     _heartTimer?.cancel();
@@ -135,7 +124,7 @@ class HuyaDanmakuClient {
     group.writeStringList(0, ['live:$liveId', 'chat:$chatId']);
     group.writeString(1, '');
     final command = _TarsWriter();
-    command.writeInt(0, 16);
+    command.writeInt(0, 16); // EWSCmdC2S_RegisterGroupReq
     command.writeBytes(1, group.toBytes());
     return command.toBytes();
   }
@@ -143,19 +132,42 @@ class HuyaDanmakuClient {
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
-    req.writeString(
-        1,
-        _cookieVal('huya_ua').isEmpty
-            ? 'webh5&0.1.0&websocket'
-            : _cookieVal('huya_ua'));
+    req.writeString(1, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
     req.writeString(2, _cookie);
     req.writeString(3, _guid);
     req.writeInt(4, 1);
     req.writeString(5, 'web');
     final command = _TarsWriter();
-    command.writeInt(0, 10);
+    command.writeInt(0, 10); // EWSCmdC2S_VerifyCookieReq
     command.writeBytes(1, req.toBytes());
     return command.toBytes();
+  }
+
+  /// 网页端 wsLaunch 握手（必须在发业务 WUP 前执行）
+  Uint8List _buildWsLaunchReq() {
+    final dev = _TarsWriter();
+    dev.writeString(0, ''); // sIMEI
+    dev.writeString(1, ''); // sAPN
+    dev.writeString(2, 'wifi'); // sNetType
+    dev.writeString(3, _guid); // sDeviceId
+    dev.writeString(4, ''); // sMId
+
+    final req = _TarsWriter();
+    req.writeInt(0, _loginUid);
+    req.writeString(1, _guid);
+    req.writeString(2, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
+    req.writeString(3, 'webh5&CN&2052'); // sAppSrc
+    req.writeStruct(4, dev);
+
+    final wup = _TarsWriter();
+    wup.writeInt(1, 3);
+    wup.writeInt(2, 0);
+    wup.writeInt(3, 0);
+    wup.writeInt(4, ++_reqId);
+    wup.writeString(5, 'launch');
+    wup.writeString(6, 'wsLaunch');
+    wup.writeBytesMap(7, {'tReq': req.toBytes()});
+    return _wrapWsCmd(wup.toBytes(), 3); // EWSCmd_WupReq = 3
   }
 
   void _sendHeartbeat() {
@@ -165,133 +177,81 @@ class HuyaDanmakuClient {
     _send(command.toBytes());
   }
 
-  // ================= 真实发送（App 同款：WUP GameLive/sendMessage over HTTP） =================
+  // ================= 真实发送（WS 命令字 3） =================
   Future<bool> sendDanmaku(String text) async {
-    if (_loginUid <= 0) return false;
+    if (_loginUid <= 0 || _ws == null) return false;
     try {
       _pendingDanmaku = text;
-      _tryHttpSend(_buildWupSend(text));
+      onSendDebug?.call('WS 发送 liveui.sendMessage (cmd=3)');
+      _send(_buildWupSend(text, 'liveui'));
+      // 500ms 后若没回显，补发 GameLive (App 端 servant)
+      Timer(const Duration(milliseconds: 500), () {
+        if (!_closed && _pendingDanmaku == text) {
+          onSendDebug?.call('WS 补发 GameLive.sendMessage (cmd=3)');
+          _send(_buildWupSend(text, 'GameLive'));
+        }
+      });
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  Future<void> _tryHttpSend(Uint8List wup) async {
-    final sb = StringBuffer();
-    for (final url in _wupUrls) {
-      final host = Uri.parse(url).host;
-      try {
-        final res = await http
-            .post(
-              Uri.parse(url),
-              headers: {
-                'Content-Type': 'application/octet-stream',
-                'User-Agent': _appUa,
-                if (_cookie.isNotEmpty) 'Cookie': _cookie,
-              },
-              body: wup,
-            )
-            .timeout(const Duration(seconds: 8));
-        sb.write('$host:${res.statusCode}');
-        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-          final ret = _parseWupRsp(res.bodyBytes);
-          sb.write(' ret=$ret');
-          if (ret == 0) {
-            onSendDebug?.call('发送诊断 $host iRet=0 服务器已接受 ✔');
-          } else if (ret == 0x389) {
-            onSendDebug?.call('发送诊断 需绑定手机(20008)');
-          } else if (ret == 0x6B) {
-            onSendDebug?.call('发送诊断 被禁言(107)');
-          }
-        } else if (res.bodyBytes.isNotEmpty) {
-          final bodyTxt = utf8
-              .decode(res.bodyBytes, allowMalformed: true)
-              .replaceAll(RegExp(r'\s+'), ' ');
-          sb.write(' "${bodyTxt.length > 30 ? bodyTxt.substring(0, 30) : bodyTxt}"');
-        }
-      } catch (_) {
-        sb.write('$host:ERR');
-      }
-      sb.write(' | ');
-      onSendDebug?.call('发送诊断 ${sb.toString()}');
-    }
-    Timer(const Duration(seconds: 3), () {
-      if (_pendingDanmaku != null) {
-        onSendDebug?.call('发送诊断 ${sb.toString()}（等待回显…）');
-      }
-    });
-  }
-
-  /// 解析 WUP 响应：UniPacket(tag7 map) → "tRsp" → SendMessageRsp.iRet@0
-  int _parseWupRsp(List<int> bytes) {
-    try {
-      final f = _TarsReader(Uint8List.fromList(bytes)).readFields();
-      final map = f[7];
-      if (map is List) {
-        for (var i = 0; i + 1 < map.length; i += 2) {
-          if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
-            final rsp = _TarsReader(Uint8List.fromList(
-                    (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList()))
-                .readFields();
-            return rsp[0] is int ? rsp[0] as int : -1;
-          }
-        }
-      }
-      return f[0] is int ? f[0] as int : -99;
-    } catch (_) {
-      return -99;
-    }
-  }
-
-  /// WUP(GameLive/sendMessage, tReq=SendMessageReq) —— 文档确认结构
-  Uint8List _buildWupSend(String text) {
-    // UserId@0
+  /// WUP(liveui/GameLive/sendMessage) —— 字段顺序严格对齐 MessageNotice
+  Uint8List _buildWupSend(String text, String servant) {
+    // UserId (对齐 SenderInfo)
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
     user.writeString(1, _guid);
     user.writeString(2, _token);
     user.writeInt(3, 0);
-    user.writeString(4, _appUa);
-    user.writeString(5, 'Pixel 5');
+    user.writeString(4, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
+    user.writeString(5, ''); 
     user.writeString(6, _cookie);
+    user.writeString(7, ''); 
 
-    // ContentFormat@5：(type, 4, 0, -1)
+    // ContentFormat
     final cf = _TarsWriter();
-    cf.writeInt(0, 0);
+    cf.writeInt(0, -1);
     cf.writeInt(1, 4);
     cf.writeInt(2, 0);
     cf.writeInt(3, -1);
 
-    // BulletFormat@6：(color, size, speed, transition, popup)
+    // BulletFormat
     final bf = _TarsWriter();
-    bf.writeInt(0, -0x888889); // 0xFF777777 默认灰
+    bf.writeInt(0, -1); 
     bf.writeInt(1, 4);
     bf.writeInt(2, 1);
     bf.writeInt(3, 0);
     bf.writeInt(4, 0);
 
-    // SendMessageReq
+    // SendMessageReq (严格对齐 MessageNotice 的 tag 顺序)
     final req = _TarsWriter();
-    req.writeStruct(0, user); // tUserId
-    req.writeInt(1, _topSid); // lSid 主频道
-    req.writeInt(2, _subSid); // lSubSid 子频道
-    req.writeInt(3, _ayyuid); // lTid 主播UID
-    req.writeString(4, text.replaceAll('\n', ' ')); // sContent
-    req.writeStruct(5, cf); // tFormat
-    req.writeStruct(6, bf); // tBulletFormat
-    req.writeInt(7, 0); // iShowMode
+    req.writeStruct(0, user); // 0: tUserInfo
+    req.writeInt(1, _topSid); // 1: lTid
+    req.writeInt(2, _subSid); // 2: lSid
+    req.writeString(3, text.replaceAll('\n', ' ')); // 3: sContent
+    req.writeInt(4, 0); // 4: iShowMode
+    req.writeStruct(5, cf); // 5: tFormat
+    req.writeStruct(6, bf); // 6: tBulletFormat
 
-    // WUP UniPacket —— servant 必须是 GameLive！
     final wup = _TarsWriter();
     wup.writeInt(1, 3);
     wup.writeInt(2, 0);
     wup.writeInt(3, 0);
     wup.writeInt(4, ++_reqId);
-    wup.writeString(5, 'GameLive');
+    wup.writeString(5, servant);
     wup.writeString(6, 'sendMessage');
     wup.writeBytesMap(7, {'tReq': req.toBytes()});
-    return wup.toBytes();
+    return _wrapWsCmd(wup.toBytes(), 3); // EWSCmd_WupReq = 3
+  }
+
+  Uint8List _wrapWsCmd(Uint8List wup, int cmdType) {
+    final command = _TarsWriter();
+    command.writeInt(0, cmdType);
+    command.writeBytes(1, wup);
+    command.writeInt(2, _reqId);
+    return command.toBytes();
   }
 
   void _scheduleReconnect() {
@@ -343,6 +303,7 @@ class HuyaDanmakuClient {
       if (payload is List) {
         final pr = _TarsReader(
             Uint8List.fromList(payload.map((e) => (e as int) & 0xFF).toList()));
+        
         if (type == 7) {
           final pf = pr.readFields();
           final uri = pf[1] is int ? pf[1] as int : 0;
@@ -366,10 +327,52 @@ class HuyaDanmakuClient {
               }
             }
           }
+        } else if (type == 4) {
+          // EWSCmd_WupRsp (4) —— 解析 WUP 响应
+          _parseWupRsp(payload);
+        } else if (type == 11) {
+          // VerifyCookieRsp
+          try {
+            final pf = pr.readFields();
+            final v = pf[0] is int ? pf[0] as int : -1;
+            onSendDebug?.call('VerifyCookie iValidate=$v (0=通过)');
+          } catch (_) {}
         }
       }
       onStatus?.call('收包$_recvCount type=$_lastType uri=$_lastUri');
     } catch (_) {}
+  }
+
+  void _parseWupRsp(List payload) {
+    try {
+      final pr = _TarsReader(Uint8List.fromList(payload.map((e) => (e as int) & 0xFF).toList()));
+      final wupBytes = pr.readFields()[1];
+      if (wupBytes is List) {
+        final wupReader = _TarsReader(Uint8List.fromList(wupBytes.map((e) => (e as int) & 0xFF).toList()));
+        final wupFields = wupReader.readFields();
+        final funcName = wupFields[6];
+        final reqId = wupFields[4];
+        final bufferMap = wupFields[7];
+        int ret = -99;
+        if (bufferMap is List) {
+          for (var i = 0; i + 1 < bufferMap.length; i += 2) {
+            if ('${bufferMap[i]}' == 'tRsp' && bufferMap[i + 1] is List) {
+              final rspBytes = (bufferMap[i + 1] as List).map((e) => (e as int) & 0xFF).toList();
+              final rspFields = _TarsReader(Uint8List.fromList(rspBytes)).readFields();
+              ret = rspFields[0] is int ? rspFields[0] as int : -99;
+            }
+          }
+        }
+        onSendDebug?.call('WS WupRsp func=$funcName reqId=$reqId iRet=$ret');
+        if (funcName == 'sendMessage' && ret == 0) {
+           onSendDebug?.call('发送诊断 服务器已接受(iRet=0) ✔');
+        } else if (funcName == 'sendMessage') {
+           onSendDebug?.call('发送诊断 服务器拒绝(iRet=$ret)');
+        }
+      }
+    } catch (e) {
+      onSendDebug?.call('WS WupRsp 解析失败: $e');
+    }
   }
 
   void _decodePush(int uri, List<int> payload) {
@@ -390,7 +393,6 @@ class HuyaDanmakuClient {
             content: content,
             fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
           ));
-          // 唯一成功标准：服务器把自己的弹幕广播回来
           if (_pendingDanmaku != null && content == _pendingDanmaku) {
             _pendingDanmaku = null;
             onStatus?.call('弹幕发送成功 ✔');
@@ -488,7 +490,7 @@ class _TarsWriter {
   void writeStruct(int tag, _TarsWriter inner) {
     _head(tag, 10);
     _b.add(inner._b.toBytes());
-    _b.addByte(0x0B); // STRUCT_END
+    _b.addByte(0x0B);
   }
 
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
@@ -515,18 +517,12 @@ class _TarsReader {
   int _readValueInt() {
     final t = _byte();
     switch (t) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
-      default:
-        throw FormatException('tars: not an int, type=$t');
+      case 0: return _readIntN(1);
+      case 1: return _readIntN(2);
+      case 2: return _readIntN(4);
+      case 3: return _readIntN(8);
+      case 12: return 0;
+      default: throw FormatException('tars: not an int, type=$t');
     }
   }
 
@@ -545,16 +541,11 @@ class _TarsReader {
 
   Object? _readValue(int type) {
     switch (type) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
+      case 0: return _readIntN(1);
+      case 1: return _readIntN(2);
+      case 2: return _readIntN(4);
+      case 3: return _readIntN(8);
+      case 12: return 0;
       case 4:
         final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
         _pos += 4;
