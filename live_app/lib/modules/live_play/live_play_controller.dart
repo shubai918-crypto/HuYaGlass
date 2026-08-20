@@ -8,9 +8,21 @@ import 'huya_web_sender.dart';
 import '../home/follow_store.dart';
 
 class LivePlayController extends GetxController {
-  final roomId = Get.parameters['roomId'] ?? '';
+  final roomId = _readRoomId();
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
+  /// 兼容路由参数和 arguments 两种传参方式
+  static String _readRoomId() {
+    final p = Get.parameters['roomId'];
+    if (p != null && p.isNotEmpty) return p;
+    final a = Get.arguments;
+    if (a is Map) {
+      final v = a['roomId'];
+      if (v != null) return v.toString();
+    }
+    return '';
+  }
+  
   static const List<String> fitNames = ['自适应', '填充', '16:9', '4:3', '铺满'];
 
   // ---------- UI 状态 ----------
