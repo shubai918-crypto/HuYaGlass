@@ -6,6 +6,7 @@ import 'package:live_core/live_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'huya_web_sender.dart';
+import '../home/follow_store.dart';
 
 class LivePlayController extends GetxController {
   final roomId = _readRoomId();
