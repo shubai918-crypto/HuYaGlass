@@ -116,7 +116,9 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
 })()
 ''';
     try {
-      final r = (await ctrl.runJavaScriptReturningResult(js)).replaceAll('"', '');
+      // 修复：先转为 String 再调用 replaceAll
+      final result = await ctrl.runJavaScriptReturningResult(js);
+      final r = '$result'.replaceAll('"', '');
       final v = _parseWan(r);
       if (v > 0) widget.onFans?.call(v);
     } catch (_) {}
