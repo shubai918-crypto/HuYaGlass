@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-import '../live_play/live_play_page.dart';
 import '../settings/settings_page.dart';
 import 'follow_store.dart';
 
@@ -13,7 +12,8 @@ class HomePage extends StatelessWidget {
 
   void _goLive(String roomId) {
     if (roomId.isEmpty) return;
-    Get.to(() => const LivePlayPage(), parameters: {'roomId': roomId});
+    // 修复：使用命名路由传递 parameters
+    Get.toNamed('/live', parameters: {'roomId': roomId});
   }
 
   @override
@@ -32,9 +32,10 @@ class HomePage extends StatelessWidget {
       appBar: GlassAppBar(
         title: const Text('HuyaLive'),
         actions: [
+          // 修复：GlassIconButton 使用 onPressed 而不是 onTap
           GlassIconButton(
             icon: const Icon(Icons.settings),
-            onTap: () => Get.to(() => const SettingsPage()),
+            onPressed: () => Get.to(() => const SettingsPage()),
           ),
         ],
       ),
@@ -179,7 +180,8 @@ class _SearchSheetState extends State<_SearchSheet> {
     if (k.isEmpty) return;
     if (RegExp(r'^\d+$').hasMatch(k)) {
       Get.back();
-      Get.to(() => const LivePlayPage(), parameters: {'roomId': k});
+      // 修复：使用命名路由传递 parameters
+      Get.toNamed('/live', parameters: {'roomId': k});
       return;
     }
     setState(() => _busy = true);
@@ -256,8 +258,8 @@ class _SearchSheetState extends State<_SearchSheet> {
                                       color: Colors.white38, fontSize: 12)),
                               onTap: () {
                                 Get.back();
-                                Get.to(() => const LivePlayPage(),
-                                    parameters: {'roomId': r['roomId']!});
+                                // 修复：使用命名路由传递 parameters
+                                Get.toNamed('/live', parameters: {'roomId': r['roomId']!});
                               },
                             );
                           },
@@ -316,8 +318,8 @@ class _FollowsSheetState extends State<_FollowsSheet> {
                       style: const TextStyle(color: Colors.white38, fontSize: 12)),
                   onTap: () {
                     Get.back();
-                    Get.to(() => const LivePlayPage(),
-                        parameters: {'roomId': f.roomId});
+                    // 修复：使用命名路由传递 parameters
+                    Get.toNamed('/live', parameters: {'roomId': f.roomId});
                   },
                   onLongPress: () async {
                     await FollowStore.remove(f.roomId);
