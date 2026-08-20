@@ -3,21 +3,23 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 
-/// 弹幕滚动视图
+/// 滚动弹幕：FPS/速度/透明度/区域可调，空闲自动暂停（省电）
 class DanmakuView extends StatefulWidget {
   final Stream<DanmakuMessage> danmakuStream;
   final double height;
-  final int maxLines;
   final double fontSize;
-  final bool enabled;
+  final int fps;
+  final double speed;
+  final double opacity;
 
   const DanmakuView({
     super.key,
     required this.danmakuStream,
-    this.height = 220,
-    this.maxLines = 8,
+    this.height = 140,
     this.fontSize = 14,
-    this.enabled = true,
+    this.fps = 30,
+    this.speed = 120,
+    this.opacity = 1.0,
   });
 
   @override
@@ -25,185 +27,116 @@ class DanmakuView extends StatefulWidget {
 }
 
 class _DanmakuViewState extends State<DanmakuView> {
-  final List<_DanmakuItem> _items = [];
-  StreamSubscription? _subscription;
-  final Random _random = Random();
-  final List<double> _lineEndTimes = [];
+  final List<_Fly> _flies = [];
+  final Random _rnd = Random();
+  Timer? _timer;
+  StreamSubscription? _sub;
+  double _width = 0;
+
+  int get _fps => widget.fps.clamp(10, 60);
+  int get _lanes => max(3, (widget.height / (widget.fontSize * 1.9)).floor());
 
   @override
   void initState() {
     super.initState();
-    _lineEndTimes.addAll(List.filled(widget.maxLines, 0));
-    _subscription = widget.danmakuStream.listen(_onDanmaku);
+    _sub = widget.danmakuStream.listen(_onMsg);
   }
 
-  void _onDanmaku(DanmakuMessage msg) {
-    if (!mounted || !widget.enabled) return;
-
-    // 选择最空闲的行
-    final now = DateTime.now().millisecondsSinceEpoch.toDouble();
-    int bestLine = 0;
-    double minEnd = double.infinity;
-    for (int i = 0; i < widget.maxLines; i++) {
-      if (_lineEndTimes[i] < minEnd) {
-        minEnd = _lineEndTimes[i];
-        bestLine = i;
-      }
+  @override
+  void didUpdateWidget(covariant DanmakuView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fps != widget.fps) {
+      _timer?.cancel();
+      _timer = null;
+      _startTimer();
     }
+  }
 
-    setState(() {
-      _items.add(_DanmakuItem(
-        message: msg,
-        line: bestLine,
-        speed: 6 + _random.nextDouble() * 4, // 6~10 秒
-      ));
-      _lineEndTimes[bestLine] = now + 2000; // 避免重叠
+  void _onMsg(DanmakuMessage m) {
+    if (_width <= 0) return;
+    _flies.add(_Fly(
+      text: '${m.nickname}: ${m.content}',
+      color: Color(m.fontColor),
+      lane: _rnd.nextInt(_lanes),
+      x: _width + 10,
+      speed: widget.speed * (0.9 + _rnd.nextDouble() * 0.3),
+    ));
+    if (_flies.length > 60) _flies.removeRange(0, _flies.length - 60);
+    _startTimer();
+  }
 
-      // 限制数量
-      if (_items.length > 60) {
-        _items.removeAt(0);
+  void _startTimer() {
+    if (_timer != null && _timer!.isActive) return;
+    final ms = 1000 ~/ _fps;
+    _timer = Timer.periodic(Duration(milliseconds: ms), (t) {
+      if (!mounted || _flies.isEmpty) {
+        t.cancel(); // 空闲即停，零 CPU 占用
+        return;
       }
+      final dt = ms / 1000.0;
+      setState(() {
+        for (final f in _flies) {
+          f.x -= f.speed * dt;
+        }
+        _flies.removeWhere((f) => f.x < -(_width + 300));
+      });
     });
   }
 
   @override
   void dispose() {
-    _subscription?.cancel();
+    _sub?.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return const SizedBox.shrink();
-
-    return IgnorePointer(
-      child: SizedBox(
-        height: widget.height,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: _items.map((item) {
-            return _DanmakuWidget(
-              key: ValueKey(item.hashCode),
-              item: item,
-              fontSize: widget.fontSize,
-              lineHeight: widget.height / widget.maxLines,
-              onComplete: () {
-                if (mounted) {
-                  setState(() => _items.remove(item));
-                }
-              },
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-}
-
-class _DanmakuItem {
-  final DanmakuMessage message;
-  final int line;
-  final double speed;
-
-  _DanmakuItem({
-    required this.message,
-    required this.line,
-    required this.speed,
-  });
-}
-
-class _DanmakuWidget extends StatefulWidget {
-  final _DanmakuItem item;
-  final double fontSize;
-  final double lineHeight;
-  final VoidCallback onComplete;
-
-  const _DanmakuWidget({
-    super.key,
-    required this.item,
-    required this.fontSize,
-    required this.lineHeight,
-    required this.onComplete,
-  });
-
-  @override
-  State<_DanmakuWidget> createState() => _DanmakuWidgetState();
-}
-
-class _DanmakuWidgetState extends State<_DanmakuWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<Offset> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: widget.item.speed.round()),
-    );
-    _animation = Tween<Offset>(
-      begin: const Offset(1.0, 0),
-      end: const Offset(-2.0, 0),
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
-
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        widget.onComplete();
-      }
-    });
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final msg = widget.item.message;
-    return Positioned(
-      top: widget.item.line * widget.lineHeight,
-      left: 0,
-      right: 0,
-      child: SlideTransition(
-        position: _animation,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Text.rich(
-            TextSpan(
+    return LayoutBuilder(
+      builder: (c, cons) {
+        _width = cons.maxWidth;
+        final laneH = widget.height / _lanes;
+        return Opacity(
+          opacity: widget.opacity,
+          child: SizedBox(
+            height: widget.height,
+            child: Stack(
+              clipBehavior: Clip.hardEdge,
               children: [
-                TextSpan(
-                  text: '${msg.nickname}: ',
-                  style: TextStyle(
-                    color: const Color(0xFF00D2FF),
-                    fontSize: widget.fontSize,
-                    fontWeight: FontWeight.w600,
+                for (final f in _flies)
+                  Positioned(
+                    left: f.x,
+                    top: f.lane * laneH + 2,
+                    child: Text(
+                      f.text,
+                      style: TextStyle(
+                        color: f.color,
+                        fontSize: widget.fontSize,
+                        fontWeight: FontWeight.w600,
+                        shadows: const [Shadow(color: Colors.black87, blurRadius: 2)],
+                      ),
+                    ),
                   ),
-                ),
-                TextSpan(
-                  text: msg.content,
-                  style: TextStyle(
-                    color: msg.fontColor >= 0
-                        ? Color(msg.fontColor | 0xFF000000)
-                        : Colors.white,
-                    fontSize: widget.fontSize,
-                  ),
-                ),
               ],
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+}
+
+class _Fly {
+  final String text;
+  final Color color;
+  final int lane;
+  final double speed;
+  double x;
+  _Fly({
+    required this.text,
+    required this.color,
+    required this.lane,
+    required this.x,
+    required this.speed,
+  });
 }
