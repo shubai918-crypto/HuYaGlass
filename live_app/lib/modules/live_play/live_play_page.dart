@@ -17,54 +17,59 @@ class LivePlayPage extends StatelessWidget {
           },
           child: Scaffold(
             backgroundColor: const Color(0xFF0A0A0F),
-            body: Stack(
-              children: [
-                SafeArea(
-                  child: Obx(() {
-                    if (controller.loading.value) {
-                      return const Center(
-                          child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-                    }
-                    return Column(
-                      children: [
-                        _buildTopBar(controller),
-                        _buildVideoArea(controller),
-                        Expanded(child: _InfoTabs(controller: controller)),
-                        _buildBottomBar(controller),
-                      ],
-                    );
-                  }),
-                ),
-                Obx(() => controller.isFullscreen.value
-                    ? Container(
-                        color: Colors.black,
-                        child: Stack(children: [
-                          Positioned.fill(child: controller.fullscreenWidget()),
-                          Obx(() => controller.showDanmaku.value &&
-                                  controller.danmakuStream != null
-                              ? Positioned(
-                                  top: 50,
-                                  left: 0,
-                                  right: 0,
-                                  child: IgnorePointer(
-                                    child: DanmakuView(
-                                      danmakuStream: controller.danmakuStream!,
-                                      height: 220 * controller.danmakuArea.value,
-                                      fontSize: controller.danmakuFontSize.value,
-                                      fps: controller.danmakuFps.value,
-                                      speed: controller.danmakuSpeed.value,
-                                      opacity: controller.danmakuOpacity.value,
-                                    ),
-                                  ),
-                                )
-                              : const SizedBox.shrink()),
-                        ]),
-                      )
-                    : const SizedBox.shrink()),
-              ],
-            ),
+            // 关键修复：整棵树切换，竖屏/全屏永不同框
+            body: controller.isFullscreen.value
+                ? _buildFullscreen(controller)
+                : _buildPortrait(controller),
           ),
         ));
+  }
+
+  // ================= 竖屏 =================
+  Widget _buildPortrait(LivePlayController controller) {
+    return SafeArea(
+      child: Obx(() {
+        if (controller.loading.value) {
+          return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+        }
+        return Column(
+          children: [
+            _buildTopBar(controller),
+            _buildVideoArea(controller),
+            Expanded(child: _InfoTabs(controller: controller)),
+            _buildBottomBar(controller),
+          ],
+        );
+      }),
+    );
+  }
+
+  // ================= 全屏 =================
+  Widget _buildFullscreen(LivePlayController controller) {
+    return Container(
+      color: Colors.black,
+      child: Stack(children: [
+        Positioned.fill(child: controller.fullscreenWidget()),
+        Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
+            ? Positioned(
+                top: 50,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: DanmakuView(
+                    danmakuStream: controller.danmakuStream!,
+                    height: 220 * controller.danmakuArea.value,
+                    fontSize: controller.danmakuFontSize.value,
+                    fps: controller.danmakuFps.value,
+                    speed: controller.danmakuSpeed.value,
+                    opacity: controller.danmakuOpacity.value,
+                  ),
+                ),
+              )
+            : const SizedBox.shrink()),
+      ]),
+    );
   }
 
   Widget _defaultAvatar() => Container(
@@ -395,7 +400,6 @@ class _DetailTab extends StatelessWidget {
     return Obx(() => ListView(
           padding: const EdgeInsets.all(14),
           children: [
-            // 主播信息
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -460,7 +464,6 @@ class _DetailTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            // 数据（完整显示，不截断）
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -478,7 +481,6 @@ class _DetailTab extends StatelessWidget {
                 ],
               ),
             ),
-            // 开播时长（实时计算）
             Obx(() => controller.liveDurationText.value.isNotEmpty
                 ? Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -509,7 +511,6 @@ class _DetailTab extends StatelessWidget {
                   )
                 : const SizedBox.shrink()),
             const SizedBox(height: 12),
-            // 直播标题
             if (controller.roomTitle.value.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(14),
