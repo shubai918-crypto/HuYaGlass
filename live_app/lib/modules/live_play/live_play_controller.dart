@@ -3,15 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'huya_web_sender.dart';
-import '../home/follow_store.dart';
 
 class LivePlayController extends GetxController {
   final roomId = _readRoomId();
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
-  /// 兼容路由参数和 arguments 两种传参方式
   static String _readRoomId() {
     final p = Get.parameters['roomId'];
     if (p != null && p.isNotEmpty) return p;
@@ -22,7 +21,7 @@ class LivePlayController extends GetxController {
     }
     return '';
   }
-  
+
   static const List<String> fitNames = ['自适应', '填充', '16:9', '4:3', '铺满'];
 
   // ---------- UI 状态 ----------
@@ -39,6 +38,13 @@ class LivePlayController extends GetxController {
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
 
+  // ---------- 弹幕设置 / 省电 ----------
+  final danmakuFps = 30.obs;
+  final danmakuSpeed = 120.0.obs;
+  final danmakuOpacity = 1.0.obs;
+  final danmakuArea = 0.4.obs;
+  final powerSave = false.obs;
+
   // ---------- 播放器控制层 ----------
   final showControls = false.obs;
   final isFullscreen = false.obs;
@@ -47,6 +53,9 @@ class LivePlayController extends GetxController {
   final isMuted = false.obs;
   final fitMode = 0.obs;
   Timer? _hideTimer;
+
+  final webSenderActive = false.obs;
+  Timer? _webSenderIdleTimer;
 
   final qualities = <StreamQuality>[].obs;
   final lines = <String>[].obs;
@@ -84,10 +93,177 @@ class LivePlayController extends GetxController {
   void onInit() {
     super.onInit();
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
+    _loadSettings();
     _loadStream();
   }
 
-  // 直播流 position 不前进，只能用 isBuffering 判断卡顿
+  // ================= 设置持久化 =================
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      danmakuFps.value = prefs.getInt('dm_fps') ?? 30;
+      danmakuSpeed.value = prefs.getDouble('dm_speed') ?? 120;
+      danmakuOpacity.value = prefs.getDouble('dm_opacity') ?? 1.0;
+      danmakuArea.value = prefs.getDouble('dm_area') ?? 0.4;
+      danmakuFontSize.value = prefs.getDouble('dm_font') ?? 14;
+      powerSave.value = prefs.getBool('power_save') ?? false;
+      if (powerSave.value) {
+        danmakuFps.value = 15;
+        showDanmaku.value = false;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('dm_fps', danmakuFps.value);
+      await prefs.setDouble('dm_speed', danmakuSpeed.value);
+      await prefs.setDouble('dm_opacity', danmakuOpacity.value);
+      await prefs.setDouble('dm_area', danmakuArea.value);
+      await prefs.setDouble('dm_font', danmakuFontSize.value);
+      await prefs.setBool('power_save', powerSave.value);
+    } catch (_) {}
+  }
+
+  void togglePowerSave() {
+    powerSave.value = !powerSave.value;
+    if (powerSave.value) {
+      danmakuFps.value = 15;
+      showDanmaku.value = false;
+      Get.snackbar('省电模式', '已开启：降弹幕帧率、关滚动弹幕', snackPosition: SnackPosition.BOTTOM);
+    } else {
+      danmakuFps.value = 30;
+      Get.snackbar('省电模式', '已关闭', snackPosition: SnackPosition.BOTTOM);
+    }
+    _saveSettings();
+  }
+
+  // ================= 弹幕设置面板 =================
+  void showDanmakuSettings() {
+    Get.bottomSheet(
+      Container(
+        color: const Color(0xFF16161E),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: SafeArea(
+          child: Obx(() => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Text('弹幕设置',
+                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      Text(controller_showDanmakuText(),
+                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                      Switch(
+                        value: showDanmaku.value,
+                        activeColor: const Color(0xFF00D2FF),
+                        onChanged: (v) {
+                          showDanmaku.value = v;
+                          _saveSettings();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  _seg('帧率', const ['15', '30', '60'], '${danmakuFps.value}', (v) {
+                    danmakuFps.value = int.parse(v);
+                    if (powerSave.value && danmakuFps.value > 15) powerSave.value = false;
+                    _saveSettings();
+                  }),
+                  _slider('速度', 60, 300, danmakuSpeed.value, (v) {
+                    danmakuSpeed.value = v;
+                    _saveSettings();
+                  }, '${danmakuSpeed.value.toInt()}px/s'),
+                  _slider('字号', 10, 24, danmakuFontSize.value, (v) {
+                    danmakuFontSize.value = v;
+                    _saveSettings();
+                  }, '${danmakuFontSize.value.toInt()}'),
+                  _slider('透明度', 0.3, 1, danmakuOpacity.value, (v) {
+                    danmakuOpacity.value = v;
+                    _saveSettings();
+                  }, '${(danmakuOpacity.value * 100).toInt()}%'),
+                  _slider('区域', 0.2, 0.8, danmakuArea.value, (v) {
+                    danmakuArea.value = v;
+                    _saveSettings();
+                  }, '${(danmakuArea.value * 100).toInt()}%'),
+                  Row(
+                    children: [
+                      const Icon(Icons.battery_saver, color: Color(0xFF7ED97E), size: 20),
+                      const SizedBox(width: 8),
+                      const Text('省电模式', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      const SizedBox(width: 4),
+                      const Text('(降帧率+关滚动弹幕，减少发热)',
+                          style: TextStyle(color: Colors.white38, fontSize: 11)),
+                      const Spacer(),
+                      Switch(
+                        value: powerSave.value,
+                        activeColor: const Color(0xFF7ED97E),
+                        onChanged: (_) => togglePowerSave(),
+                      ),
+                    ],
+                  ),
+                ],
+              )),
+        ),
+      ),
+      isScrollControlled: true,
+    );
+  }
+
+  String controller_showDanmakuText() => showDanmaku.value ? '滚动弹幕:开' : '滚动弹幕:关';
+
+  Widget _seg(String label, List<String> options, String current, ValueChanged<String> onPick) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(width: 52, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
+          const SizedBox(width: 8),
+          ...options.map((o) => GestureDetector(
+                onTap: () => onPick(o),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: o == current ? const Color(0xFF00D2FF).withOpacity(0.2) : Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: o == current ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.1)),
+                  ),
+                  child: Text(o,
+                      style: TextStyle(
+                          color: o == current ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 12)),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _slider(String label, double min, double max, double val, ValueChanged<double> onChanged, String display) {
+    return Row(
+      children: [
+        SizedBox(width: 52, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
+        Expanded(
+          child: Slider(
+            value: val,
+            min: min,
+            max: max,
+            activeColor: const Color(0xFF00D2FF),
+            inactiveColor: Colors.white12,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+            width: 60,
+            child: Text(display, style: const TextStyle(color: Colors.white54, fontSize: 12))),
+      ],
+    );
+  }
+
+  // ================= 卡顿检测 =================
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
@@ -121,7 +297,6 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount';
   }
 
-  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -197,7 +372,6 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
-  // ================= ExoPlayer 播放 =================
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -337,34 +511,43 @@ class LivePlayController extends GetxController {
     });
   }
 
+  // ================= 发送弹幕（按需 WebView 真实发送） =================
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
       Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
-if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
+    if (!HuyaWebSender.ready || HuyaWebSender.sendFn == null) {
+      webSenderActive.value = true;
+      Get.snackbar('真实弹幕', '正在启动网页发送组件…', snackPosition: SnackPosition.BOTTOM);
+      for (var i = 0; i < 30; i++) {
+        if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) break;
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
+    if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
       final r = await HuyaWebSender.sendFn!(text);
+      _scheduleWebSenderStop();
       if (r == 'sent') {
-        // 网页输入框已被清空 = 网页客户端真实发出
         inputController.clear();
         Get.snackbar('已发送', '网页端真实发送成功', snackPosition: SnackPosition.BOTTOM);
       } else if (r.startsWith('clicked')) {
         inputController.clear();
-        Get.snackbar('已点击发送', '等待网页端确认…', snackPosition: SnackPosition.BOTTOM);
+        Get.snackbar('已发送', '等待服务器确认…', snackPosition: SnackPosition.BOTTOM);
       } else {
-        // 如实报错：no-input / not-sent / err
         Get.snackbar('发送失败', r, snackPosition: SnackPosition.BOTTOM);
       }
       return;
     }
-    final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
-    if (ok) {
-      inputController.clear();
-      Get.snackbar('已发送', '等待服务器确认…', snackPosition: SnackPosition.BOTTOM);
-    } else {
-      Get.snackbar('发送失败', '网页发送器未就绪，请稍后再试', snackPosition: SnackPosition.BOTTOM);
-    }
+    Get.snackbar('发送失败', '网页组件启动失败，请检查网络/登录', snackPosition: SnackPosition.BOTTOM);
+  }
+
+  void _scheduleWebSenderStop() {
+    _webSenderIdleTimer?.cancel();
+    _webSenderIdleTimer = Timer(const Duration(seconds: 30), () {
+      webSenderActive.value = false;
+    });
   }
 
   void toggleFollow() {
@@ -422,7 +605,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
     );
   }
 
-  // ================= 视频渲染（按比例） =================
+  // ================= 视频渲染 =================
   Widget _videoByFit(VideoPlayerController c) {
     final va = c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9;
     switch (fitMode.value) {
@@ -455,7 +638,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
     }
   }
 
-  Widget _controlBtn(IconData icon, VoidCallback onTap, {bool selected = false, double size = 40}) {
+  Widget _controlBtn(IconData icon, VoidCallback onTap, {bool selected = false, double size = 36}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -465,7 +648,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
           color: Colors.black.withOpacity(selected ? 0.7 : 0.45),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: selected ? const Color(0xFF00D2FF) : Colors.white, size: size * 0.55),
+        child: Icon(icon, color: selected ? const Color(0xFF7ED97E) : Colors.white, size: size * 0.55),
       ),
     );
   }
@@ -480,7 +663,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             child: Row(children: [
-              _controlBtn(Icons.arrow_back, toggleFullscreen),
+              _controlBtn(Icons.arrow_back, toggleFullscreen, size: 40),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -490,7 +673,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              _controlBtn(Icons.lock_open, toggleLock),
+              _controlBtn(Icons.lock_open, toggleLock, size: 40),
             ]),
           ),
         ),
@@ -499,28 +682,31 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
         left: 0,
         right: 0,
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           child: Row(children: [
             _controlBtn(isPaused.value ? Icons.play_arrow : Icons.pause, togglePlay),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             _controlBtn(Icons.refresh, refreshPlay),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             _controlBtn(
-                showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline,
-                () {
-                  showDanmaku.value = !showDanmaku.value;
-                  _scheduleHide(4);
-                }),
-            const SizedBox(width: 8),
+                showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
+              showDanmaku.value = !showDanmaku.value;
+              _scheduleHide(4);
+            }),
+            const SizedBox(width: 6),
+            _controlBtn(Icons.tune, showDanmakuSettings),
+            const SizedBox(width: 6),
+            _controlBtn(Icons.battery_saver, togglePowerSave, selected: powerSave.value),
+            const SizedBox(width: 6),
             _controlBtn(Icons.aspect_ratio, cycleFit),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
             const Spacer(),
             Obx(() => Text(
                   fitNames[fitMode.value],
                   style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
                 )),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _controlBtn(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, toggleFullscreen),
           ]),
         ),
@@ -546,7 +732,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
                 Positioned(
                   left: 12,
                   top: fullscreen ? 60 : 12,
-                  child: _controlBtn(Icons.lock, toggleLock, selected: true),
+                  child: _controlBtn(Icons.lock, toggleLock, selected: true, size: 40),
                 ),
               if (!fullscreen)
                 Positioned(
@@ -572,6 +758,7 @@ if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
   void onClose() {
     _hideTimer?.cancel();
     _stallTimer?.cancel();
+    _webSenderIdleTimer?.cancel();
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
