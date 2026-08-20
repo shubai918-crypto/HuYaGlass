@@ -182,7 +182,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       _dbgPush('发送"$text"');
-      _tryHttpSend(_buildWupSend(text, 'liveui'));
+      _tryHttpSend(text);
       _send(_wrapWsCmd(_buildWupSend(text, 'liveui'), 3));
       Timer(const Duration(milliseconds: 800), () {
         if (!_closed && _pendingDanmaku == text) {
@@ -220,35 +220,66 @@ class HuyaDanmakuClient {
     return [];
   }
 
-  Future<void> _tryHttpSend(Uint8List wup) async {
+  Future<void> _tryHttpSend(String text) async {
     final ips = await _dohResolve('cdn.wup.huya.com');
-    final targets = <Map<String, String>>[
-      for (final ip in ips) {'url': 'http://$ip:80/', 'host': 'cdn.wup.huya.com'},
-      {'url': 'https://wup.huya.com/', 'host': 'wup.huya.com'},
+    final wupLiveui = _buildWupSend(text, 'liveui');
+    final wupGameLive = _buildWupSend(text, 'GameLive');
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    // 组合矩阵：IP直连 × Host × servant，找出能返回 200 的组合
+    final targets = <List<String>>[
+      for (final ip in ips) ...[
+        ['http://$ip:80/?timestamp=$ts', 'cdn.wup.huya.com', 'liveui'],
+        ['http://$ip:80/?timestamp=$ts', 'wup.huya.com', 'liveui'],
+      ],
+      ['http://wup.huya.com:80/?timestamp=$ts', 'wup.huya.com', 'liveui'],
+      ['https://wup.huya.com/?timestamp=$ts', 'wup.huya.com', 'liveui'],
     ];
+
+    bool got200 = false;
     for (final t in targets) {
-      final host = t['host']!;
+      final url = t[0], host = t[1], servant = t[2];
       try {
         final res = await http
             .post(
-              Uri.parse(t['url']!),
+              Uri.parse(url),
               headers: {
                 'Content-Type': 'application/octet-stream',
                 'User-Agent': _appUa,
                 'Host': host,
                 if (_cookie.isNotEmpty) 'Cookie': _cookie,
               },
-              body: wup,
+              body: servant == 'liveui' ? wupLiveui : wupGameLive,
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 5));
         if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-          _dbgPush('HTTP $host → ${_describeWupRsp(res.bodyBytes)}');
+          got200 = true;
+          _dbgPush('✔ $host/$servant → ${_describeWupRsp(res.bodyBytes)}');
         } else {
-          _dbgPush('HTTP $host:${res.statusCode}');
+          _dbgPush('$host/$servant:${res.statusCode}');
         }
       } catch (_) {
-        _dbgPush('HTTP $host:ERR');
+        _dbgPush('$host/$servant:ERR');
       }
+    }
+
+    // 全失败时补一发 GameLive 到首个 IP
+    if (!got200 && ips.isNotEmpty) {
+      try {
+        final res = await http
+            .post(
+              Uri.parse('http://${ips.first}:80/?timestamp=$ts'),
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'User-Agent': _appUa,
+                'Host': 'cdn.wup.huya.com',
+                if (_cookie.isNotEmpty) 'Cookie': _cookie,
+              },
+              body: wupGameLive,
+            )
+            .timeout(const Duration(seconds: 5));
+        _dbgPush('补 GameLive:${res.statusCode}');
+      } catch (_) {}
     }
   }
 
