@@ -343,15 +343,18 @@ class LivePlayController extends GetxController {
       Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
-    if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
+if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
       final r = await HuyaWebSender.sendFn!(text);
-      if (r == 'sent' || r == 'sent-enter') {
+      if (r == 'sent') {
+        // 网页输入框已被清空 = 网页客户端真实发出
         inputController.clear();
-        // 本地回显：立刻在弹幕列表显示「我: xxx」，确认发送成功
-        danmakuList.add(DanmakuMessage(nickname: '我', content: text));
-        Get.snackbar('已发送', text, snackPosition: SnackPosition.BOTTOM);
+        Get.snackbar('已发送', '网页端真实发送成功', snackPosition: SnackPosition.BOTTOM);
+      } else if (r.startsWith('clicked')) {
+        inputController.clear();
+        Get.snackbar('已点击发送', '等待网页端确认…', snackPosition: SnackPosition.BOTTOM);
       } else {
-        Get.snackbar('发送结果', r, snackPosition: SnackPosition.BOTTOM);
+        // 如实报错：no-input / not-sent / err
+        Get.snackbar('发送失败', r, snackPosition: SnackPosition.BOTTOM);
       }
       return;
     }
