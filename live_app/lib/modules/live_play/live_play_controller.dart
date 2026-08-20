@@ -522,6 +522,7 @@ class LivePlayController extends GetxController {
     _danmakuClient = HuyaDanmakuClient();
     _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
     _danmakuClient!.onPopularity = (v) => heatCount.value = v;
+    _danmakuClient!.onSendDebug = (s) => debugInfo.value = s;
     _danmakuClient!.connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: roomId);
     danmakuStream = _danmakuClient!.danmakuStream;
     danmakuStream!.listen((m) {
@@ -532,7 +533,7 @@ class LivePlayController extends GetxController {
     });
   }
 
-  // ================= 发送弹幕（原生 WS 协议） =================
+  // ================= 发送弹幕（原生协议，回显为准） =================
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
