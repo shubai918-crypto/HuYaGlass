@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'huya_login.dart';
 
 class DanmakuMessage {
@@ -15,10 +16,14 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（复刻网页端 WS 协议）
+/// 虎牙弹幕客户端
+/// 接收：WS（16 注册 / 10 验Cookie / 20 心跳 / 7·22 推送）
+/// 发送：主通道 = App 同款 HTTP WUP（HTTPDNS 优选 IP 直连 80，GameLive/sendMessage）
+///       备份 = WS cmd=3 探测；成功以服务器回显为准
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  static const _appUa = 'adr&7.11.82&Pixel 5&31';
 
   static const _endpoints = [
     'wss://wsapi.huya.com',
@@ -48,6 +53,13 @@ class HuyaDanmakuClient {
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
   void Function(String)? onSendDebug;
+
+  final List<String> _dbg = [];
+  void _dbgPush(String s) {
+    _dbg.add(s);
+    if (_dbg.length > 4) _dbg.removeAt(0);
+    onSendDebug?.call(_dbg.join(' | '));
+  }
 
   final StreamController<DanmakuMessage> _controller =
       StreamController<DanmakuMessage>.broadcast();
@@ -103,14 +115,11 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，注册中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // 1. 注册房间组 (16)
     _send(_buildRegister(_ayyuid, _ayyuid));
     _secondRegTimer?.cancel();
     _secondRegTimer = Timer(const Duration(seconds: 1), () {
       if (_topSid > 0) _send(_buildRegister(_topSid, _subSid));
-      // 2. 验证 Cookie (10)
       if (_loginUid > 0) _send(_buildVerifyCookie());
-      // 3. 网页端特有的 wsLaunch 握手 (命令字 3)
       _send(_buildWsLaunchReq());
     });
 
@@ -124,7 +133,7 @@ class HuyaDanmakuClient {
     group.writeStringList(0, ['live:$liveId', 'chat:$chatId']);
     group.writeString(1, '');
     final command = _TarsWriter();
-    command.writeInt(0, 16); // EWSCmdC2S_RegisterGroupReq
+    command.writeInt(0, 16);
     command.writeBytes(1, group.toBytes());
     return command.toBytes();
   }
@@ -138,29 +147,28 @@ class HuyaDanmakuClient {
     req.writeInt(4, 1);
     req.writeString(5, 'web');
     final command = _TarsWriter();
-    command.writeInt(0, 10); // EWSCmdC2S_VerifyCookieReq
+    command.writeInt(0, 10);
     command.writeBytes(1, req.toBytes());
     return command.toBytes();
   }
 
-  /// 网页端 wsLaunch 握手（必须在发业务 WUP 前执行）
   Uint8List _buildWsLaunchReq() {
     final dev = _TarsWriter();
-    dev.writeString(0, ''); // sIMEI
-    dev.writeString(1, ''); // sAPN
-    dev.writeString(2, 'wifi'); // sNetType
-    dev.writeString(3, _guid); // sDeviceId
-    dev.writeString(4, ''); // sMId
+    dev.writeString(0, '');
+    dev.writeString(1, '');
+    dev.writeString(2, 'wifi');
+    dev.writeString(3, _guid);
+    dev.writeString(4, '');
 
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
     req.writeString(1, _guid);
     req.writeString(2, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
-    req.writeString(3, 'webh5&CN&2052'); // sAppSrc
+    req.writeString(3, 'webh5&CN&2052');
     req.writeStruct(4, dev);
 
     final wup = _buildWupEnvelope('launch', 'wsLaunch', {'tReq': req.toBytes()});
-    return _wrapWsCmd(wup, 3); // EWSCmd_WupReq = 3
+    return _wrapWsCmd(wup, 3);
   }
 
   void _sendHeartbeat() {
@@ -170,18 +178,19 @@ class HuyaDanmakuClient {
     _send(command.toBytes());
   }
 
-  // ================= 真实发送（WS 命令字 3） =================
+  // ================= 真实发送 =================
   Future<bool> sendDanmaku(String text) async {
-    if (_loginUid <= 0 || _ws == null) return false;
+    if (_loginUid <= 0) return false;
     try {
       _pendingDanmaku = text;
-      onSendDebug?.call('WS 发送 liveui.sendMessage (cmd=3)');
-      _send(_buildWupSend(text, 'liveui'));
-      // 500ms 后若没回显，补发 GameLive (App 端 servant)
-      Timer(const Duration(milliseconds: 500), () {
+      _dbgPush('发送"${text}"');
+      // 主通道：App 同款 HTTP WUP（信封已按 APK 修正）
+      _tryHttpSend(_buildWupSend(text, 'GameLive'));
+      // 备份：WS cmd=3
+      _send(_wrapWsCmd(_buildWupSend(text, 'liveui'), 3));
+      Timer(const Duration(milliseconds: 800), () {
         if (!_closed && _pendingDanmaku == text) {
-          onSendDebug?.call('WS 补发 GameLive.sendMessage (cmd=3)');
-          _send(_buildWupSend(text, 'GameLive'));
+          _send(_wrapWsCmd(_buildWupSend(text, 'GameLive'), 3));
         }
       });
       return true;
@@ -190,81 +199,143 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// 构建 WUP 请求包（外层 RequestPacket）
-  /// tag 0: iVersion (int, 3)
-  /// tag 1: iPacketType (int, 0)
-  /// tag 2: iMessageType (int, 0)
-  /// tag 3: iRequestId (int)
-  /// tag 4: sServantName (String)
-  /// tag 5: sFuncName (String)
-  /// tag 7: mBuffer (map<String, bytearray>)
-  /// 注意: tag 6 (sStatusMap) 省略
+  /// 公共 DoH 实时解析优选 IP（复刻 App 的 HTTPDNS）
+  Future<List<String>> _dohResolve(String host) async {
+    final urls = [
+      'https://dns.alidns.com/resolve?name=$host&type=A',
+      'https://doh.pub/dns-query?name=$host&type=A',
+    ];
+    for (final u in urls) {
+      try {
+        final res = await http
+            .get(Uri.parse(u), headers: {'User-Agent': _ua})
+            .timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final j = jsonDecode(res.body) as Map<String, dynamic>;
+          final answers = (j['Answer'] as List?) ?? [];
+          final ips = <String>[];
+          for (final a in answers) {
+            final d = '${(a as Map)['data'] ?? ''}';
+            if (RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(d)) ips.add(d);
+          }
+          if (ips.isNotEmpty) return ips;
+        }
+      } catch (_) {}
+    }
+    return [];
+  }
+
+  Future<void> _tryHttpSend(Uint8List wup) async {
+    final ips = await _dohResolve('cdn.wup.huya.com');
+    final targets = <Map<String, String>>[
+      for (final ip in ips) {'url': 'http://$ip:80/', 'host': 'cdn.wup.huya.com'},
+      {'url': 'http://wup.huya.com:80/', 'host': 'wup.huya.com'},
+      {'url': 'https://wup.huya.com/', 'host': 'wup.huya.com'},
+    ];
+    for (final t in targets) {
+      final host = t['host']!;
+      try {
+        final res = await http
+            .post(
+              Uri.parse(t['url']!),
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'User-Agent': _appUa,
+                'Host': host,
+                if (_cookie.isNotEmpty) 'Cookie': _cookie,
+              },
+              body: wup,
+            )
+            .timeout(const Duration(seconds: 6));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          _dbgPush('HTTP $host → ${_describeWupRsp(res.bodyBytes)}');
+        } else {
+          _dbgPush('HTTP $host:${res.statusCode}');
+        }
+      } catch (_) {
+        _dbgPush('HTTP $host:ERR');
+      }
+    }
+  }
+
+  /// 解析 WUP 响应包 → "servant.func iRet=x"（servant@4 func@5）
+  String _describeWupRsp(List<int> bytes) {
+    try {
+      final wupFields = _TarsReader(Uint8List.fromList(bytes)).readFields();
+      final servant = '${wupFields[4] ?? ''}';
+      final func = '${wupFields[5] ?? ''}';
+      final map = wupFields[7];
+      int ret = -99;
+      if (map is List) {
+        for (var i = 0; i + 1 < map.length; i += 2) {
+          if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
+            final rsp = _TarsReader(Uint8List.fromList(
+                    (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList()))
+                .readFields();
+            ret = rsp[0] is int ? rsp[0] as int : -99;
+          }
+        }
+      }
+      return '$servant.$func iRet=$ret';
+    } catch (_) {
+      return '解析失败';
+    }
+  }
+
+  /// WUP RequestPacket（tag0=iVersion，APK 确认结构）
   Uint8List _buildWupEnvelope(
       String servant, String funcName, Map<String, List<int>> buffers) {
     final wup = _TarsWriter();
-    wup.writeInt(0, 3);            // iVersion
-    wup.writeInt(1, 0);            // iPacketType
-    wup.writeInt(2, 0);            // iMessageType
-    wup.writeInt(3, ++_reqId);     // iRequestId
-    wup.writeString(4, servant);   // sServantName
+    wup.writeInt(0, 3); // iVersion
+    wup.writeInt(1, 0); // iPacketType
+    wup.writeInt(2, 0); // iMessageType
+    wup.writeInt(3, ++_reqId); // iRequestId
+    wup.writeString(4, servant); // sServantName
     wup.writeString(5, funcName); // sFuncName
     wup.writeBytesMap(7, buffers); // mBuffer
     return wup.toBytes();
   }
 
-  /// WUP(liveui/GameLive/sendMessage) —— 字段顺序严格对齐 SendMessageReq
+  /// SendMessageReq（字段顺序 APK 确认）
   Uint8List _buildWupSend(String text, String servant) {
-    // === UserId (Jce tag 顺序: lUid=0, sGuid=1, sToken=2, sHuYaUA=3, sCookie=4, iTokenType=5, sDeviceInfo=6) ===
     final user = _TarsWriter();
-    user.writeInt(0, _loginUid);          // 0: lUid
-    user.writeString(1, _guid);           // 1: sGuid
-    user.writeString(2, _token);          // 2: sToken
-    user.writeString(3, _cookieVal('huya_ua').isEmpty
-        ? 'webh5&0.1.0&websocket'
-        : _cookieVal('huya_ua'));         // 3: sHuYaUA
-    user.writeString(4, _cookie);        // 4: sCookie
-    user.writeInt(5, 0);                  // 5: iTokenType
-    user.writeString(6, '');              // 6: sDeviceInfo
+    user.writeInt(0, _loginUid);
+    user.writeString(1, _guid);
+    user.writeString(2, _token);
+    user.writeString(3, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
+    user.writeString(4, _cookie);
+    user.writeInt(5, 0);
+    user.writeString(6, 'Pixel 5');
 
-    // === ContentFormat (Jce tag 顺序: iFontColor=0, iFontSize=1, iPopupStyle=2, iNickNameFontColor=3) ===
     final cf = _TarsWriter();
-    cf.writeInt(0, -1);     // 0: iFontColor
-    cf.writeInt(1, 4);      // 1: iFontSize
-    cf.writeInt(2, 0);      // 2: iPopupStyle
-    cf.writeInt(3, -1);     // 3: iNickNameFontColor
+    cf.writeInt(0, -1);
+    cf.writeInt(1, 4);
+    cf.writeInt(2, 0);
+    cf.writeInt(3, -1);
 
-    // === BulletFormat (Jce tag 顺序: iFontColor=0, iFontSize=1, iTextSpeed=2, iTransitionType=3, iPopupStyle=4, tBorderGroundFormat=5[可选]) ===
     final bf = _TarsWriter();
-    bf.writeInt(0, -1);     // 0: iFontColor
-    bf.writeInt(1, 4);      // 1: iFontSize
-    bf.writeInt(2, 1);      // 2: iTextSpeed
-    bf.writeInt(3, 0);      // 3: iTransitionType
-    bf.writeInt(4, 0);      // 4: iPopupStyle
-    // tag 5 (tBorderGroundFormat) 是 struct, 为 null 时不写
+    bf.writeInt(0, -1);
+    bf.writeInt(1, 4);
+    bf.writeInt(2, 1);
+    bf.writeInt(3, 0);
+    bf.writeInt(4, 0);
 
-    // === SendMessageReq (Jce tag 顺序: tUserId=0, lTid=1, lSid=2, sContent=3, iShowMode=4, tFormat=5, tBulletFormat=6, vAtSomeone=7[可选], lPid=8, vTagInfo=9[可选]) ===
     final req = _TarsWriter();
-    req.writeStruct(0, user);                        // 0: tUserId
-    req.writeInt(1, _topSid);                        // 1: lTid
-    req.writeInt(2, _subSid);                        // 2: lSid
-    req.writeString(3, text.replaceAll('\n', ' '));  // 3: sContent
-    req.writeInt(4, 0);                               // 4: iShowMode
-    req.writeStruct(5, cf);                          // 5: tFormat (ContentFormat)
-    req.writeStruct(6, bf);                          // 6: tBulletFormat (BulletFormat)
-    // tag 7 (vAtSomeone) 省略
-    // tag 8 (lPid) 省略
-    // tag 9 (vTagInfo) 省略
+    req.writeStruct(0, user);
+    req.writeInt(1, _topSid);
+    req.writeInt(2, _subSid);
+    req.writeString(3, text.replaceAll('\n', ' '));
+    req.writeInt(4, 0);
+    req.writeStruct(5, cf);
+    req.writeStruct(6, bf);
 
-    final wup = _buildWupEnvelope(servant, 'sendMessage', {'tReq': req.toBytes()});
-    return _wrapWsCmd(wup, 3); // EWSCmd_WupReq = 3
+    return _buildWupEnvelope(servant, 'sendMessage', {'tReq': req.toBytes()});
   }
 
-  /// WS 命令封装: iCmdType=0(atag), vData=1(atag)
-  /// 仅 tag 0 (iCmdType) 和 tag 1 (vData)
   Uint8List _wrapWsCmd(Uint8List wup, int cmdType) {
     final command = _TarsWriter();
-    command.writeInt(0, cmdType);  // 0: iCmdType
-    command.writeBytes(1, wup);    // 1: vData
+    command.writeInt(0, cmdType);
+    command.writeBytes(1, wup);
     return command.toBytes();
   }
 
@@ -315,9 +386,9 @@ class HuyaDanmakuClient {
 
       final payload = fields[1];
       if (payload is List) {
-        final pr = _TarsReader(
-            Uint8List.fromList(payload.map((e) => (e as int) & 0xFF).toList()));
-        
+        final pBytes = payload.map((e) => (e as int) & 0xFF).toList();
+        final pr = _TarsReader(Uint8List.fromList(pBytes));
+
         if (type == 7) {
           final pf = pr.readFields();
           final uri = pf[1] is int ? pf[1] as int : 0;
@@ -342,52 +413,17 @@ class HuyaDanmakuClient {
             }
           }
         } else if (type == 4) {
-          // EWSCmd_WupRsp (4) —— 解析 WUP 响应
-          _parseWupRsp(payload);
+          _dbgPush('WS WupRsp ${_describeWupRsp(pBytes)}');
         } else if (type == 11) {
-          // VerifyCookieRsp
           try {
             final pf = pr.readFields();
             final v = pf[0] is int ? pf[0] as int : -1;
-            onSendDebug?.call('VerifyCookie iValidate=$v (0=通过)');
+            _dbgPush('VerifyCookie iValidate=$v');
           } catch (_) {}
         }
       }
       onStatus?.call('收包$_recvCount type=$_lastType uri=$_lastUri');
     } catch (_) {}
-  }
-
-  void _parseWupRsp(List payload) {
-    try {
-      final pr = _TarsReader(Uint8List.fromList(payload.map((e) => (e as int) & 0xFF).toList()));
-      final wupBytes = pr.readFields()[1];
-      if (wupBytes is List) {
-        final wupReader = _TarsReader(Uint8List.fromList(wupBytes.map((e) => (e as int) & 0xFF).toList()));
-        final wupFields = wupReader.readFields();
-        final funcName = wupFields[5];  // tag 5: sFuncName
-        final reqId = wupFields[3];     // tag 3: iRequestId
-        final bufferMap = wupFields[7]; // tag 7: mBuffer
-        int ret = -99;
-        if (bufferMap is List) {
-          for (var i = 0; i + 1 < bufferMap.length; i += 2) {
-            if ('${bufferMap[i]}' == 'tRsp' && bufferMap[i + 1] is List) {
-              final rspBytes = (bufferMap[i + 1] as List).map((e) => (e as int) & 0xFF).toList();
-              final rspFields = _TarsReader(Uint8List.fromList(rspBytes)).readFields();
-              // SendMessageRsp tag 0: iRet (int)
-              ret = rspFields[0] is int ? rspFields[0] as int : -99;
-            }
-          }
-        }
-        onSendDebug?.call('WS WupRsp func=$funcName reqId=$reqId iRet=$ret');
-        if (funcName == 'sendMessage' && ret == 0) {
-           onSendDebug?.call('发送诊断 服务器已接受(iRet=0) ✔');
-        } else if (funcName == 'sendMessage') {
-           onSendDebug?.call('发送诊断 服务器拒绝(iRet=$ret)');
-        }
-      }
-    } catch (e) {
-      onSendDebug?.call('WS WupRsp 解析失败: $e');
-    }
   }
 
   void _decodePush(int uri, List<int> payload) {
@@ -410,7 +446,7 @@ class HuyaDanmakuClient {
           ));
           if (_pendingDanmaku != null && content == _pendingDanmaku) {
             _pendingDanmaku = null;
-            onStatus?.call('弹幕发送成功 ✔');
+            _dbgPush('弹幕回显成功 ✔');
           }
         }
       } catch (_) {}
@@ -505,7 +541,7 @@ class _TarsWriter {
   void writeStruct(int tag, _TarsWriter inner) {
     _head(tag, 10);
     _b.add(inner._b.toBytes());
-    _b.addByte(0x0B); // struct end marker
+    _b.addByte(0x0B);
   }
 
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
@@ -532,12 +568,18 @@ class _TarsReader {
   int _readValueInt() {
     final t = _byte();
     switch (t) {
-      case 0: return _readIntN(1);
-      case 1: return _readIntN(2);
-      case 2: return _readIntN(4);
-      case 3: return _readIntN(8);
-      case 12: return 0;
-      default: throw FormatException('tars: not an int, type=$t');
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
+      default:
+        throw FormatException('tars: not an int, type=$t');
     }
   }
 
@@ -556,11 +598,16 @@ class _TarsReader {
 
   Object? _readValue(int type) {
     switch (type) {
-      case 0: return _readIntN(1);
-      case 1: return _readIntN(2);
-      case 2: return _readIntN(4);
-      case 3: return _readIntN(8);
-      case 12: return 0;
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
       case 4:
         final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
         _pos += 4;
