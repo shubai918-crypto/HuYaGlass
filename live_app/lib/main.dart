@@ -1,55 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-import 'app/routes.dart';
-import 'app/theme.dart';
-import 'common/services/login_service.dart';
+import 'package:live_core/live_core.dart';
+
+import 'modules/home/home_page.dart';
+import 'modules/live_play/live_play_page.dart';
+import 'modules/settings/huya_login_page.dart';
+import 'modules/settings/settings_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+  ));
 
-  // 液态玻璃：预热着色器，消除首帧白闪
-  await LiquidGlassWidgets.initialize();
+  // 恢复虎牙登录态（磁盘持久化）
+  await HuyaLoginManager.init();
 
-  try {
-    await Hive.initFlutter();
-    await Hive.openBox('settings');
-    await Hive.openBox('follow');
-  } catch (e) {
-    debugPrint('Hive init error: $e');
-  }
+  // liquid_glass_widgets：非阻塞初始化，防止首帧玻璃白闪
+  await LiquidGlassWidgets.initialize(warmUpMode: GlassWarmUpMode.auto);
 
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
+  runApp(
+    LiquidGlassWidgets.wrap(
+      child: const HuyaLiveApp(),
+      brightnessResolver: Theme.maybeBrightnessOf,
     ),
   );
-
-  Get.put(LoginService(), permanent: true);
-
-  runApp(LiquidGlassWidgets.wrap(
-    child: const MyApp(),
-    brightnessResolver: Theme.maybeBrightnessOf,
-  ));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class HuyaLiveApp extends StatelessWidget {
+  const HuyaLiveApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: 'HuyaLive',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
-      getPages: AppRoutes.pages,
-      initialRoute: AppRoutes.home,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFF0A0A0F),
+        colorScheme: const ColorScheme.dark(primary: Color(0xFF00D2FF)),
+      ),
+      home: const HomePage(),
+      routes: {
+        '/live': (_) => const LivePlayPage(),
+        '/settings': (_) => const SettingsPage(),
+        '/login': (_) => const HuyaLoginPage(),
+      },
     );
   }
 }
