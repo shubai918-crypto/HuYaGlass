@@ -18,7 +18,7 @@ class DanmakuMessage {
 
 /// 虎牙弹幕客户端
 /// 接收：pure_live 同款（16 注册 / 20 心跳 / 7·22 推送 / 1400 弹幕 / 8006 人气）
-/// 发送：App 同款算法 —— SendMessageReq 经 WUP 走 **HTTP 通道**（HttpTransporter），
+/// 发送：App 同款算法 —— SendMessageReq 经 WUP 走 HTTP 通道（HttpTransporter），
 ///       同时保留 WS 命令字探测作兜底；成功以服务器回显为准
 class HuyaDanmakuClient {
   static const _ua =
@@ -62,6 +62,7 @@ class HuyaDanmakuClient {
 
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
+  void Function(String)? onSendDebug;
 
   final StreamController<DanmakuMessage> _controller =
       StreamController<DanmakuMessage>.broadcast();
@@ -142,7 +143,11 @@ class HuyaDanmakuClient {
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
-    req.writeString(1, _cookieVal('huya_ua').isEmpty ? 'webh5&0.0.1&websocket' : _cookieVal('huya_ua'));
+    req.writeString(
+        1,
+        _cookieVal('huya_ua').isEmpty
+            ? 'webh5&0.1.0&websocket'
+            : _cookieVal('huya_ua'));
     req.writeString(2, _cookie);
     req.writeString(3, _guid);
     req.writeInt(4, 1);
@@ -185,7 +190,9 @@ class HuyaDanmakuClient {
   }
 
   Future<void> _tryHttpSend(Uint8List wup) async {
+    final sb = StringBuffer();
     for (final url in _wupUrls) {
+      final host = Uri.parse(url).host;
       try {
         final res = await http
             .post(
@@ -198,17 +205,26 @@ class HuyaDanmakuClient {
               body: wup,
             )
             .timeout(const Duration(seconds: 5));
-        onStatus?.call('HTTP ${Uri.parse(url).host} → ${res.statusCode}/${res.bodyBytes.length}B');
+        sb.write('$host:${res.statusCode}/${res.bodyBytes.length}B');
         if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-          // 尝试解析 SendMessageRsp（iRet@0）
           try {
             final f = _TarsReader(Uint8List.fromList(res.bodyBytes)).readFields();
             final ret = f[0] is int ? f[0] as int : -1;
-            onStatus?.call('HTTP ${Uri.parse(url).host} iRet=$ret');
+            sb.write(' ret=$ret');
           } catch (_) {}
         }
-      } catch (_) {}
+      } catch (_) {
+        sb.write('$host:ERR');
+      }
+      sb.write(' | ');
+      onSendDebug?.call('发送诊断 ${sb.toString()}');
     }
+    // 3 秒后若仍无回显，补充 WS 探测状态
+    Timer(const Duration(seconds: 3), () {
+      if (_pendingDanmaku != null) {
+        onSendDebug?.call('发送诊断 HTTP:${sb.toString()} WS:21/103/raw 无回显');
+      }
+    });
   }
 
   Uint8List _wrapWsCmd(Uint8List wup, int cmdType) {
