@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/danmaku_view.dart';
-import 'huya_web_sender.dart';
 import 'live_play_controller.dart';
 
 class LivePlayPage extends StatelessWidget {
@@ -30,7 +29,7 @@ class LivePlayPage extends StatelessWidget {
                       children: [
                         _buildTopBar(controller),
                         _buildVideoArea(controller),
-                        Expanded(child: _DanmakuList(controller: controller)),
+                        Expanded(child: _InfoTabs(controller: controller)),
                         _buildBottomBar(controller),
                       ],
                     );
@@ -41,35 +40,27 @@ class LivePlayPage extends StatelessWidget {
                         color: Colors.black,
                         child: Stack(children: [
                           Positioned.fill(child: controller.fullscreenWidget()),
-                          if (controller.showDanmaku.value &&
-                              controller.danmakuStream != null)
-                            Positioned(
-                              top: 50,
-                              left: 0,
-                              right: 0,
-                              child: IgnorePointer(
-                                child: DanmakuView(
-                                  danmakuStream: controller.danmakuStream!,
-                                  height: 160,
-                                  fontSize: controller.danmakuFontSize.value,
-                                ),
-                              ),
-                            ),
+                          Obx(() => controller.showDanmaku.value &&
+                                  controller.danmakuStream != null
+                              ? Positioned(
+                                  top: 50,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: DanmakuView(
+                                      danmakuStream: controller.danmakuStream!,
+                                      height: 220 * controller.danmakuArea.value,
+                                      fontSize: controller.danmakuFontSize.value,
+                                      fps: controller.danmakuFps.value,
+                                      speed: controller.danmakuSpeed.value,
+                                      opacity: controller.danmakuOpacity.value,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink()),
                         ]),
                       )
                     : const SizedBox.shrink()),
-                // 关键：登录后挂载隐藏 WebView 发送器（1x1 不可见）
-                if (HuyaLoginManager().isLoggedIn)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    width: 1,
-                    height: 1,
-                    child: HuyaWebSender(
-                      roomId: controller.roomId,
-                      onFans: (v) => controller.fansCount.value = v,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -83,6 +74,7 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
+  // ================= 顶栏（只显示粉丝，热度去详情看） =================
   Widget _buildTopBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -120,7 +112,7 @@ class LivePlayPage extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '粉丝 ${_formatCount(controller.fansCount.value)} · 热度 ${_formatCount(controller.heatCount.value)}',
+                  '粉丝 ${_formatCount(controller.fansCount.value)}',
                   style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -173,27 +165,34 @@ class LivePlayPage extends StatelessWidget {
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
-      child: Stack(
-        children: [
-          Positioned.fill(child: controller.videoWidget()),
-          if (controller.showDanmaku.value && controller.danmakuStream != null)
-            Positioned(
-              top: 4,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: DanmakuView(
-                  danmakuStream: controller.danmakuStream!,
-                  height: 140,
-                  fontSize: controller.danmakuFontSize.value,
-                ),
-              ),
-            ),
-        ],
+      child: LayoutBuilder(
+        builder: (c, cons) => Stack(
+          children: [
+            Positioned.fill(child: controller.videoWidget()),
+            Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
+                ? Positioned(
+                    top: 4,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: DanmakuView(
+                        danmakuStream: controller.danmakuStream!,
+                        height: cons.maxHeight * controller.danmakuArea.value,
+                        fontSize: controller.danmakuFontSize.value,
+                        fps: controller.danmakuFps.value,
+                        speed: controller.danmakuSpeed.value,
+                        opacity: controller.danmakuOpacity.value,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink()),
+          ],
+        ),
       ),
     );
   }
 
+  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -325,6 +324,220 @@ class LivePlayPage extends StatelessWidget {
   }
 }
 
+// ================= 弹幕 / 主播详情 双 Tab =================
+class _InfoTabs extends StatefulWidget {
+  final LivePlayController controller;
+  const _InfoTabs({required this.controller});
+
+  @override
+  State<_InfoTabs> createState() => _InfoTabsState();
+}
+
+class _InfoTabsState extends State<_InfoTabs> {
+  int _tab = 0;
+
+  Widget _tabBtn(String label, int index) {
+    final selected = _tab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _tab = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? const Color(0xFF00D2FF) : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? const Color(0xFF00D2FF) : Colors.white54,
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            _tabBtn('弹幕', 0),
+            _tabBtn('主播详情', 1),
+            const Spacer(),
+          ],
+        ),
+        const Divider(height: 1, color: Color(0xFF2A2A35)),
+        Expanded(
+          child: _tab == 0
+              ? _DanmakuList(controller: widget.controller)
+              : _DetailTab(controller: widget.controller),
+        ),
+      ],
+    );
+  }
+}
+
+// ================= 主播详情 Tab =================
+class _DetailTab extends StatelessWidget {
+  final LivePlayController controller;
+  const _DetailTab({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() => ListView(
+          padding: const EdgeInsets.all(14),
+          children: [
+            // 主播信息
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16161E),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
+              child: Row(
+                children: [
+                  ClipOval(
+                    child: controller.streamerAvatar.value.isNotEmpty
+                        ? Image.network(
+                            controller.streamerAvatar.value,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person, color: Colors.white54, size: 30),
+                          )
+                        : const Icon(Icons.person, color: Colors.white54, size: 30),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          controller.streamerName.value,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '房间号 ${controller.roomId} · ${controller.isLive.value ? "直播中" : "未开播"}',
+                          style: TextStyle(
+                              color: Colors.white.withOpacity(0.55), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: controller.isLive.value
+                          ? const Color(0xFFFF6B6B).withOpacity(0.2)
+                          : Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      controller.isLive.value ? 'LIVE' : 'OFF',
+                      style: TextStyle(
+                          color: controller.isLive.value
+                              ? const Color(0xFFFF6B6B)
+                              : Colors.white38,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 数据（完整显示，不截断）
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16161E),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
+              child: Row(
+                children: [
+                  _statCell('粉丝', _formatFull(controller.fansCount.value)),
+                  _divider(),
+                  _statCell('热度', _formatFull(controller.heatCount.value)),
+                  _divider(),
+                  _statCell('清晰度', '${controller.qualities.length} 档'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 直播标题
+            if (controller.roomTitle.value.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF16161E),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.06)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('直播标题',
+                        style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(
+                      controller.roomTitle.value,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ));
+  }
+
+  Widget _divider() => Container(
+        width: 1,
+        height: 30,
+        margin: const EdgeInsets.symmetric(horizontal: 10),
+        color: Colors.white.withOpacity(0.1),
+      );
+
+  Widget _statCell(String label, String value) => Expanded(
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                  color: Color(0xFF00D2FF),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
+          ],
+        ),
+      );
+
+  String _formatFull(int count) {
+    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
+    return '$count';
+  }
+}
+
+// ================= 弹幕列表 =================
 class _DanmakuList extends StatefulWidget {
   final LivePlayController controller;
   const _DanmakuList({required this.controller});
