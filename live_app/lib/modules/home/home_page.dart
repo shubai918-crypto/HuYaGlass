@@ -4,8 +4,15 @@ import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
+import '../live_play/live_play_page.dart';
 import '../settings/huya_login_page.dart';
 import 'follow_store.dart';
+
+/// 进入直播间（arguments 传参，不依赖路由表）
+void goLive(String roomId) {
+  if (roomId.isEmpty) return;
+  Get.to(() => const LivePlayPage(), arguments: {'roomId': roomId});
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,31 +23,36 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  void _onTabSelected(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    // 关键修复：GlassScaffold 不带 Material，包一层透明 Material 消除黄色下划线
+    final topPad = MediaQuery.of(context).padding.top;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Material(
-      type: MaterialType.transparency,
+      type: MaterialType.transparency, // 消除黄下划线
       child: GlassScaffold(
-        contentAwareBrightness: true,
+        // 玻璃折射背景
+        background: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF161622), Color(0xFF0A0A0F)],
+            ),
+          ),
+        ),
+        statusBarStyle: GlassStatusBarStyle.light,
         appBar: GlassAppBar(
           title: const Text('HuyaLive'),
           actions: [
-            GlassButton(
+            GlassIconButton(
               icon: const Icon(Icons.account_circle),
-              onTap: () => Get.to(() => const HuyaLoginPage()),
+              onPressed: () => Get.to(() => const HuyaLoginPage()),
             ),
           ],
         ),
         bottomBar: GlassTabBar.bottom(
           selectedIndex: _selectedIndex,
-          onTabSelected: _onTabSelected,
+          onTabSelected: (i) => setState(() => _selectedIndex = i),
           tabs: const [
             GlassTab(icon: Icon(Icons.home), label: '首页'),
             GlassTab(icon: Icon(Icons.search), label: '搜索'),
@@ -48,14 +60,23 @@ class _HomePageState extends State<HomePage> {
             GlassTab(icon: Icon(Icons.settings), label: '设置'),
           ],
         ),
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: const [
-            _HomeView(),
-            _SearchView(),
-            _FollowsView(),
-            _SettingsView(),
-          ],
+        // 关键：GlassScaffold 的栏是悬浮层，body 需手动留出上下空间
+        body: Padding(
+          padding: EdgeInsets.only(
+            top: topPad + 64,
+            bottom: bottomPad + 88,
+          ),
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              _HomeView(
+                onOpenFollows: () => setState(() => _selectedIndex = 2),
+              ),
+              const _SearchView(),
+              const _FollowsView(),
+              const _SettingsView(),
+            ],
+          ),
         ),
       ),
     );
@@ -64,12 +85,8 @@ class _HomePageState extends State<HomePage> {
 
 // ================= 首页 Tab =================
 class _HomeView extends StatelessWidget {
-  const _HomeView();
-
-  void _goLive(String roomId) {
-    if (roomId.isEmpty) return;
-    Get.toNamed('/live', parameters: {'roomId': roomId});
-  }
+  final VoidCallback onOpenFollows;
+  const _HomeView({required this.onOpenFollows});
 
   void _openEnterRoom(BuildContext context) {
     final ctrl = TextEditingController();
@@ -93,7 +110,7 @@ class _HomeView extends StatelessWidget {
           TextButton(
             onPressed: () {
               Get.back();
-              _goLive(ctrl.text.trim());
+              goLive(ctrl.text.trim());
             },
             child: const Text('进入', style: TextStyle(color: Color(0xFF00D2FF))),
           ),
@@ -107,7 +124,6 @@ class _HomeView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Hero 大卡（不透明渐变）
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -145,8 +161,8 @@ class _HomeView extends StatelessWidget {
           icon: Icons.subscriptions_outlined,
           color: const Color(0xFFFF6B6B),
           label: '我的订阅',
-          sub: '长按可移除订阅主播',
-          onTap: () {},
+          sub: '点击查看已收藏的主播',
+          onTap: onOpenFollows,
         ),
         const SizedBox(height: 12),
         _ContentCard(
@@ -161,7 +177,6 @@ class _HomeView extends StatelessWidget {
   }
 }
 
-/// 不透明内容卡片
 class _ContentCard extends StatelessWidget {
   final IconData icon;
   final Color color;
@@ -234,7 +249,7 @@ class _SearchViewState extends State<_SearchView> {
     final k = _kw.trim();
     if (k.isEmpty) return;
     if (RegExp(r'^\d+$').hasMatch(k)) {
-      Get.toNamed('/live', parameters: {'roomId': k});
+      goLive(k);
       return;
     }
     setState(() => _busy = true);
@@ -327,8 +342,7 @@ class _SearchViewState extends State<_SearchView> {
                           title: Text(r['name']!, style: const TextStyle(color: Colors.white)),
                           subtitle: Text('${r['game']} · 房间 ${r['roomId']}',
                               style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                          onTap: () =>
-                              Get.toNamed('/live', parameters: {'roomId': r['roomId']!}),
+                          onTap: () => goLive(r['roomId']!),
                         );
                       },
                     ),
@@ -383,7 +397,7 @@ class _FollowsViewState extends State<_FollowsView> {
             title: Text(f.name, style: const TextStyle(color: Colors.white)),
             subtitle: Text('房间 ${f.roomId}',
                 style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            onTap: () => Get.toNamed('/live', parameters: {'roomId': f.roomId}),
+            onTap: () => goLive(f.roomId),
             onLongPress: () async {
               await FollowStore.remove(f.roomId);
               _load();
