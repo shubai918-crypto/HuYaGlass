@@ -6,7 +6,7 @@ import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 import 'huya_login.dart';
 
-/// 虎牙直播流解析（dtv 同款签名 + 登录 Cookie 注入 + 暴力抓订阅数）
+/// 虎牙直播流解析（dtv 同款签名 + 登录 Cookie 注入 + 订阅数/开播时间抓取）
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -207,6 +207,7 @@ class HuyaStreamResolver {
       'uid': 0,
       'topSid': 0,
       'subSid': 0,
+      'startTime': 0,
     };
     try {
       final m = RegExp(
@@ -235,6 +236,7 @@ class HuyaStreamResolver {
           ]);
           out['title'] = _s(liveInfo['sIntroduction']);
           out['isLive'] = _i(liveInfo['eLiveStatus']) == 2;
+          out['startTime'] = _i(liveInfo['iStartTime'] ?? liveInfo['lStartTime']);
           out['uid'] = _i(profile['lUid']);
           out['topSid'] = _i(liveInfo['lChannelId'] ?? profile['lChannelId']);
           out['subSid'] = _i(liveInfo['lSubChannelId']);
@@ -288,7 +290,7 @@ class HuyaStreamResolver {
     if (_i(out['topSid']) == 0) out['topSid'] = out['uid'];
     if (_i(out['subSid']) == 0) out['subSid'] = out['topSid'];
 
-    // 粉丝兜底①：HTML 里「关注」后隔若干标签的数字（如 关注228 / 关注78.1万）
+    // 粉丝兜底①：HTML 里「关注」后隔若干标签的数字
     if (_i(out['fans']) == 0) {
       final m = RegExp(r'关注(?:<[^>]*>|\s){0,6}([\d][\d.]*)(万)?').firstMatch(body);
       if (m != null) {
@@ -318,6 +320,11 @@ class HuyaStreamResolver {
           break;
         }
       }
+    }
+    // 开播时间戳兜底
+    if (_i(out['startTime']) == 0) {
+      final m = RegExp('"iStartTime"\\s*:\\s*(\\d+)').firstMatch(body);
+      if (m != null) out['startTime'] = int.parse(m.group(1)!);
     }
     return out;
   }
@@ -352,6 +359,7 @@ class HuyaStreamResolver {
           if (_i(meta['uid']) == 0) meta['uid'] = mMeta['uid'];
           if (_i(meta['topSid']) == 0) meta['topSid'] = mMeta['topSid'];
           if (_i(meta['subSid']) == 0) meta['subSid'] = mMeta['subSid'];
+          if (_i(meta['startTime']) == 0) meta['startTime'] = mMeta['startTime'];
           if (meta['isLive'] != true) meta['isLive'] = mMeta['isLive'];
           if (_s(meta['title']).isEmpty) meta['title'] = mMeta['title'];
         }
@@ -408,6 +416,7 @@ class HuyaStreamResolver {
         title: _s(meta['title']),
         isLive: meta['isLive'] == true,
         heat: _i(meta['heat']),
+        startTime: _i(meta['startTime']),
         qualities: qualities,
       );
     } catch (_) {
@@ -534,6 +543,7 @@ class HuyaStreamResolver {
         title: _s(liveInfo['sIntroduction'] ?? liveInfo['sRoomName']),
         isLive: isLive,
         heat: heat,
+        startTime: _i(liveInfo['iStartTime'] ?? liveInfo['lStartTime']),
         qualities: qualities,
       );
     } catch (_) {
@@ -596,6 +606,7 @@ class HuyaStreamResolver {
       title: dtv.title.isNotEmpty ? dtv.title : api.title,
       isLive: dtv.isLive || api.isLive,
       heat: api.heat >= dtv.heat ? api.heat : dtv.heat,
+      startTime: dtv.startTime != 0 ? dtv.startTime : api.startTime,
       qualities: dtv.qualities.isNotEmpty ? dtv.qualities : api.qualities,
     );
   }
@@ -636,6 +647,7 @@ class HuyaStreamResult {
   final String title;
   final bool isLive;
   final int heat;
+  final int startTime;
   final List<StreamQuality> qualities;
 
   HuyaStreamResult({
@@ -648,6 +660,7 @@ class HuyaStreamResult {
     required this.title,
     required this.isLive,
     this.heat = 0,
+    this.startTime = 0,
     required this.qualities,
   });
 }
