@@ -16,14 +16,13 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端
-/// 接收：WS（16 注册 / 10 验Cookie / 20 心跳 / 7·22 推送）
-/// 发送：主通道 = App 同款 HTTP WUP（HTTPDNS 优选 IP 直连 80，GameLive/sendMessage）
-///       备份 = WS cmd=3 探测；成功以服务器回显为准
+/// 虎牙弹幕客户端（纯 WUP 路线）
+/// 信封严格对齐 JS Wup.encode()：4字节长度前缀 + tag7=内层map字节流
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
   static const _appUa = 'adr&7.11.82&Pixel 5&31';
+  static const _appHuYaUA = 'adr&7.11.82&2052&34';
 
   static const _endpoints = [
     'wss://wsapi.huya.com',
@@ -120,12 +119,30 @@ class HuyaDanmakuClient {
     _secondRegTimer = Timer(const Duration(seconds: 1), () {
       if (_topSid > 0) _send(_buildRegister(_topSid, _subSid));
       if (_loginUid > 0) _send(_buildVerifyCookie());
-      _send(_buildWsLaunchReq());
+      _send(_wrapWsCmd(_buildWupEnvelope('launch', 'wsLaunch', {
+        'tReq': _buildLaunchReq(),
+      }), 3));
     });
 
     _heartTimer?.cancel();
     _heartTimer =
         Timer.periodic(const Duration(seconds: 60), (_) => _sendHeartbeat());
+  }
+
+  Uint8List _buildLaunchReq() {
+    final dev = _TarsWriter();
+    dev.writeString(0, '');
+    dev.writeString(1, '');
+    dev.writeString(2, 'wifi');
+    dev.writeString(3, _guid);
+    dev.writeString(4, '');
+    final req = _TarsWriter();
+    req.writeInt(0, _loginUid);
+    req.writeString(1, _guid);
+    req.writeString(2, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
+    req.writeString(3, 'webh5&CN&2052');
+    req.writeStruct(4, dev);
+    return req.toBytes();
   }
 
   Uint8List _buildRegister(int liveId, int chatId) {
@@ -152,25 +169,6 @@ class HuyaDanmakuClient {
     return command.toBytes();
   }
 
-  Uint8List _buildWsLaunchReq() {
-    final dev = _TarsWriter();
-    dev.writeString(0, '');
-    dev.writeString(1, '');
-    dev.writeString(2, 'wifi');
-    dev.writeString(3, _guid);
-    dev.writeString(4, '');
-
-    final req = _TarsWriter();
-    req.writeInt(0, _loginUid);
-    req.writeString(1, _guid);
-    req.writeString(2, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
-    req.writeString(3, 'webh5&CN&2052');
-    req.writeStruct(4, dev);
-
-    final wup = _buildWupEnvelope('launch', 'wsLaunch', {'tReq': req.toBytes()});
-    return _wrapWsCmd(wup, 3);
-  }
-
   void _sendHeartbeat() {
     final command = _TarsWriter();
     command.writeInt(0, 20);
@@ -178,15 +176,13 @@ class HuyaDanmakuClient {
     _send(command.toBytes());
   }
 
-  // ================= 真实发送 =================
+  // ================= 真实发送（WUP over HTTP 主通道） =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     try {
       _pendingDanmaku = text;
-      _dbgPush('发送"${text}"');
-      // 主通道：App 同款 HTTP WUP（信封已按 APK 修正）
-      _tryHttpSend(_buildWupSend(text, 'GameLive'));
-      // 备份：WS cmd=3
+      _dbgPush('发送"$text"');
+      _tryHttpSend(_buildWupSend(text, 'liveui'));
       _send(_wrapWsCmd(_buildWupSend(text, 'liveui'), 3));
       Timer(const Duration(milliseconds: 800), () {
         if (!_closed && _pendingDanmaku == text) {
@@ -199,7 +195,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// 公共 DoH 实时解析优选 IP（复刻 App 的 HTTPDNS）
   Future<List<String>> _dohResolve(String host) async {
     final urls = [
       'https://dns.alidns.com/resolve?name=$host&type=A',
@@ -229,7 +224,6 @@ class HuyaDanmakuClient {
     final ips = await _dohResolve('cdn.wup.huya.com');
     final targets = <Map<String, String>>[
       for (final ip in ips) {'url': 'http://$ip:80/', 'host': 'cdn.wup.huya.com'},
-      {'url': 'http://wup.huya.com:80/', 'host': 'wup.huya.com'},
       {'url': 'https://wup.huya.com/', 'host': 'wup.huya.com'},
     ];
     for (final t in targets) {
@@ -258,21 +252,37 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// 解析 WUP 响应包 → "servant.func iRet=x"（servant@4 func@5）
+  /// 跳过 4 字节长度前缀后读 RequestPacket 字段
+  Map<int, Object?> _readWupFields(List<int> bytes) {
+    var start = 0;
+    if (bytes.length > 4) {
+      final prefix =
+          (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
+      if (prefix == bytes.length) start = 4;
+    }
+    return _TarsReader(Uint8List.fromList(bytes.sublist(start))).readFields();
+  }
+
   String _describeWupRsp(List<int> bytes) {
     try {
-      final wupFields = _TarsReader(Uint8List.fromList(bytes)).readFields();
-      final servant = '${wupFields[4] ?? ''}';
-      final func = '${wupFields[5] ?? ''}';
-      final map = wupFields[7];
+      final f = _readWupFields(bytes);
+      final servant = '${f[5] ?? ''}';
+      final func = '${f[6] ?? ''}';
       int ret = -99;
-      if (map is List) {
-        for (var i = 0; i + 1 < map.length; i += 2) {
-          if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
-            final rsp = _TarsReader(Uint8List.fromList(
-                    (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList()))
-                .readFields();
-            ret = rsp[0] is int ? rsp[0] as int : -99;
+      final sb = f[7];
+      if (sb is List) {
+        final inner = _TarsReader(Uint8List.fromList(
+                sb.map((e) => (e as int) & 0xFF).toList()))
+            .readFields();
+        final map = inner[0];
+        if (map is List) {
+          for (var i = 0; i + 1 < map.length; i += 2) {
+            if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
+              final rsp = _TarsReader(Uint8List.fromList(
+                      (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList()))
+                  .readFields();
+              ret = rsp[0] is int ? rsp[0] as int : -99;
+            }
           }
         }
       }
@@ -282,27 +292,43 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// WUP RequestPacket（tag0=iVersion，APK 确认结构）
+  /// WUP 信封 —— 严格对齐 JS encode()：长度前缀 + tag7=内层map字节流
   Uint8List _buildWupEnvelope(
       String servant, String funcName, Map<String, List<int>> buffers) {
+    // 内层 newdata：tag 0 -> map<string, BinBuffer>
+    final inner = _TarsWriter();
+    inner.writeBytesMap(0, buffers);
+
     final wup = _TarsWriter();
-    wup.writeInt(0, 3); // iVersion
-    wup.writeInt(1, 0); // iPacketType
-    wup.writeInt(2, 0); // iMessageType
-    wup.writeInt(3, ++_reqId); // iRequestId
-    wup.writeString(4, servant); // sServantName
-    wup.writeString(5, funcName); // sFuncName
-    wup.writeBytesMap(7, buffers); // mBuffer
-    return wup.toBytes();
+    wup.writeInt(1, 3); // iVersion
+    wup.writeInt(2, 0); // cPacketType
+    wup.writeInt(3, 0); // iMessageType
+    wup.writeInt(4, ++_reqId); // iRequestId
+    wup.writeString(5, servant); // sServantName
+    wup.writeString(6, funcName); // sFuncName
+    wup.writeBytes(7, inner.toBytes()); // sBuffer = BYTES！
+    wup.writeInt(8, 0); // iTimeout
+    wup.writeBytesMap(9, const {}); // context
+    wup.writeBytesMap(10, const {}); // status
+
+    final body = wup.toBytes();
+    final total = body.length + 4;
+    final out = BytesBuilder();
+    out.addByte((total >> 24) & 0xFF);
+    out.addByte((total >> 16) & 0xFF);
+    out.addByte((total >> 8) & 0xFF);
+    out.addByte(total & 0xFF);
+    out.add(body);
+    return out.toBytes();
   }
 
-  /// SendMessageReq（字段顺序 APK 确认）
+  /// SendMessageReq（含 lPid@8）
   Uint8List _buildWupSend(String text, String servant) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
     user.writeString(1, _guid);
     user.writeString(2, _token);
-    user.writeString(3, _cookieVal('huya_ua').isEmpty ? 'webh5&0.1.0&websocket' : _cookieVal('huya_ua'));
+    user.writeString(3, _appHuYaUA);
     user.writeString(4, _cookie);
     user.writeInt(5, 0);
     user.writeString(6, 'Pixel 5');
@@ -328,6 +354,7 @@ class HuyaDanmakuClient {
     req.writeInt(4, 0);
     req.writeStruct(5, cf);
     req.writeStruct(6, bf);
+    req.writeInt(8, _ayyuid); // lPid 主播UID
 
     return _buildWupEnvelope(servant, 'sendMessage', {'tReq': req.toBytes()});
   }
@@ -388,7 +415,6 @@ class HuyaDanmakuClient {
       if (payload is List) {
         final pBytes = payload.map((e) => (e as int) & 0xFF).toList();
         final pr = _TarsReader(Uint8List.fromList(pBytes));
-
         if (type == 7) {
           final pf = pr.readFields();
           final uri = pf[1] is int ? pf[1] as int : 0;
