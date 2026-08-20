@@ -140,7 +140,7 @@ class LivePlayController extends GetxController {
     _saveSettings();
   }
 
-  // ================= 开播时长（now - 开播时间戳） =================
+  // ================= 开播时长 =================
   void _startDurationTimer() {
     _durationTimer?.cancel();
     _updateDuration();
@@ -174,7 +174,10 @@ class LivePlayController extends GetxController {
                   Row(
                     children: [
                       const Text('弹幕设置',
-                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold)),
                       const Spacer(),
                       Text(showDanmaku.value ? '滚动弹幕:开' : '滚动弹幕:关',
                           style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -214,7 +217,8 @@ class LivePlayController extends GetxController {
                     children: [
                       const Icon(Icons.battery_saver, color: Color(0xFF7ED97E), size: 20),
                       const SizedBox(width: 8),
-                      const Text('省电模式', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      const Text('省电模式',
+                          style: TextStyle(color: Colors.white, fontSize: 14)),
                       const SizedBox(width: 4),
                       const Text('(降帧率+关滚动弹幕，减少发热)',
                           style: TextStyle(color: Colors.white38, fontSize: 11)),
@@ -239,7 +243,9 @@ class LivePlayController extends GetxController {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(width: 52, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
+          SizedBox(
+              width: 52,
+              child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
           const SizedBox(width: 8),
           ...options.map((o) => GestureDetector(
                 onTap: () => onPick(o),
@@ -247,14 +253,19 @@ class LivePlayController extends GetxController {
                   margin: const EdgeInsets.only(right: 6),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   decoration: BoxDecoration(
-                    color: o == current ? const Color(0xFF00D2FF).withOpacity(0.2) : Colors.white.withOpacity(0.06),
+                    color: o == current
+                        ? const Color(0xFF00D2FF).withOpacity(0.2)
+                        : Colors.white.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: o == current ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.1)),
+                        color: o == current
+                            ? const Color(0xFF00D2FF)
+                            : Colors.white.withOpacity(0.1)),
                   ),
                   child: Text(o,
                       style: TextStyle(
-                          color: o == current ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 12)),
+                          color: o == current ? const Color(0xFF00D2FF) : Colors.white60,
+                          fontSize: 12)),
                 ),
               )),
         ],
@@ -262,10 +273,13 @@ class LivePlayController extends GetxController {
     );
   }
 
-  Widget _slider(String label, double min, double max, double val, ValueChanged<double> onChanged, String display) {
+  Widget _slider(String label, double min, double max, double val,
+      ValueChanged<double> onChanged, String display) {
     return Row(
       children: [
-        SizedBox(width: 52, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
+        SizedBox(
+            width: 52,
+            child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
         Expanded(
           child: Slider(
             value: val,
@@ -276,7 +290,9 @@ class LivePlayController extends GetxController {
             onChanged: onChanged,
           ),
         ),
-        SizedBox(width: 60, child: Text(display, style: const TextStyle(color: Colors.white54, fontSize: 12))),
+        SizedBox(
+            width: 60,
+            child: Text(display, style: const TextStyle(color: Colors.white54, fontSize: 12))),
       ],
     );
   }
@@ -315,6 +331,7 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount';
   }
 
+  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -496,6 +513,10 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
+    // 防黑屏：切屏后强制重建视频纹理
+    Future.delayed(const Duration(milliseconds: 300), () {
+      playerVersion.value++;
+    });
   }
 
   void switchQuality(StreamQuality q) {
@@ -533,18 +554,16 @@ class LivePlayController extends GetxController {
     });
   }
 
-  // ================= 发送弹幕（原生协议，回显为准） =================
+  // ================= 发送弹幕（纯 WUP） =================
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
       Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
+    inputController.clear();
     final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
-    if (ok) {
-      inputController.clear();
-      Get.snackbar('已发送', '等待服务器回显确认…', snackPosition: SnackPosition.BOTTOM);
-    } else {
+    if (!ok) {
       Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
     }
   }
@@ -637,7 +656,8 @@ class LivePlayController extends GetxController {
     }
   }
 
-  Widget _controlBtn(IconData icon, VoidCallback onTap, {bool selected = false, double size = 36}) {
+  Widget _controlBtn(IconData icon, VoidCallback onTap,
+      {bool selected = false, double size = 36}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -647,7 +667,8 @@ class LivePlayController extends GetxController {
           color: Colors.black.withOpacity(selected ? 0.7 : 0.45),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: selected ? const Color(0xFF7ED97E) : Colors.white, size: size * 0.55),
+        child: Icon(icon,
+            color: selected ? const Color(0xFF7ED97E) : Colors.white, size: size * 0.55),
       ),
     );
   }
@@ -709,7 +730,8 @@ class LivePlayController extends GetxController {
                   style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
                 )),
             const SizedBox(width: 8),
-            _controlBtn(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, toggleFullscreen),
+            _controlBtn(
+                fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, toggleFullscreen),
           ]),
         ),
       ),
@@ -718,6 +740,7 @@ class LivePlayController extends GetxController {
 
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
+      playerVersion.value; // 建立依赖：切屏时强制重建，防黑屏
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -728,7 +751,9 @@ class LivePlayController extends GetxController {
             children: [
               if (c != null && c.value.isInitialized) Positioned.fill(child: _videoByFit(c)),
               if (isPaused.value && !isLocked.value)
-                Center(child: _controlBtn(Icons.play_arrow, togglePlay, selected: true, size: 64)),
+                Center(
+                    child:
+                        _controlBtn(Icons.play_arrow, togglePlay, selected: true, size: 64)),
               if (showControls.value && !isLocked.value) _buildControls(fullscreen),
               if (isLocked.value && showControls.value)
                 Positioned(
