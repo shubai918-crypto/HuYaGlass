@@ -323,10 +323,28 @@ class HuyaStreamResolver {
     }
     // 开播时间戳兜底
     if (_i(out['startTime']) == 0) {
-      final m = RegExp('"iStartTime"\\s*:\\s*(\\d+)').firstMatch(body);
-      if (m != null) out['startTime'] = int.parse(m.group(1)!);
+      out['startTime'] = _parseStartTime(body);
     }
     return out;
+  }
+
+  /// 开播时间戳：多字段暴力搜索，兼容毫秒/秒
+  int _parseStartTime(String body) {
+    for (final key in [
+      'lLiveTimespan',
+      'iStartTime',
+      'lStartTime',
+      'startTime',
+      'liveStartTime',
+      'openTime',
+    ]) {
+      final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+      if (m == null) continue;
+      var v = int.parse(m.group(1)!);
+      if (v > 1000000000000) v ~/= 1000; // 毫秒→秒
+      if (v > 1500000000 && v < 2600000000) return v;
+    }
+    return 0;
   }
 
   // ================= dtv: resolve =================
@@ -543,7 +561,14 @@ class HuyaStreamResolver {
         title: _s(liveInfo['sIntroduction'] ?? liveInfo['sRoomName']),
         isLive: isLive,
         heat: heat,
-        startTime: _i(liveInfo['iStartTime'] ?? liveInfo['lStartTime']),
+        startTime: _firstNonZero([
+          liveInfo['iStartTime'],
+          liveInfo['lStartTime'],
+          liveInfo['lLiveTimespan'] != null
+              ? _i(liveInfo['lLiveTimespan']) ~/ 1000
+              : 0,
+          _parseStartTime(res.body),
+        ]),
         qualities: qualities,
       );
     } catch (_) {
