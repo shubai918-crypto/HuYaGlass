@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'package:video_player/video_player.dart';
+import 'huya_web_sender.dart';
 
 class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
@@ -325,12 +326,23 @@ class LivePlayController extends GetxController {
       Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
+    // 优先走网页端真实发送
+    if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
+      final r = await HuyaWebSender.sendFn!(text);
+      if (r == 'sent') {
+        inputController.clear();
+        Get.snackbar('已发送', text, snackPosition: SnackPosition.BOTTOM);
+      } else {
+        Get.snackbar('发送结果', r, snackPosition: SnackPosition.BOTTOM);
+      }
+      return;
+    }
     final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
     if (ok) {
       inputController.clear();
       Get.snackbar('已发送', '等待服务器确认…', snackPosition: SnackPosition.BOTTOM);
     } else {
-      Get.snackbar('发送失败', '请确认已在设置中登录虎牙账号', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('发送失败', '网页发送器未就绪，请稍后再试', snackPosition: SnackPosition.BOTTOM);
     }
   }
 
