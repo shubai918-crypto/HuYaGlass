@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/danmaku_view.dart';
 import '../../common/widgets/liquid_glass.dart';
+import 'huya_web_sender.dart';
 import 'live_play_controller.dart';
 
 class LivePlayPage extends StatelessWidget {
@@ -58,6 +59,15 @@ class LivePlayPage extends StatelessWidget {
                         ]),
                       )
                     : const SizedBox.shrink()),
+                if (HuyaLoginManager().isLoggedIn)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: HuyaWebSender(
+                      roomId: controller.roomId,
+                      onFans: (v) => controller.fansCount.value = v,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -71,7 +81,7 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
-  // 顶栏：不再放登录按钮，名字和热度有完整空间
+  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -125,6 +135,7 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
+  // ================= 视频区 + 滚动弹幕 =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -149,6 +160,7 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
+  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return LiquidGlass(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -235,6 +247,7 @@ class LivePlayPage extends StatelessWidget {
   }
 }
 
+/// 视频下方的弹幕列表（自动滚动到底部）
 class _DanmakuList extends StatefulWidget {
   final LivePlayController controller;
   const _DanmakuList({required this.controller});
