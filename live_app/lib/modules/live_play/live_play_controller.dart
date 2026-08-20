@@ -38,6 +38,9 @@ class LivePlayController extends GetxController {
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
   final roomTitle = ''.obs;
+  final liveStartTime = 0.obs;
+  final liveDurationText = ''.obs;
+  Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
   final danmakuFps = 30.obs;
@@ -135,6 +138,27 @@ class LivePlayController extends GetxController {
       Get.snackbar('省电模式', '已关闭', snackPosition: SnackPosition.BOTTOM);
     }
     _saveSettings();
+  }
+
+  // ================= 开播时长（now - 开播时间戳） =================
+  void _startDurationTimer() {
+    _durationTimer?.cancel();
+    _updateDuration();
+    _durationTimer =
+        Timer.periodic(const Duration(seconds: 30), (_) => _updateDuration());
+  }
+
+  void _updateDuration() {
+    final st = liveStartTime.value;
+    if (st <= 0 || !isLive.value) {
+      liveDurationText.value = '';
+      return;
+    }
+    var sec = DateTime.now().millisecondsSinceEpoch ~/ 1000 - st;
+    if (sec < 0) sec = 0;
+    final h = sec ~/ 3600;
+    final m = (sec % 3600) ~/ 60;
+    liveDurationText.value = h > 0 ? '$h小时$m分钟' : '$m分钟';
   }
 
   // ================= 弹幕设置面板 =================
@@ -305,6 +329,8 @@ class LivePlayController extends GetxController {
       heatCount.value = info.heat;
       isLive.value = info.isLive;
       roomTitle.value = info.title;
+      liveStartTime.value = info.startTime;
+      _startDurationTimer();
       isFollowed.value = await FollowStore.isFollowed(roomId);
       qualities.assignAll(info.qualities);
 
@@ -506,7 +532,7 @@ class LivePlayController extends GetxController {
     });
   }
 
-  // ================= 发送弹幕（仅原生 WS 协议） =================
+  // ================= 发送弹幕（原生 WS 协议） =================
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
@@ -625,7 +651,6 @@ class LivePlayController extends GetxController {
     );
   }
 
-  // 控制层：顶行放省电/设置，底行 6 按钮，保证全屏按钮不被挤出
   Widget _buildControls(bool fullscreen) {
     return Stack(children: [
       Positioned(
@@ -734,6 +759,7 @@ class LivePlayController extends GetxController {
   void onClose() {
     _hideTimer?.cancel();
     _stallTimer?.cancel();
+    _durationTimer?.cancel();
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
