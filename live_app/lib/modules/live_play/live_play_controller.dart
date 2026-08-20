@@ -5,7 +5,6 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
-import 'huya_web_sender.dart';
 import '../home/follow_store.dart';
 
 class LivePlayController extends GetxController {
@@ -38,6 +37,7 @@ class LivePlayController extends GetxController {
   final currentQuality = ''.obs;
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
+  final roomTitle = ''.obs;
 
   // ---------- 弹幕设置 / 省电 ----------
   final danmakuFps = 30.obs;
@@ -54,9 +54,6 @@ class LivePlayController extends GetxController {
   final isMuted = false.obs;
   final fitMode = 0.obs;
   Timer? _hideTimer;
-
-  final webSenderActive = false.obs;
-  Timer? _webSenderIdleTimer;
 
   final qualities = <StreamQuality>[].obs;
   final lines = <String>[].obs;
@@ -155,7 +152,7 @@ class LivePlayController extends GetxController {
                       const Text('弹幕设置',
                           style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                       const Spacer(),
-                      Text(controller_showDanmakuText(),
+                      Text(showDanmaku.value ? '滚动弹幕:开' : '滚动弹幕:关',
                           style: const TextStyle(color: Colors.white54, fontSize: 12)),
                       Switch(
                         value: showDanmaku.value,
@@ -213,8 +210,6 @@ class LivePlayController extends GetxController {
     );
   }
 
-  String controller_showDanmakuText() => showDanmaku.value ? '滚动弹幕:开' : '滚动弹幕:关';
-
   Widget _seg(String label, List<String> options, String current, ValueChanged<String> onPick) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -257,9 +252,7 @@ class LivePlayController extends GetxController {
             onChanged: onChanged,
           ),
         ),
-        SizedBox(
-            width: 60,
-            child: Text(display, style: const TextStyle(color: Colors.white54, fontSize: 12))),
+        SizedBox(width: 60, child: Text(display, style: const TextStyle(color: Colors.white54, fontSize: 12))),
       ],
     );
   }
@@ -311,6 +304,7 @@ class LivePlayController extends GetxController {
       fansCount.value = info.streamerInfo.fansCount;
       heatCount.value = info.heat;
       isLive.value = info.isLive;
+      roomTitle.value = info.title;
       isFollowed.value = await FollowStore.isFollowed(roomId);
       qualities.assignAll(info.qualities);
 
@@ -512,43 +506,20 @@ class LivePlayController extends GetxController {
     });
   }
 
-  // ================= 发送弹幕（按需 WebView 真实发送） =================
+  // ================= 发送弹幕（仅原生 WS 协议） =================
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
       Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
-    if (!HuyaWebSender.ready || HuyaWebSender.sendFn == null) {
-      webSenderActive.value = true;
-      Get.snackbar('真实弹幕', '正在启动网页发送组件…', snackPosition: SnackPosition.BOTTOM);
-      for (var i = 0; i < 30; i++) {
-        if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) break;
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
+    final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
+    if (ok) {
+      inputController.clear();
+      Get.snackbar('已发送', '等待服务器回显确认…', snackPosition: SnackPosition.BOTTOM);
+    } else {
+      Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
     }
-    if (HuyaWebSender.ready && HuyaWebSender.sendFn != null) {
-      final r = await HuyaWebSender.sendFn!(text);
-      _scheduleWebSenderStop();
-      if (r == 'sent') {
-        inputController.clear();
-        Get.snackbar('已发送', '网页端真实发送成功', snackPosition: SnackPosition.BOTTOM);
-      } else if (r.startsWith('clicked')) {
-        inputController.clear();
-        Get.snackbar('已发送', '等待服务器确认…', snackPosition: SnackPosition.BOTTOM);
-      } else {
-        Get.snackbar('发送失败', r, snackPosition: SnackPosition.BOTTOM);
-      }
-      return;
-    }
-    Get.snackbar('发送失败', '网页组件启动失败，请检查网络/登录', snackPosition: SnackPosition.BOTTOM);
-  }
-
-  void _scheduleWebSenderStop() {
-    _webSenderIdleTimer?.cancel();
-    _webSenderIdleTimer = Timer(const Duration(seconds: 30), () {
-      webSenderActive.value = false;
-    });
   }
 
   void toggleFollow() {
@@ -654,16 +625,17 @@ class LivePlayController extends GetxController {
     );
   }
 
+  // 控制层：顶行放省电/设置，底行 6 按钮，保证全屏按钮不被挤出
   Widget _buildControls(bool fullscreen) {
     return Stack(children: [
-      if (fullscreen)
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: Row(children: [
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(children: [
+            if (fullscreen) ...[
               _controlBtn(Icons.arrow_back, toggleFullscreen, size: 40),
               const SizedBox(width: 10),
               Expanded(
@@ -674,10 +646,18 @@ class LivePlayController extends GetxController {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+            ] else
+              const Spacer(),
+            _controlBtn(Icons.battery_saver, togglePowerSave, selected: powerSave.value),
+            const SizedBox(width: 6),
+            _controlBtn(Icons.tune, showDanmakuSettings),
+            if (fullscreen) ...[
+              const SizedBox(width: 6),
               _controlBtn(Icons.lock_open, toggleLock, size: 40),
-            ]),
-          ),
+            ],
+          ]),
         ),
+      ),
       Positioned(
         bottom: 0,
         left: 0,
@@ -689,19 +669,14 @@ class LivePlayController extends GetxController {
             const SizedBox(width: 6),
             _controlBtn(Icons.refresh, refreshPlay),
             const SizedBox(width: 6),
-            _controlBtn(
-                showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
+            _controlBtn(showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
               showDanmaku.value = !showDanmaku.value;
               _scheduleHide(4);
             }),
             const SizedBox(width: 6),
-            _controlBtn(Icons.tune, showDanmakuSettings),
-            const SizedBox(width: 6),
-            _controlBtn(Icons.battery_saver, togglePowerSave, selected: powerSave.value),
+            _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
             const SizedBox(width: 6),
             _controlBtn(Icons.aspect_ratio, cycleFit),
-            const SizedBox(width: 6),
-            _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
             const Spacer(),
             Obx(() => Text(
                   fitNames[fitMode.value],
@@ -759,7 +734,6 @@ class LivePlayController extends GetxController {
   void onClose() {
     _hideTimer?.cancel();
     _stallTimer?.cancel();
-    _webSenderIdleTimer?.cancel();
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
