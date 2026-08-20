@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:live_core/live_core.dart';
 
-/// 隐藏 WebView：驱动虎牙网页端真实发弹幕 + 抓取真实订阅数
-/// 发送成功判定 = 网页输入框被网页客户端清空（真实发出的标志）
+/// 隐藏 WebView：按需挂载，驱动虎牙网页端真实发弹幕 + 抓真实订阅数
 class HuyaWebSender extends StatefulWidget {
   final String roomId;
   final void Function(int)? onFans;
@@ -27,6 +26,14 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
   void initState() {
     super.initState();
     _init();
+  }
+
+  @override
+  void dispose() {
+    // 销毁时重置，保证下次挂载重新加载
+    HuyaWebSender.ready = false;
+    HuyaWebSender.sendFn = null;
+    super.dispose();
   }
 
   Future<void> _init() async {
@@ -53,13 +60,11 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent(_desktopUa)
       ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) async {
-        await Future.delayed(const Duration(seconds: 3));
+        await Future.delayed(const Duration(seconds: 2));
         if (!HuyaWebSender.ready) {
           HuyaWebSender.ready = true;
           _scrapeFans();
         }
-        await Future.delayed(const Duration(seconds: 5));
-        _scrapeFans();
       }))
       ..loadRequest(Uri.parse('https://www.huya.com/${widget.roomId}'));
 
@@ -67,7 +72,7 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
     if (mounted) setState(() => _ctrl = ctrl);
   }
 
-  /// 真实发送：填字→点击→验证输入框被清空；no-input 时自动重试
+  /// 真实发送：填字→点击→验证输入框被清空；no-input 自动重试
   Future<String> _send(String text) async {
     final ctrl = _ctrl;
     if (ctrl == null) return 'webview未就绪';
@@ -78,8 +83,7 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
         r = '${await ctrl.runJavaScriptReturningResult(_jsSend(text))}'
             .replaceAll('"', '');
       }
-      if (!r.startsWith('clicked')) return r; // no-input 等如实返回
-      // 1.2 秒后验证：输入框被网页清空 = 真实发送成功
+      if (!r.startsWith('clicked')) return r;
       await Future.delayed(const Duration(milliseconds: 1200));
       final v = '${await ctrl.runJavaScriptReturningResult(_jsCheck)}'
           .replaceAll('"', '');
@@ -114,6 +118,7 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
   ta.dispatchEvent(new Event('input',{bubbles:true}));
   ta.dispatchEvent(new Event('change',{bubbles:true}));
   ta.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));
+  try { ta.focus(); } catch(e){}
   var btn = d0.querySelector('#pub-send')
          || d0.querySelector('.send-btn')
          || d0.querySelector('a[class*="send"]')
@@ -143,7 +148,6 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
 })()
 ''';
 
-  /// 抓真实订阅数
   Future<void> _scrapeFans() async {
     final ctrl = _ctrl;
     if (ctrl == null) return;
