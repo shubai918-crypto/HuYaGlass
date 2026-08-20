@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
@@ -25,35 +24,39 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassScaffold(
-      contentAwareBrightness: true,
-      appBar: GlassAppBar(
-        title: const Text('HuyaLive'),
-        actions: [
-          GlassButton(
-            icon: const Icon(Icons.account_circle),
-            onTap: () => Get.to(() => const HuyaLoginPage()),
-          ),
-        ],
-      ),
-      bottomBar: GlassTabBar.bottom(
-        selectedIndex: _selectedIndex,
-        onTabSelected: _onTabSelected,
-        tabs: const [
-          GlassTab(icon: Icon(Icons.home), label: '首页'),
-          GlassTab(icon: Icon(Icons.search), label: '搜索'),
-          GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-          GlassTab(icon: Icon(Icons.settings), label: '设置'),
-        ],
-      ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: const [
-          _HomeView(),
-          _SearchView(),
-          _FollowsView(),
-          _SettingsView(),
-        ],
+    // 关键修复：GlassScaffold 不带 Material，包一层透明 Material 消除黄色下划线
+    return Material(
+      type: MaterialType.transparency,
+      child: GlassScaffold(
+        contentAwareBrightness: true,
+        appBar: GlassAppBar(
+          title: const Text('HuyaLive'),
+          actions: [
+            GlassButton(
+              icon: const Icon(Icons.account_circle),
+              onTap: () => Get.to(() => const HuyaLoginPage()),
+            ),
+          ],
+        ),
+        bottomBar: GlassTabBar.bottom(
+          selectedIndex: _selectedIndex,
+          onTabSelected: _onTabSelected,
+          tabs: const [
+            GlassTab(icon: Icon(Icons.home), label: '首页'),
+            GlassTab(icon: Icon(Icons.search), label: '搜索'),
+            GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+            GlassTab(icon: Icon(Icons.settings), label: '设置'),
+          ],
+        ),
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: const [
+            _HomeView(),
+            _SearchView(),
+            _FollowsView(),
+            _SettingsView(),
+          ],
+        ),
       ),
     );
   }
@@ -129,7 +132,6 @@ class _HomeView extends StatelessWidget {
                 style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13),
               ),
               const SizedBox(height: 18),
-              // 玻璃按钮（正确使用 GlassButton）
               GlassButton(
                 icon: const Icon(Icons.play_arrow),
                 label: '进入直播间',
@@ -139,7 +141,6 @@ class _HomeView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        // 不透明内容卡
         _ContentCard(
           icon: Icons.subscriptions_outlined,
           color: const Color(0xFFFF6B6B),
@@ -160,14 +161,14 @@ class _HomeView extends StatelessWidget {
   }
 }
 
-/// 不透明内容卡片（遵循设计哲学：内容区不透明）
+/// 不透明内容卡片
 class _ContentCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String label;
   final String sub;
   final VoidCallback onTap;
-  
+
   const _ContentCard({
     required this.icon,
     required this.color,
