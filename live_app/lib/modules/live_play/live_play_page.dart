@@ -74,7 +74,7 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
-  // ================= 顶栏（只显示粉丝，热度去详情看） =================
+  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -162,6 +162,7 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
+  // ================= 视频区 + 滚动弹幕 =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -477,6 +478,36 @@ class _DetailTab extends StatelessWidget {
                 ],
               ),
             ),
+            // 开播时长（实时计算）
+            Obx(() => controller.liveDurationText.value.isNotEmpty
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF16161E),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.06)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.schedule, color: Color(0xFF7ED97E), size: 20),
+                          const SizedBox(width: 10),
+                          const Text('开播时长',
+                              style: TextStyle(color: Colors.white54, fontSize: 13)),
+                          const Spacer(),
+                          Text(
+                            controller.liveDurationText.value,
+                            style: const TextStyle(
+                                color: Color(0xFF7ED97E),
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink()),
             const SizedBox(height: 12),
             // 直播标题
             if (controller.roomTitle.value.isNotEmpty)
