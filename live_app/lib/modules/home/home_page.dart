@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
@@ -7,7 +8,6 @@ import 'package:live_core/live_core.dart';
 import '../settings/huya_login_page.dart';
 import 'follow_store.dart';
 
-/// 主壳：官方示例同款 —— 玻璃导航层 + 不透明内容
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
@@ -15,50 +15,51 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _tab = 0;
-  static const _titles = ['HuyaLive', '搜索', '我的订阅', '设置'];
+  int _selectedIndex = 0;
+
+  void _onTabSelected(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveLiquidGlassLayer(
-      settings: const LiquidGlassSettings(),
-      quality: GlassQuality.standard,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF0A0A0F),
-        appBar: GlassAppBar(
-          title: Text(_titles[_tab]),
-          actions: [
-            GlassIconButton(
-              icon: const Icon(Icons.account_circle),
-              onPressed: () => Get.to(() => const HuyaLoginPage()),
-            ),
-          ],
-        ),
-        body: IndexedStack(
-          children: const [
-            _HomeView(),
-            _SearchView(),
-            _FollowsView(),
-            _SettingsView(),
-          ],
-        ),
-        // 底部胶囊玻璃标签栏（Apple Music 同款）
-        bottomNavigationBar: GlassTabBar(
-          tabs: const [
-            GlassTab(icon: Icons.home_filled, label: '首页'),
-            GlassTab(icon: Icons.search, label: '搜索'),
-            GlassTab(icon: Icons.subscriptions_outlined, label: '订阅'),
-            GlassTab(icon: Icons.settings, label: '设置'),
-          ],
-          selectedIndex: _tab,
-          onTabSelected: (i) => setState(() => _tab = i),
-        ),
+    return GlassScaffold(
+      contentAwareBrightness: true,
+      appBar: GlassAppBar(
+        title: const Text('HuyaLive'),
+        actions: [
+          GlassButton(
+            icon: const Icon(Icons.account_circle),
+            onTap: () => Get.to(() => const HuyaLoginPage()),
+          ),
+        ],
+      ),
+      bottomBar: GlassTabBar.bottom(
+        selectedIndex: _selectedIndex,
+        onTabSelected: _onTabSelected,
+        tabs: const [
+          GlassTab(icon: Icon(Icons.home), label: '首页'),
+          GlassTab(icon: Icon(Icons.search), label: '搜索'),
+          GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+          GlassTab(icon: Icon(Icons.settings), label: '设置'),
+        ],
+      ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: const [
+          _HomeView(),
+          _SearchView(),
+          _FollowsView(),
+          _SettingsView(),
+        ],
       ),
     );
   }
 }
 
-// ================= 首页 Tab：Hero 大卡 + 入口 =================
+// ================= 首页 Tab =================
 class _HomeView extends StatelessWidget {
   const _HomeView();
 
@@ -103,7 +104,7 @@ class _HomeView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Hero 大卡（不透明渐变，仿示例红色卡片）
+        // Hero 大卡（不透明渐变）
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -128,8 +129,9 @@ class _HomeView extends StatelessWidget {
                 style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13),
               ),
               const SizedBox(height: 18),
+              // 玻璃按钮（正确使用 GlassButton）
               GlassButton(
-                icon: Icons.play_arrow,
+                icon: const Icon(Icons.play_arrow),
                 label: '进入直播间',
                 onTap: () => _openEnterRoom(context),
               ),
@@ -144,7 +146,6 @@ class _HomeView extends StatelessWidget {
           label: '我的订阅',
           sub: '长按可移除订阅主播',
           onTap: () {},
-          trailing: true,
         ),
         const SizedBox(height: 12),
         _ContentCard(
@@ -153,28 +154,26 @@ class _HomeView extends StatelessWidget {
           label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
           sub: '登录后可发真实弹幕 / 看真实订阅数',
           onTap: () => Get.to(() => const HuyaLoginPage()),
-          trailing: true,
         ),
       ],
     );
   }
 }
 
-/// 不透明内容卡片（黄金规则：内容不用玻璃）
+/// 不透明内容卡片（遵循设计哲学：内容区不透明）
 class _ContentCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String label;
   final String sub;
   final VoidCallback onTap;
-  final bool trailing;
+  
   const _ContentCard({
     required this.icon,
     required this.color,
     required this.label,
     required this.sub,
     required this.onTap,
-    this.trailing = false,
   });
 
   @override
@@ -210,7 +209,7 @@ class _ContentCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing) const Icon(Icons.chevron_right, color: Colors.white38),
+            const Icon(Icons.chevron_right, color: Colors.white38),
           ],
         ),
       ),
@@ -277,14 +276,31 @@ class _SearchViewState extends State<_SearchView> {
           child: Row(
             children: [
               Expanded(
-                child: GlassTextField(
-                  placeholder: '搜索主播 / 输入房间号',
-                  prefixIcon: const Icon(Icons.search),
-                  onChanged: (v) => _kw = v,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: TextField(
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      hintText: '搜索主播 / 输入房间号',
+                      hintStyle: TextStyle(color: Colors.white38),
+                      prefixIcon: Icon(Icons.search, color: Color(0xFF00D2FF)),
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (v) => _kw = v,
+                    onSubmitted: (_) => _search(),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              GlassIconButton(icon: const Icon(Icons.arrow_forward), onPressed: _search),
+              IconButton(
+                icon: const Icon(Icons.arrow_forward, color: Color(0xFF00D2FF)),
+                onPressed: _search,
+              ),
             ],
           ),
         ),
@@ -393,7 +409,6 @@ class _SettingsView extends StatelessWidget {
           label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
           sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
           onTap: () => Get.to(() => const HuyaLoginPage()),
-          trailing: true,
         ),
         const SizedBox(height: 12),
         _ContentCard(
