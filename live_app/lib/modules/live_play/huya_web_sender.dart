@@ -17,6 +17,9 @@ class HuyaWebSender extends StatefulWidget {
 }
 
 class _HuyaWebSenderState extends State<HuyaWebSender> {
+  static const _desktopUa =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
   WebViewController? _ctrl;
 
   @override
@@ -47,12 +50,16 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
 
     final ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(_desktopUa) // 关键：桌面 UA，拿到 PC 版页面（含聊天框）
       ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) async {
         await Future.delayed(const Duration(seconds: 3));
         if (!HuyaWebSender.ready) {
           HuyaWebSender.ready = true;
           _scrapeFans();
         }
+        // 8 秒后再补抓一次（聊天框/关注数可能异步渲染）
+        await Future.delayed(const Duration(seconds: 5));
+        _scrapeFans();
       }))
       ..loadRequest(Uri.parse('https://www.huya.com/${widget.roomId}'));
 
@@ -60,65 +67,95 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
     if (mounted) setState(() => _ctrl = ctrl);
   }
 
-  /// 注入 JS：填字 + 点发送（多选择器兜底）
+  /// 注入 JS：主文档 + 同域 iframe 全搜索，填字 + 点「发送」
   Future<String> _send(String text) async {
     final ctrl = _ctrl;
     if (ctrl == null) return 'webview未就绪';
     final js = '''
 (function(){
   var t = ${jsonEncode(text)};
-  var ta = document.querySelector('#pub-textarea')
-        || document.querySelector('.chat-input textarea')
-        || document.querySelector('textarea');
-  var ed = document.querySelector('.chat-editer[contenteditable="true"]')
-        || document.querySelector('[contenteditable="true"]');
-  function fire(el){
-    el.dispatchEvent(new Event('input',{bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-    el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));
+  function findInput(d){
+    if(!d) return null;
+    return d.querySelector('#pub-textarea')
+        || d.querySelector('textarea')
+        || d.querySelector('.chat-editer[contenteditable]')
+        || d.querySelector('[contenteditable="true"]')
+        || d.querySelector('input[type="text"][maxlength]');
   }
-  if (ta) {
-    var set = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;
-    set.call(ta, t); fire(ta);
-  } else if (ed) {
-    ed.innerText = t; fire(ed);
-  } else { return 'no-input'; }
-  var btn = document.querySelector('#pub-send')
-         || document.querySelector('.send-btn')
-         || document.querySelector('button[class*="send"]')
-         || document.querySelector('.chat-input .send');
-  if (btn) { btn.click(); return 'sent'; }
-  return 'no-btn';
+  function findSend(d){
+    if(!d) return null;
+    var b = d.querySelector('#pub-send') || d.querySelector('.send-btn')
+         || d.querySelector('a[class*="send"]') || d.querySelector('button[class*="send"]');
+    if(b) return b;
+    var all = d.querySelectorAll('a,button,span,div');
+    for(var i=0;i<all.length;i++){
+      var x = all[i];
+      if((x.innerText||'').trim()==='发送' && x.children.length===0) return x;
+    }
+    return null;
+  }
+  var docs = [document];
+  var ifs = document.querySelectorAll('iframe');
+  for(var i=0;i<ifs.length;i++){
+    try { if(ifs[i].contentDocument) docs.push(ifs[i].contentDocument); } catch(e){}
+  }
+  for(var j=0;j<docs.length;j++){
+    var d = docs[j];
+    var ta = findInput(d);
+    if(!ta) continue;
+    if(ta.tagName==='TEXTAREA' || ta.tagName==='INPUT'){
+      var proto = ta.tagName==='TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      var set = Object.getOwnPropertyDescriptor(proto,'value').set;
+      set.call(ta, t);
+    } else {
+      ta.innerText = t;
+    }
+    ta.dispatchEvent(new Event('input',{bubbles:true}));
+    ta.dispatchEvent(new Event('change',{bubbles:true}));
+    try{ ta.focus(); }catch(e){}
+    var btn = findSend(d);
+    if(btn){ btn.click(); return 'sent'; }
+    ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,which:13,bubbles:true}));
+    ta.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,which:13,bubbles:true}));
+    return 'sent-enter';
+  }
+  return 'no-input';
 })()
 ''';
     try {
-      final r = await ctrl.runJavaScriptReturningResult(js);
-      return '$r'.replaceAll('"', '');
+      final result = await ctrl.runJavaScriptReturningResult(js);
+      return '$result'.replaceAll('"', '');
     } catch (e) {
       return 'err:$e';
     }
   }
 
-  /// 抓网页上真实订阅数（如 78.1万）
+  /// 抓真实订阅数：找「关注」叶子节点，向上取父级文本里的数字
   Future<void> _scrapeFans() async {
     final ctrl = _ctrl;
     if (ctrl == null) return;
     const js = '''
 (function(){
-  var sels = ['.host-control-subscribe-num','.subscribe-num','.fans-num',
-              '.host-control-subscribe i','.host-control-subscribe span',
-              '[class*="subscribe"] i','[class*="fans"] i'];
-  for (var i=0;i<sels.length;i++){
-    var el = document.querySelector(sels[i]);
-    if (el && (el.innerText||'').trim()) return (el.innerText||'').trim();
+  var nodes = document.querySelectorAll('*');
+  for(var i=0;i<nodes.length;i++){
+    var el = nodes[i];
+    if(el.children.length) continue;
+    var txt = (el.innerText||'').trim();
+    if(txt !== '关注') continue;
+    var p = el.parentElement;
+    for(var k=0;k<3&&p;k++){
+      var m = (p.innerText||'').match(/关注\\s*([\\d.]+\\s*万?)/);
+      if(m) return m[1].replace(/\\s/g,'');
+      p = p.parentElement;
+    }
   }
-  return '';
+  var m2 = document.documentElement.innerHTML.match(/关注(?:<[^>]*>|\\s){0,6}([\\d][\\d.]*万?)/);
+  return m2 ? m2[1] : '';
 })()
 ''';
     try {
-      // 修复：先转为 String 再调用 replaceAll
       final result = await ctrl.runJavaScriptReturningResult(js);
-      final r = '$result'.replaceAll('"', '');
+      final r = '$result'.replaceAll('"', '').trim();
       final v = _parseWan(r);
       if (v > 0) widget.onFans?.call(v);
     } catch (_) {}
@@ -135,7 +172,6 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
   Widget build(BuildContext context) {
     final ctrl = _ctrl;
     if (ctrl == null) return const SizedBox.shrink();
-    // 1x1 隐藏渲染（WebView 必须在树里才工作）
     return SizedBox(width: 1, height: 1, child: WebViewWidget(controller: ctrl));
   }
 }
