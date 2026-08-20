@@ -199,14 +199,22 @@ class HuyaDanmakuClient {
               Uri.parse(url),
               headers: {
                 'Content-Type': 'application/octet-stream',
-                'User-Agent': _ua,
+                'User-Agent': _appUa,
                 if (_cookie.isNotEmpty) 'Cookie': _cookie,
+                'x-huya-token': _token,
+                'x-huya-uid': '$_loginUid',
+                'x-huya-guid': _guid,
               },
               body: wup,
             )
             .timeout(const Duration(seconds: 5));
-        sb.write('$host:${res.statusCode}/${res.bodyBytes.length}B');
-        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        sb.write('$host:${res.statusCode}');
+        if (res.bodyBytes.isNotEmpty) {
+          // 打印响应体（看 407 到底要什么鉴权）
+          final bodyTxt = utf8
+              .decode(res.bodyBytes, allowMalformed: true)
+              .replaceAll(RegExp(r'\s+'), ' ');
+          sb.write(' "${bodyTxt.length > 40 ? bodyTxt.substring(0, 40) : bodyTxt}"');
           try {
             final f = _TarsReader(Uint8List.fromList(res.bodyBytes)).readFields();
             final ret = f[0] is int ? f[0] as int : -1;
@@ -219,7 +227,6 @@ class HuyaDanmakuClient {
       sb.write(' | ');
       onSendDebug?.call('发送诊断 ${sb.toString()}');
     }
-    // 3 秒后若仍无回显，补充 WS 探测状态
     Timer(const Duration(seconds: 3), () {
       if (_pendingDanmaku != null) {
         onSendDebug?.call('发送诊断 HTTP:${sb.toString()} WS:21/103/raw 无回显');
@@ -227,6 +234,7 @@ class HuyaDanmakuClient {
     });
   }
 
+  
   Uint8List _wrapWsCmd(Uint8List wup, int cmdType) {
     final command = _TarsWriter();
     command.writeInt(0, cmdType);
