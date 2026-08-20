@@ -288,7 +288,16 @@ class HuyaStreamResolver {
     if (_i(out['topSid']) == 0) out['topSid'] = out['uid'];
     if (_i(out['subSid']) == 0) out['subSid'] = out['topSid'];
 
-    // 粉丝（订阅数）兜底：全文暴力搜索，取最大值
+    // 粉丝兜底①：HTML 里「关注」后隔若干标签的数字（如 关注228 / 关注78.1万）
+    if (_i(out['fans']) == 0) {
+      final m = RegExp(r'关注(?:<[^>]*>|\s){0,6}([\d][\d.]*)(万)?').firstMatch(body);
+      if (m != null) {
+        var v = double.tryParse(m.group(1)!) ?? 0;
+        if (m.group(2) == '万') v *= 10000;
+        if (v > 0) out['fans'] = v.round();
+      }
+    }
+    // 粉丝兜底②：全文暴力搜索，取最大值
     if (_i(out['fans']) == 0) {
       final matches = RegExp(
         r'"(?:lSubscribeCount|lFansCount|fansCount|iFansCount|iSubscribeCount|followCount)"\s*:\s*(\d+)',
