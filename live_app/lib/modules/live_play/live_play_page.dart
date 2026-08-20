@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/danmaku_view.dart';
-import '../../common/widgets/liquid_glass.dart';
 import 'huya_web_sender.dart';
 import 'live_play_controller.dart';
 
@@ -59,10 +58,13 @@ class LivePlayPage extends StatelessWidget {
                         ]),
                       )
                     : const SizedBox.shrink()),
+                // 关键：登录后挂载隐藏 WebView 发送器（1x1 不可见）
                 if (HuyaLoginManager().isLoggedIn)
                   Positioned(
                     left: 0,
                     top: 0,
+                    width: 1,
+                    height: 1,
                     child: HuyaWebSender(
                       roomId: controller.roomId,
                       onFans: (v) => controller.fansCount.value = v,
@@ -81,11 +83,15 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
-  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
-    return LiquidGlass(
+    return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16161E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
       child: Row(
         children: [
           ClipOval(
@@ -122,20 +128,48 @@ class LivePlayPage extends StatelessWidget {
               ],
             ),
           ),
-          LiquidGlassButton(
-            text: controller.isFollowed.value ? '已订阅' : '订阅',
-            selected: controller.isFollowed.value,
-            selectedColor: const Color(0xFFFF6B6B),
+          GestureDetector(
             onTap: () => controller.toggleFollow(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: controller.isFollowed.value
+                    ? const Color(0xFFFF6B6B).withOpacity(0.2)
+                    : Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: controller.isFollowed.value
+                        ? const Color(0xFFFF6B6B)
+                        : Colors.white.withOpacity(0.15)),
+              ),
+              child: Text(
+                controller.isFollowed.value ? '已订阅' : '订阅',
+                style: TextStyle(
+                    color: controller.isFollowed.value
+                        ? const Color(0xFFFF6B6B)
+                        : Colors.white70,
+                    fontSize: 13),
+              ),
+            ),
           ),
           const SizedBox(width: 8),
-          LiquidGlassIconButton(icon: Icons.close, size: 36, onTap: () => Get.back()),
+          GestureDetector(
+            onTap: () => Get.back(),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close, color: Colors.white70, size: 20),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ================= 视频区 + 滚动弹幕 =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -160,11 +194,15 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
-    return LiquidGlass(
+    return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16161E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -177,11 +215,27 @@ class LivePlayPage extends StatelessWidget {
                   final selected = q.name == controller.currentQuality.value;
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
-                    child: LiquidGlassButton(
-                      text: q.name,
-                      selected: selected,
-                      fontSize: 12,
+                    child: GestureDetector(
                       onTap: () => controller.switchQuality(q),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? const Color(0xFF00D2FF).withOpacity(0.15)
+                              : Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: selected
+                                  ? const Color(0xFF00D2FF)
+                                  : Colors.white.withOpacity(0.1)),
+                        ),
+                        child: Text(
+                          q.name,
+                          style: TextStyle(
+                              color: selected ? const Color(0xFF00D2FF) : Colors.white60,
+                              fontSize: 12),
+                        ),
+                      ),
                     ),
                   );
                 }).toList(),
@@ -196,11 +250,29 @@ class LivePlayPage extends StatelessWidget {
                       final selected = i == controller.currentLine.value;
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
-                        child: LiquidGlassButton(
-                          text: '线路${i + 1}',
-                          selected: selected,
-                          fontSize: 11,
+                        child: GestureDetector(
                           onTap: () => controller.switchLine(i),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? const Color(0xFF00D2FF).withOpacity(0.15)
+                                  : Colors.white.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: selected
+                                      ? const Color(0xFF00D2FF)
+                                      : Colors.white.withOpacity(0.1)),
+                            ),
+                            child: Text(
+                              '线路${i + 1}',
+                              style: TextStyle(
+                                  color: selected
+                                      ? const Color(0xFF00D2FF)
+                                      : Colors.white60,
+                                  fontSize: 11),
+                            ),
+                          ),
                         ),
                       );
                     }),
@@ -228,11 +300,17 @@ class LivePlayPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              LiquidGlassIconButton(
-                icon: Icons.send_rounded,
-                size: 42,
-                color: const Color(0xFF00D2FF),
+              GestureDetector(
                 onTap: () => controller.sendDanmaku(controller.inputController.text),
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF00D2FF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                ),
               ),
             ],
           ),
@@ -247,7 +325,6 @@ class LivePlayPage extends StatelessWidget {
   }
 }
 
-/// 视频下方的弹幕列表（自动滚动到底部）
 class _DanmakuList extends StatefulWidget {
   final LivePlayController controller;
   const _DanmakuList({required this.controller});
