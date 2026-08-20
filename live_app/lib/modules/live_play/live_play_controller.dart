@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'package:video_player/video_player.dart';
 import 'huya_web_sender.dart';
+import '../home/follow_store.dart';
 
 class LivePlayController extends GetxController {
   final roomId = Get.parameters['roomId'] ?? '';
@@ -74,6 +75,7 @@ class LivePlayController extends GetxController {
     _loadStream();
   }
 
+  // 直播流 position 不前进，只能用 isBuffering 判断卡顿
   void _checkStall(Timer t) {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
@@ -107,6 +109,7 @@ class LivePlayController extends GetxController {
         '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount';
   }
 
+  // ================= 加载房间 =================
   Future<void> _loadStream() async {
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -120,6 +123,7 @@ class LivePlayController extends GetxController {
       fansCount.value = info.streamerInfo.fansCount;
       heatCount.value = info.heat;
       isLive.value = info.isLive;
+      isFollowed.value = await FollowStore.isFollowed(roomId);
       qualities.assignAll(info.qualities);
 
       if (qualities.isNotEmpty) {
@@ -181,6 +185,7 @@ class LivePlayController extends GetxController {
     _openUrl(url);
   }
 
+  // ================= ExoPlayer 播放 =================
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -352,6 +357,15 @@ class LivePlayController extends GetxController {
       return;
     }
     isFollowed.value = !isFollowed.value;
+    if (isFollowed.value) {
+      FollowStore.add(FollowItem(
+        roomId: roomId,
+        name: streamerName.value,
+        avatar: streamerAvatar.value,
+      ));
+    } else {
+      FollowStore.remove(roomId);
+    }
   }
 
   void _showUrlDialog() {
