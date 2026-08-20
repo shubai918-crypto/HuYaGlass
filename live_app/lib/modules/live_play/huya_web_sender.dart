@@ -4,6 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:live_core/live_core.dart';
 
 /// 隐藏 WebView：驱动虎牙网页端真实发弹幕 + 抓取真实订阅数
+/// 发送成功判定 = 网页输入框被网页客户端清空（真实发出的标志）
 class HuyaWebSender extends StatefulWidget {
   final String roomId;
   final void Function(int)? onFans;
@@ -50,14 +51,13 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
 
     final ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent(_desktopUa) // 关键：桌面 UA，拿到 PC 版页面（含聊天框）
+      ..setUserAgent(_desktopUa)
       ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) async {
         await Future.delayed(const Duration(seconds: 3));
         if (!HuyaWebSender.ready) {
           HuyaWebSender.ready = true;
           _scrapeFans();
         }
-        // 8 秒后再补抓一次（聊天框/关注数可能异步渲染）
         await Future.delayed(const Duration(seconds: 5));
         _scrapeFans();
       }))
@@ -67,70 +67,83 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
     if (mounted) setState(() => _ctrl = ctrl);
   }
 
-  /// 注入 JS：主文档 + 同域 iframe 全搜索，填字 + 点「发送」
+  /// 真实发送：填字→点击→验证输入框被清空；no-input 时自动重试
   Future<String> _send(String text) async {
     final ctrl = _ctrl;
     if (ctrl == null) return 'webview未就绪';
-    final js = '''
-(function(){
-  var t = ${jsonEncode(text)};
-  function findInput(d){
-    if(!d) return null;
-    return d.querySelector('#pub-textarea')
-        || d.querySelector('textarea')
-        || d.querySelector('.chat-editer[contenteditable]')
-        || d.querySelector('[contenteditable="true"]')
-        || d.querySelector('input[type="text"][maxlength]');
-  }
-  function findSend(d){
-    if(!d) return null;
-    var b = d.querySelector('#pub-send') || d.querySelector('.send-btn')
-         || d.querySelector('a[class*="send"]') || d.querySelector('button[class*="send"]');
-    if(b) return b;
-    var all = d.querySelectorAll('a,button,span,div');
-    for(var i=0;i<all.length;i++){
-      var x = all[i];
-      if((x.innerText||'').trim()==='发送' && x.children.length===0) return x;
-    }
-    return null;
-  }
-  var docs = [document];
-  var ifs = document.querySelectorAll('iframe');
-  for(var i=0;i<ifs.length;i++){
-    try { if(ifs[i].contentDocument) docs.push(ifs[i].contentDocument); } catch(e){}
-  }
-  for(var j=0;j<docs.length;j++){
-    var d = docs[j];
-    var ta = findInput(d);
-    if(!ta) continue;
-    if(ta.tagName==='TEXTAREA' || ta.tagName==='INPUT'){
-      var proto = ta.tagName==='TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-      var set = Object.getOwnPropertyDescriptor(proto,'value').set;
-      set.call(ta, t);
-    } else {
-      ta.innerText = t;
-    }
-    ta.dispatchEvent(new Event('input',{bubbles:true}));
-    ta.dispatchEvent(new Event('change',{bubbles:true}));
-    try{ ta.focus(); }catch(e){}
-    var btn = findSend(d);
-    if(btn){ btn.click(); return 'sent'; }
-    ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,which:13,bubbles:true}));
-    ta.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,which:13,bubbles:true}));
-    return 'sent-enter';
-  }
-  return 'no-input';
-})()
-''';
     try {
-      final result = await ctrl.runJavaScriptReturningResult(js);
-      return '$result'.replaceAll('"', '');
+      String r = 'no-input';
+      for (var i = 0; i < 3 && r == 'no-input'; i++) {
+        if (i > 0) await Future.delayed(const Duration(seconds: 1));
+        r = '${await ctrl.runJavaScriptReturningResult(_jsSend(text))}'
+            .replaceAll('"', '');
+      }
+      if (!r.startsWith('clicked')) return r; // no-input 等如实返回
+      // 1.2 秒后验证：输入框被网页清空 = 真实发送成功
+      await Future.delayed(const Duration(milliseconds: 1200));
+      final v = '${await ctrl.runJavaScriptReturningResult(_jsCheck)}'
+          .replaceAll('"', '');
+      return v == 'cleared' ? 'sent' : 'not-sent';
     } catch (e) {
       return 'err:$e';
     }
   }
 
-  /// 抓真实订阅数：找「关注」叶子节点，向上取父级文本里的数字
+  String _jsSend(String text) => '''
+(function(){
+  var t = ${jsonEncode(text)};
+  var ds = [document];
+  var ifs = document.querySelectorAll('iframe');
+  for (var i=0;i<ifs.length;i++){ try{ if(ifs[i].contentDocument) ds.push(ifs[i].contentDocument); }catch(e){} }
+  var ta = null, d0 = null;
+  for (var j=0;j<ds.length;j++){
+    var d = ds[j];
+    ta = d.querySelector('#pub-textarea')
+        || d.querySelector('textarea[maxlength]')
+        || d.querySelector('textarea')
+        || d.querySelector('.chat-editer[contenteditable="true"]')
+        || d.querySelector('[contenteditable="true"]');
+    if (ta){ d0 = d; break; }
+  }
+  if (!ta) return 'no-input';
+  if (ta.tagName==='TEXTAREA' || ta.tagName==='INPUT'){
+    var proto = ta.tagName==='TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    var set = Object.getOwnPropertyDescriptor(proto,'value').set;
+    set.call(ta, t);
+  } else { ta.innerText = t; }
+  ta.dispatchEvent(new Event('input',{bubbles:true}));
+  ta.dispatchEvent(new Event('change',{bubbles:true}));
+  ta.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));
+  var btn = d0.querySelector('#pub-send')
+         || d0.querySelector('.send-btn')
+         || d0.querySelector('a[class*="send"]')
+         || d0.querySelector('button[class*="send"]');
+  if (!btn){
+    var all = d0.querySelectorAll('a,button,span,div');
+    for (var i=0;i<all.length;i++){
+      var x = all[i];
+      if ((x.innerText||'').trim()==='发送' && x.children.length===0){ btn = x; break; }
+    }
+  }
+  if (btn){ btn.click(); return 'clicked'; }
+  ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,which:13,bubbles:true}));
+  return 'clicked-enter';
+})()
+''';
+
+  static const _jsCheck = '''
+(function(){
+  var ta = document.querySelector('#pub-textarea')
+        || document.querySelector('textarea[maxlength]')
+        || document.querySelector('textarea')
+        || document.querySelector('[contenteditable="true"]');
+  if (!ta) return 'cleared';
+  var v = (ta.tagName==='TEXTAREA' || ta.tagName==='INPUT') ? ta.value : ta.innerText;
+  return (v||'').trim()==='' ? 'cleared' : 'still-there';
+})()
+''';
+
+  /// 抓真实订阅数
   Future<void> _scrapeFans() async {
     final ctrl = _ctrl;
     if (ctrl == null) return;
@@ -154,9 +167,10 @@ class _HuyaWebSenderState extends State<HuyaWebSender> {
 })()
 ''';
     try {
-      final result = await ctrl.runJavaScriptReturningResult(js);
-      final r = '$result'.replaceAll('"', '').trim();
-      final v = _parseWan(r);
+      final result = '${await ctrl.runJavaScriptReturningResult(js)}'
+          .replaceAll('"', '')
+          .trim();
+      final v = _parseWan(result);
       if (v > 0) widget.onFans?.call(v);
     } catch (_) {}
   }
