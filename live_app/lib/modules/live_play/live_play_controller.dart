@@ -37,7 +37,6 @@ class LivePlayController extends GetxController {
   final currentQuality = ''.obs;
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
-  final videoRemount = 0.obs;
   final roomTitle = ''.obs;
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
@@ -134,6 +133,7 @@ class LivePlayController extends GetxController {
       danmakuFps.value = 15;
       showDanmaku.value = false;
       Get.snackbar('省电模式', '已开启：降弹幕帧率、关滚动弹幕', snackPosition: SnackPosition.BOTTOM);
+      _preventBlackScreen();
     } else {
       danmakuFps.value = 30;
       Get.snackbar('省电模式', '已关闭', snackPosition: SnackPosition.BOTTOM);
@@ -188,6 +188,7 @@ class LivePlayController extends GetxController {
                         onChanged: (v) {
                           showDanmaku.value = v;
                           _saveSettings();
+                          _preventBlackScreen();
                         },
                       ),
                     ],
@@ -445,6 +446,20 @@ class LivePlayController extends GetxController {
     }
   }
 
+  // ================= 防黑屏 =================
+  /// 布局变化（切全屏/开关弹幕）后强制 ExoPlayer 渲染一帧，点亮 Texture
+  void _preventBlackScreen() {
+    Future.delayed(const Duration(milliseconds: 200), () async {
+      final c = _controller;
+      if (c != null && c.value.isInitialized) {
+        try {
+          await c.seekTo(c.value.position);
+          if (!c.value.isPlaying && !isPaused.value) await c.play();
+        } catch (_) {}
+      }
+    });
+  }
+
   // ================= 控制层交互 =================
   void _scheduleHide(int sec) {
     _hideTimer?.cancel();
@@ -514,17 +529,7 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
-    // 防黑屏：旋转稳定后(1s)强制 Texture 重挂载 + seek 重绘
-    Future.delayed(const Duration(milliseconds: 1000), () async {
-      videoRemount.value++;
-      final c = _controller;
-      if (c != null && c.value.isInitialized) {
-        try {
-          await c.seekTo(c.value.position);
-          if (!c.value.isPlaying) await c.play();
-        } catch (_) {}
-      }
-    });
+    _preventBlackScreen();
   }
 
   void switchQuality(StreamQuality q) {
@@ -727,6 +732,7 @@ class LivePlayController extends GetxController {
             _controlBtn(showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
               showDanmaku.value = !showDanmaku.value;
               _scheduleHide(4);
+              _preventBlackScreen();
             }),
             const SizedBox(width: 6),
             _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
@@ -748,7 +754,7 @@ class LivePlayController extends GetxController {
 
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
-      playerVersion.value; // 换流时重建
+      playerVersion.value; // 建立依赖：换流时重建
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -759,8 +765,9 @@ class LivePlayController extends GetxController {
             children: [
               if (c != null && c.value.isInitialized)
                 Positioned.fill(
+                  // Key 恒定：切屏时 Texture 永不重挂载（黑屏根治核心）
                   child: KeyedSubtree(
-                    key: ValueKey('vp-${videoRemount.value}'),
+                    key: const ValueKey('vp'),
                     child: _videoByFit(c),
                   ),
                 ),
