@@ -225,7 +225,7 @@ class HuyaDanmakuClient {
       final req = _buildSendReq(text);
       _send(_wrapWsCmd(_buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}), 3));
       _dbgPush('WS liveui 已发');
-      _tryHttpSend(req);
+      _tryHttpSend(text, req);
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
@@ -233,20 +233,27 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// SendMessageReq（逐字节对齐抓包 hex）
-  Uint8List _buildSendReq(String text) {
-    // UserId
+  /// SendMessageReq（逐字节对齐抓包；appStyle 用于 HTTP 407 攻坚）
+  Uint8List _buildSendReq(String text, {bool appStyle = false}) {
     final user = _TarsWriter();
-    user.writeInt(0, _loginUid); // lUid
-    user.writeString(1, _guid); // sGuid
-    user.writeString(2, ''); // sToken = ""
-    user.writeString(3, _sendHuYaUA); // sHuYaUA
-    user.writeString(4, _cookie); // sCookie 完整
-    user.writeInt(5, 0); // iTokenType = 0
-    user.writeString(6, 'edg'); // sDeviceInfo
-    user.writeString(7, ''); // sQIMEI
+    user.writeInt(0, _loginUid);
+    user.writeString(1, _guid);
+    if (appStyle) {
+      user.writeString(2, _token);
+      user.writeString(3, 'adr&7.11.82&2052&34');
+      user.writeString(4, '');
+      user.writeInt(5, 1);
+      user.writeString(6, 'Pixel 5');
+      user.writeString(7, '');
+    } else {
+      user.writeString(2, '');
+      user.writeString(3, _sendHuYaUA);
+      user.writeString(4, _cookie);
+      user.writeInt(5, 0);
+      user.writeString(6, 'edg');
+      user.writeString(7, '');
+    }
 
-    // ContentFormat（6 字段）
     final cf = _TarsWriter();
     cf.writeInt(0, -1);
     cf.writeInt(1, 4);
@@ -255,7 +262,6 @@ class HuyaDanmakuClient {
     cf.writeInt(4, -1);
     cf.writeInt(5, -1);
 
-    // BorderGroundFormat
     final border = _TarsWriter();
     border.writeInt(0, 0);
     border.writeInt(1, 0);
@@ -267,7 +273,6 @@ class HuyaDanmakuClient {
     border.writeInt(7, -1);
     border.writeInt(8, -1);
 
-    // BulletFormat
     final bf = _TarsWriter();
     bf.writeInt(0, -1);
     bf.writeInt(1, 4);
@@ -275,30 +280,28 @@ class HuyaDanmakuClient {
     bf.writeInt(3, 1);
     bf.writeInt(4, 0);
     bf.writeStruct(5, border);
-    bf.writeListInt(6, const []); // vGraduatedColor
-    bf.writeInt(7, 0); // iAvatarFlag
-    bf.writeInt(8, -1); // iAvatarTerminalFlag
+    bf.writeListInt(6, const []);
+    bf.writeInt(7, 0);
+    bf.writeInt(8, -1);
 
-    // SendMessageFormat
     final sence = _TarsWriter();
     sence.writeInt(0, 0);
     sence.writeInt(1, 0);
     sence.writeInt(2, 0);
 
-    // SendMessageReq
     final req = _TarsWriter();
     req.writeStruct(0, user);
-    req.writeInt(1, _topSid); // lTid
-    req.writeInt(2, _topSid); // lSid（抓包 = lTid）
-    req.writeString(3, text.replaceAll('\n', ' ')); // sContent
-    req.writeInt(4, 0); // iShowMode
+    req.writeInt(1, _topSid);
+    req.writeInt(2, _topSid);
+    req.writeString(3, text.replaceAll('\n', ' '));
+    req.writeInt(4, 0);
     req.writeStruct(5, cf);
     req.writeStruct(6, bf);
-    req.writeListInt(7, const []); // vAtSomeone
-    req.writeInt(8, _topSid); // lPid
-    req.writeListInt(9, const []); // vTagInfo
+    req.writeListInt(7, const []);
+    req.writeInt(8, _topSid);
+    req.writeListInt(9, const []);
     req.writeStruct(10, sence);
-    req.writeInt(11, 0); // iMessageMode
+    req.writeInt(11, 0);
     return req.toBytes();
   }
 
@@ -310,16 +313,16 @@ class HuyaDanmakuClient {
     inner.writeBytesMap(0, buffers);
 
     final wup = _TarsWriter();
-    wup.writeInt(1, 3); // iVersion
-    wup.writeInt(2, 0); // cPacketType
-    wup.writeInt(3, 0); // iMessageType
-    wup.writeInt(4, ++_reqId); // iRequestId
+    wup.writeInt(1, 3);
+    wup.writeInt(2, 0);
+    wup.writeInt(3, 0);
+    wup.writeInt(4, ++_reqId);
     wup.writeString(5, servant);
     wup.writeString(6, func);
-    wup.writeBytes(7, inner.toBytes()); // sBuffer
-    wup.writeInt(8, 0); // iTimeout
-    wup.writeBytesMap(9, const {}); // context
-    wup.writeBytesMap(10, const {}); // status
+    wup.writeBytes(7, inner.toBytes());
+    wup.writeInt(8, 0);
+    wup.writeBytesMap(9, const {});
+    wup.writeBytesMap(10, const {});
 
     final body = wup.toBytes();
     if (!withPrefix) return body;
@@ -338,39 +341,50 @@ class HuyaDanmakuClient {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
     cmd.writeBytes(1, vData);
-    cmd.writeInt(2, 0); // lRequestId = 0
-    cmd.writeString(3, '$_traceId:$_traceId:0:0'); // traceId
-    cmd.writeInt(4, 0); // iEncryptType
-    cmd.writeInt(5, 0); // lTime
-    cmd.writeString(6, md5.convert(vData).toString()); // sMD5
+    cmd.writeInt(2, 0);
+    cmd.writeString(3, '$_traceId:$_traceId:0:0');
+    cmd.writeInt(4, 0);
+    cmd.writeInt(5, 0);
+    cmd.writeString(6, md5.convert(vData).toString());
     return cmd.toBytes();
   }
 
-  Future<void> _tryHttpSend(Uint8List req) async {
+  /// HTTP 攻坚：先 launch 过认证层，再 web/app 双身份发 sendMessage
+  Future<void> _tryHttpSend(String text, Uint8List webReq) async {
     final ts = DateTime.now().millisecondsSinceEpoch;
     final bi = Uri.encodeComponent(_buildBaseinfo());
-    final bodies = <String, Uint8List>{
-      'raw': _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, false),
-      'len': _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, true),
-    };
     final targets = [
       'https://wup.huya.com/?baseinfo=$bi&timestamp=$ts',
       'http://wup.huya.com:80/?baseinfo=$bi&timestamp=$ts',
     ];
+    final headers = {
+      'Content-Type': 'application/octet-stream',
+      'User-Agent': _ua,
+      'Origin': 'https://www.huya.com',
+      'Referer': 'https://www.huya.com/',
+      if (_cookie.isNotEmpty) 'Cookie': _cookie,
+    };
+
+    final launchWup =
+        _buildWupEnvelope('launch', 'wsLaunch', {'tReq': _buildLaunchReq()}, false);
+    for (final url in targets) {
+      try {
+        await http
+            .post(Uri.parse(url), headers: headers, body: launchWup)
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
+
+    final bodies = <String, Uint8List>{
+      'web': webReq,
+      'app': _buildSendReq(text, appStyle: true),
+    };
     for (final kv in bodies.entries) {
       for (final url in targets) {
         final host = Uri.parse(url).host;
         try {
           final res = await http
-              .post(Uri.parse(url),
-                  headers: {
-                    'Content-Type': 'application/octet-stream',
-                    'User-Agent': _ua,
-                    'Origin': 'https://www.huya.com',
-                    'Referer': 'https://www.huya.com/',
-                    if (_cookie.isNotEmpty) 'Cookie': _cookie,
-                  },
-                  body: kv.value)
+              .post(Uri.parse(url), headers: headers, body: kv.value)
               .timeout(const Duration(seconds: 5));
           if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
             _dbgPush('✔${kv.key} $host → ${_describeWupRsp(res.bodyBytes)}');
