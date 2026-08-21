@@ -37,6 +37,7 @@ class LivePlayController extends GetxController {
   final currentQuality = ''.obs;
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
+  final videoHostKey = GlobalKey();
   final roomTitle = ''.obs;
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
