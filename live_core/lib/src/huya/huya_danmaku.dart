@@ -334,11 +334,17 @@ class HuyaDanmakuClient {
 
   /// HTTP WUP：raw/带前缀 × 双网关 全组合探测
   Future<void> _tryHttpSend(Uint8List req) async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final bi = Uri.encodeComponent(_buildBaseinfo());
     final bodies = <String, Uint8List>{
       'raw': _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, false),
       'len': _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, true),
     };
-    const targets = ['https://wup.huya.com/', 'http://wup.huya.com:80/'];
+    // URL 必须带 baseinfo(会话) + timestamp，否则网关 407
+    final targets = [
+      'https://wup.huya.com/?baseinfo=$bi&timestamp=$ts',
+      'http://wup.huya.com:80/?baseinfo=$bi&timestamp=$ts',
+    ];
     for (final kv in bodies.entries) {
       for (final url in targets) {
         final host = Uri.parse(url).host;
@@ -347,8 +353,10 @@ class HuyaDanmakuClient {
               .post(Uri.parse(url),
                   headers: {
                     'Content-Type': 'application/octet-stream',
-                    'User-Agent': _appUa,
-                    'x-huya-appsrc': 'huya&CN&2052',
+                    'User-Agent': _ua,
+                    'Origin': 'https://www.huya.com',
+                    'Referer': 'https://www.huya.com/',
+                    if (_cookie.isNotEmpty) 'Cookie': _cookie,
                   },
                   body: kv.value)
               .timeout(const Duration(seconds: 5));
