@@ -19,7 +19,7 @@ class LivePlayPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFF0A0A0F),
-          // 单 Stack 根：视频宿主固定槽位0，切屏只改定位参数（黑屏根治）
+          // 单 Stack 树：视频永远在 slot0，切屏只改定位参数 → Texture 不重建 → 不黑不卡
           body: LayoutBuilder(
             builder: (ctx, cons) {
               final mq = MediaQuery.of(ctx);
@@ -37,13 +37,33 @@ class LivePlayPage extends StatelessWidget {
                     bottom: fs ? 0 : null,
                     child: controller.videoHost(fs),
                   ),
-                  if (!fs) ...[
+                  if (!fs)
+                    Obx(() => controller.showDanmaku.value &&
+                            controller.danmakuStream != null
+                        ? Positioned(
+                            top: topPad + topBarH + 4,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              child: DanmakuView(
+                                danmakuStream: controller.danmakuStream!,
+                                height: videoH * controller.danmakuArea.value,
+                                fontSize: controller.danmakuFontSize.value,
+                                fps: controller.danmakuFps.value,
+                                speed: controller.danmakuSpeed.value,
+                                opacity: controller.danmakuOpacity.value,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink()),
+                  if (!fs)
                     Positioned(
                         top: topPad,
                         left: 0,
                         right: 0,
                         height: topBarH,
                         child: Obx(() => _buildTopBar(controller))),
+                  if (!fs)
                     Positioned(
                       top: topPad + topBarH + videoH,
                       left: 0,
@@ -54,7 +74,6 @@ class LivePlayPage extends StatelessWidget {
                         Obx(() => _buildBottomBar(controller)),
                       ]),
                     ),
-                  ],
                   if (fs)
                     Obx(() => controller.showDanmaku.value &&
                             controller.danmakuStream != null
