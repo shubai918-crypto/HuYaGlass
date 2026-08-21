@@ -20,94 +20,94 @@ class LivePlayPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFF0A0A0F),
-          body: _buildBody(controller, fs, context),
+          // 全屏保活：整屏微透明度振荡，关弹幕也不黑屏
+          body: _KeepAlive(
+            active: fs,
+            child: _buildBody(context, controller, fs),
+          ),
         ),
       );
     });
   }
 
-  Widget _buildBody(LivePlayController controller, bool fs, BuildContext context) {
+  Widget _buildBody(BuildContext context, LivePlayController controller, bool fs) {
     final mq = MediaQuery.of(context);
     const topBarH = 80.0;
     final topPad = fs ? 0.0 : mq.padding.top;
     final w = mq.size.width;
     final videoH = w * 9 / 16;
 
-    if (controller.loading.value && !fs) {
-      return const Center(
-          child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-    }
-
-    // 单 Stack：所有 Positioned 都是直接子级；视频层 slot0 永不卸载
-    return Stack(children: [
-      // 0) 视频层（切全屏只改定位参数，Widget 不重建 → 不黑屏）
-      Positioned(
-        top: fs ? 0 : topPad + topBarH,
-        left: 0,
-        right: 0,
-        height: fs ? null : videoH,
-        bottom: fs ? 0 : null,
-        child: controller.videoHost(fs),
-      ),
-      if (!fs) ...[
-        // 1) 顶栏
+    return Obx(() {
+      if (controller.loading.value && !fs) {
+        return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+      }
+      return Stack(children: [
+        // 视频层：slot0 永不卸载，切屏只改定位参数
         Positioned(
-          top: topPad,
+          top: fs ? 0 : topPad + topBarH,
           left: 0,
           right: 0,
-          height: topBarH,
-          child: _buildTopBar(controller),
+          height: fs ? null : videoH,
+          bottom: fs ? 0 : null,
+          child: controller.videoHost(fs),
         ),
-        // 2) 竖屏滚动弹幕
-        if (controller.showDanmaku.value && controller.danmakuStream != null)
+        if (!fs) ...[
           Positioned(
-            top: topPad + topBarH + 4,
+            top: topPad,
             left: 0,
             right: 0,
-            height: videoH,
-            child: IgnorePointer(
-              child: DanmakuView(
-                danmakuStream: controller.danmakuStream!,
-                height: videoH * controller.danmakuArea.value,
-                fontSize: controller.danmakuFontSize.value,
-                fps: controller.danmakuFps.value,
-                speed: controller.danmakuSpeed.value,
-                opacity: controller.danmakuOpacity.value,
+            height: topBarH,
+            child: _buildTopBar(controller),
+          ),
+          if (controller.showDanmaku.value && controller.danmakuStream != null)
+            Positioned(
+              top: topPad + topBarH + 4,
+              left: 0,
+              right: 0,
+              height: videoH,
+              child: IgnorePointer(
+                child: DanmakuView(
+                  danmakuStream: controller.danmakuStream!,
+                  height: videoH * controller.danmakuArea.value,
+                  fontSize: controller.danmakuFontSize.value,
+                  fps: controller.danmakuFps.value,
+                  speed: controller.danmakuSpeed.value,
+                  opacity: controller.danmakuOpacity.value,
+                ),
               ),
             ),
-          ),
-        // 3) Tab + 发送栏
-        Positioned(
-          top: topPad + topBarH + videoH,
-          left: 0,
-          right: 0,
-          bottom: mq.padding.bottom,
-          child: Column(children: [
-            Expanded(child: _InfoTabs(controller: controller)),
-            _buildBottomBar(controller),
-          ]),
-        ),
-      ],
-      if (fs) ...[
-        const _KeepAliveRepaint(),
-        if (controller.showDanmaku.value && controller.danmakuStream != null)
           Positioned(
-            top: 50,
+            top: topPad + topBarH + videoH,
             left: 0,
             right: 0,
-            child: IgnorePointer(
-              child: DanmakuView(
-                danmakuStream: controller.danmakuStream!,
-                height: 220 * controller.danmakuArea.value,
-                fontSize: controller.danmakuFontSize.value,
-                fps: controller.danmakuFps.value,
-                speed: controller.danmakuSpeed.value,
-                opacity: controller.danmakuOpacity.value,
+            bottom: mq.padding.bottom,
+            child: Column(children: [
+              Expanded(child: _InfoTabs(controller: controller)),
+              _buildBottomBar(controller),
+            ]),
+          ),
+        ],
+        if (fs) ...[
+          if (controller.showDanmaku.value && controller.danmakuStream != null)
+            Positioned(
+              top: 50,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: DanmakuView(
+                  danmakuStream: controller.danmakuStream!,
+                  height: 220 * controller.danmakuArea.value,
+                  fontSize: controller.danmakuFontSize.value,
+                  fps: controller.danmakuFps.value,
+                  speed: controller.danmakuSpeed.value,
+                  opacity: controller.danmakuOpacity.value,
+                ),
               ),
             ),
-          ),
-      ],
-    ]);
+        ],
+      ]);
+    });
   }
 
   Widget _defaultAvatar() => Container(
@@ -335,23 +335,30 @@ class LivePlayPage extends StatelessWidget {
   }
 }
 
-// ================= 全屏保活重绘 =================
-class _KeepAliveRepaint extends StatefulWidget {
-  const _KeepAliveRepaint();
+// ================= 全屏保活：整屏微透明度振荡，强制持续重合成 =================
+class _KeepAlive extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _KeepAlive({required this.active, required this.child});
 
   @override
-  State<_KeepAliveRepaint> createState() => _KeepAliveRepaintState();
+  State<_KeepAlive> createState() => _KeepAliveState();
 }
 
-class _KeepAliveRepaintState extends State<_KeepAliveRepaint> {
+class _KeepAliveState extends State<_KeepAlive> {
   Timer? _t;
-  int _tick = 0;
+  bool _on = true;
 
   @override
   void initState() {
     super.initState();
-    _t = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      if (mounted) setState(() => _tick++);
+    _tick();
+  }
+
+  void _tick() {
+    _t?.cancel();
+    _t = Timer.periodic(const Duration(milliseconds: 150), (_) {
+      if (mounted) setState(() => _on = !_on);
     });
   }
 
@@ -363,31 +370,11 @@ class _KeepAliveRepaintState extends State<_KeepAliveRepaint> {
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: SizedBox(
-        width: 2,
-        height: 2,
-        child: CustomPaint(painter: _TickPainter(_tick)),
-      ),
+    return Opacity(
+      opacity: widget.active && !_on ? 0.985 : 1.0,
+      child: widget.child,
     );
   }
-}
-
-class _TickPainter extends CustomPainter {
-  final int tick;
-  const _TickPainter(this.tick);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0x01000000),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _TickPainter oldDelegate) =>
-      oldDelegate.tick != tick;
 }
 
 // ================= 双 Tab / 详情 / 列表 =================
