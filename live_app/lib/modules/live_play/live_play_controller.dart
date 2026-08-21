@@ -513,9 +513,8 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
-    // 防黑屏：强制视频纹理重挂载 + seek 当前帧强制重绘
+    // 防黑屏：seek 当前帧强制重绘（不重建 Texture）
     Future.delayed(const Duration(milliseconds: 300), () async {
-      playerVersion.value++;
       final c = _controller;
       if (c != null && c.value.isInitialized) {
         try {
@@ -747,7 +746,7 @@ class LivePlayController extends GetxController {
 
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
-      playerVersion.value; // 建立依赖：切屏时强制重建
+      playerVersion.value; // 建立依赖：换流时重建
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -758,9 +757,9 @@ class LivePlayController extends GetxController {
             children: [
               if (c != null && c.value.isInitialized)
                 Positioned.fill(
-                  // 防黑屏：Key 随 playerVersion 变化，强制 Texture 重挂载
+                  // Key 恒定：切屏时 Texture 永不重挂载（黑屏根治）
                   child: KeyedSubtree(
-                    key: ValueKey('vp-$fullscreen-${playerVersion.value}'),
+                    key: const ValueKey('vp'),
                     child: _videoByFit(c),
                   ),
                 ),
@@ -794,6 +793,7 @@ class LivePlayController extends GetxController {
 
   Widget videoWidget() => _videoCore(fullscreen: false);
   Widget fullscreenWidget() => _videoCore(fullscreen: true);
+  Widget videoHost(bool fullscreen) => _videoCore(fullscreen: fullscreen);
 
   @override
   void onClose() {
