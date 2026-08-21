@@ -16,10 +16,9 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端
-/// 接收：WS（10 验Cookie / 16 注册 / 20 心跳 / 7·22 推送 / 1400 弹幕 / 8006 人气）
-/// 发送：WS cmd=3 WUP（servant=liveui，带 4 字节长度前缀，JS encode() 同款）
-///       + HTTP WUP 兜底；成功以服务器回显为准
+/// 虎牙弹幕客户端（纯 WUP 路线）
+/// 连接：WS URL 带 baseinfo；握手顺序 launch → VerifyCookie → RegisterGroup
+/// 发送：WS cmd=3 WUP（servant=liveui，4 字节长度前缀）+ GameLive/HTTP 兜底
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -117,10 +116,18 @@ class HuyaDanmakuClient {
       return;
     }
     _ws = ws;
-    onStatus?.call('弹幕已连接，认证中…');
+    onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    _send(_buildVerifyCookie());
+    // 网页顺序：先 wsLaunch，再 Verify + Register
+    _send(_wrapWsCmd(
+        _buildWupEnvelope('launch', 'wsLaunch', {'tReq': _buildLaunchReq()}), 3));
+    Timer(const Duration(milliseconds: 600), () {
+      if (_closed) return;
+      _send(_buildVerifyCookie());
+      _send(_buildRegisterGroup());
+    });
+
     _heartTimer?.cancel();
     _heartTimer =
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
@@ -135,6 +142,22 @@ class HuyaDanmakuClient {
     info.writeString(4, _cookie);
     info.writeMap(5, {'HUYA_NET': '0'});
     return base64Encode(info.toBytes());
+  }
+
+  Uint8List _buildLaunchReq() {
+    final dev = _TarsWriter();
+    dev.writeString(0, '');
+    dev.writeString(1, '');
+    dev.writeString(2, 'wifi');
+    dev.writeString(3, _guid);
+    dev.writeString(4, '');
+    final req = _TarsWriter();
+    req.writeInt(0, _loginUid);
+    req.writeString(1, _guid);
+    req.writeString(2, 'webh5&1.0.0&websocket');
+    req.writeString(3, 'HUYA');
+    req.writeStruct(4, dev);
+    return req.toBytes();
   }
 
   Uint8List _buildVerifyCookie() {
@@ -180,7 +203,6 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
-      // 主通道：WS cmd=3，servant=liveui（带长度前缀）
       _send(_wrapWsCmd(_buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}), 3));
       _dbgPush('WS liveui 已发');
       Timer(const Duration(milliseconds: 1200), () {
@@ -197,7 +219,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// SendMessageReq（APK 确认字段顺序，含 lPid/tSenceFormat/iMessageMode）
+  /// SendMessageReq（APK 确认字段顺序，lPid 必需）
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
@@ -257,7 +279,7 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
-  /// WUP 信封 —— 严格对齐 JS encode()：4 字节大端长度前缀 + tag7=内层map字节流
+  /// WUP 信封 —— 4 字节大端长度前缀 + tag7=内层map字节流
   Uint8List _buildWupEnvelope(
       String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
@@ -417,12 +439,7 @@ class HuyaDanmakuClient {
           final f = _TarsReader(payload).readFields();
           final v = f[0] is int ? f[0] as int : -1;
           _dbgPush('Verify iValidate=$v');
-          if (v == 0) {
-            _verified = true;
-            _send(_buildRegisterGroup());
-            _send(_wrapWsCmd(
-                _buildWupEnvelope('launch', 'wsLaunch', {'tReq': _buildLaunchReq()}), 3));
-          }
+          if (v == 0) _verified = true;
           break;
         case 17:
           final f = _TarsReader(payload).readFields();
@@ -447,22 +464,6 @@ class HuyaDanmakuClient {
       }
       onStatus?.call('收包$_recvCount cmd=$cmdType');
     } catch (_) {}
-  }
-
-  Uint8List _buildLaunchReq() {
-    final dev = _TarsWriter();
-    dev.writeString(0, '');
-    dev.writeString(1, '');
-    dev.writeString(2, 'wifi');
-    dev.writeString(3, _guid);
-    dev.writeString(4, '');
-    final req = _TarsWriter();
-    req.writeInt(0, _loginUid);
-    req.writeString(1, _guid);
-    req.writeString(2, 'webh5&1.0.0&websocket');
-    req.writeString(3, 'HUYA');
-    req.writeStruct(4, dev);
-    return req.toBytes();
   }
 
   void _handleMsgPush(Uint8List payload) {
