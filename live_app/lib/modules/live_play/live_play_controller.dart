@@ -738,7 +738,7 @@ class LivePlayController extends GetxController {
   Widget fullscreenOverlay() {
     return Obx(() {
       final c = _controller;
-      final tid = c?.textureId;
+      final tid = c?.value.textureId; // 修正：video_player 2.x 中 textureId 在 value 内
       return GestureDetector(
         onTap: onTapVideo,
         onLongPress: _showUrlDialog,
