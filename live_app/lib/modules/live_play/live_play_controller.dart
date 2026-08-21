@@ -513,6 +513,16 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
+    // 旋转稳定后强制解码器出新帧，防全屏陈旧黑屏
+    Future.delayed(const Duration(milliseconds: 800), () async {
+      final c = _controller;
+      if (c != null && c.value.isInitialized) {
+        try {
+          await c.seekTo(c.value.position);
+          if (!c.value.isPlaying && !isPaused.value) await c.play();
+        } catch (_) {}
+      }
+    });
   }
 
   void switchQuality(StreamQuality q) {
@@ -734,29 +744,10 @@ class LivePlayController extends GetxController {
     ]);
   }
 
-/// 全屏视频：手动计算适配尺寸；异常时兜底铺满，杜绝"小黑点"黑屏
-  Widget _fullScreenVideo(VideoPlayerController c) {
-    return LayoutBuilder(builder: (ctx, cons) {
-      final cw = cons.maxWidth;
-      final ch = cons.maxHeight;
-      final va = c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9;
-      if (cw < 50 || ch < 50) return SizedBox.expand(child: VideoPlayer(c));
-      double w, h;
-      if (cw / ch > va) {
-        h = ch;
-        w = ch * va;
-      } else {
-        w = cw;
-        h = cw / va;
-      }
-      if (w < 50 || h < 50) return SizedBox.expand(child: VideoPlayer(c));
-      return Center(child: SizedBox(width: w, height: h, child: VideoPlayer(c)));
-    });
-  }
-  
+  /// 竖屏/全屏共用同一 Widget 结构（_videoByFit），Element 不重建 → 不黑屏
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
-      playerVersion.value;
+      playerVersion.value; // 建立依赖：换流时重建
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -769,7 +760,7 @@ class LivePlayController extends GetxController {
                 Positioned.fill(
                   child: KeyedSubtree(
                     key: const ValueKey('vp'),
-                    child: fullscreen ? _fullScreenVideo(c) : _videoByFit(c),
+                    child: _videoByFit(c),
                   ),
                 ),
               if (isPaused.value && !isLocked.value)
@@ -800,7 +791,8 @@ class LivePlayController extends GetxController {
     });
   }
 
-  /// 提供给 Page 层调用，视频永远挂载在同一个 Stack 里
+  Widget videoWidget() => _videoCore(fullscreen: false);
+  Widget fullscreenWidget() => _videoCore(fullscreen: true);
   Widget videoHost(bool fullscreen) => _videoCore(fullscreen: fullscreen);
 
   @override
