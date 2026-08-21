@@ -11,68 +11,120 @@ class LivePlayPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(LivePlayController());
-    return Obx(() {
-      final fs = controller.isFullscreen.value;
-      return PopScope(
-        canPop: !fs,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) controller.toggleFullscreen();
-        },
-        child: Scaffold(
-          backgroundColor: const Color(0xFF0A0A0F),
-          // 竖屏永远挂载；全屏=覆盖层复用同一 textureId → 视频不重建，黑屏根治
-          body: Stack(children: [
-            SafeArea(
-              child: Obx(() {
-                if (controller.loading.value) {
-                  return const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-                }
-                return Column(
-                  children: [
-                    _buildTopBar(controller),
-                    _buildVideoArea(controller),
-                    Expanded(child: _InfoTabs(controller: controller)),
-                    _buildBottomBar(controller),
-                  ],
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0F),
+      // 终极防黑屏：整个页面只有一个 Stack，视频永远在底层，只变定位参数，Widget 永不卸载
+      body: Stack(
+        children: [
+          // 1. 视频层（永远挂载）
+          Obx(() {
+            final fs = controller.isFullscreen.value;
+            if (fs) {
+              return Positioned.fill(child: controller.videoHost(true));
+            }
+            return LayoutBuilder(
+              builder: (ctx, cons) {
+                final mq = MediaQuery.of(ctx);
+                final topPad = mq.padding.top;
+                const topBarH = 80.0;
+                final w = cons.maxWidth;
+                final videoH = w * 9 / 16;
+                return Positioned(
+                  top: topPad + topBarH,
+                  left: 0,
+                  right: 0,
+                  height: videoH,
+                  child: controller.videoHost(false),
                 );
-              }),
-            ),
-            Obx(() => controller.isFullscreen.value
-                ? _buildFullscreenOverlay(controller)
-                : const SizedBox.shrink()),
-          ]),
-        ),
-      );
-    });
+              },
+            );
+          }),
+
+          // 2. 竖屏 UI 覆盖层
+          Obx(() => controller.isFullscreen.value
+              ? const SizedBox.shrink()
+              : _buildPortraitUI(controller)),
+
+          // 3. 全屏 UI 覆盖层
+          Obx(() => controller.isFullscreen.value
+              ? _buildFullscreenUI(controller)
+              : const SizedBox.shrink()),
+        ],
+      ),
+    );
   }
 
-  // ================= 全屏覆盖层 =================
-  Widget _buildFullscreenOverlay(LivePlayController controller) {
-    return Material(
-      color: Colors.black,
-      child: Stack(children: [
-        Positioned.fill(child: controller.fullscreenOverlay()),
-        const _KeepAliveRepaint(),
-        Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
-            ? Positioned(
-                top: 50,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: DanmakuView(
-                    danmakuStream: controller.danmakuStream!,
-                    height: 220 * controller.danmakuArea.value,
-                    fontSize: controller.danmakuFontSize.value,
-                    fps: controller.danmakuFps.value,
-                    speed: controller.danmakuSpeed.value,
-                    opacity: controller.danmakuOpacity.value,
-                  ),
-                ),
-              )
-            : const SizedBox.shrink()),
-      ]),
+  // ================= 竖屏 UI =================
+  Widget _buildPortraitUI(LivePlayController controller) {
+    return SafeArea(
+      child: Obx(() {
+        if (controller.loading.value) {
+          return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+        }
+        return Column(
+          children: [
+            const SizedBox(height: 80), // 留给顶栏的空间
+            _buildVideoDanmaku(controller),
+            Expanded(child: _InfoTabs(controller: controller)),
+            _buildBottomBar(controller),
+          ],
+        );
+      }),
     );
+  }
+
+  Widget _buildVideoDanmaku(LivePlayController controller) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: LayoutBuilder(
+        builder: (c, cons) => Stack(
+          children: [
+            Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
+                ? Positioned(
+                    top: 4,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: DanmakuView(
+                        danmakuStream: controller.danmakuStream!,
+                        height: cons.maxHeight * controller.danmakuArea.value,
+                        fontSize: controller.danmakuFontSize.value,
+                        fps: controller.danmakuFps.value,
+                        speed: controller.danmakuSpeed.value,
+                        opacity: controller.danmakuOpacity.value,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= 全屏 UI =================
+  Widget _buildFullscreenUI(LivePlayController controller) {
+    return Stack(children: [
+      const _KeepAliveRepaint(), // 保活重绘，防 Texture 被合成器丢弃
+      Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
+          ? Positioned(
+              top: 50,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: DanmakuView(
+                  danmakuStream: controller.danmakuStream!,
+                  height: 220 * controller.danmakuArea.value,
+                  fontSize: controller.danmakuFontSize.value,
+                  fps: controller.danmakuFps.value,
+                  speed: controller.danmakuSpeed.value,
+                  opacity: controller.danmakuOpacity.value,
+                ),
+              ),
+            )
+          : const SizedBox.shrink()),
+    ]);
   }
 
   Widget _defaultAvatar() => Container(
@@ -82,7 +134,6 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
-  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -170,38 +221,6 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 视频区（竖屏，唯一真实 VideoPlayer） =================
-  Widget _buildVideoArea(LivePlayController controller) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: LayoutBuilder(
-        builder: (c, cons) => Stack(
-          children: [
-            Positioned.fill(child: controller.videoHost(false)),
-            Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
-                ? Positioned(
-                    top: 4,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      child: DanmakuView(
-                        danmakuStream: controller.danmakuStream!,
-                        height: cons.maxHeight * controller.danmakuArea.value,
-                        fontSize: controller.danmakuFontSize.value,
-                        fps: controller.danmakuFps.value,
-                        speed: controller.danmakuSpeed.value,
-                        opacity: controller.danmakuOpacity.value,
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ================= 底部 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -388,7 +407,7 @@ class _TickPainter extends CustomPainter {
       oldDelegate.tick != tick;
 }
 
-// ================= 双 Tab / 详情 / 列表（同前） =================
+// ================= 双 Tab / 详情 / 列表 =================
 class _InfoTabs extends StatefulWidget {
   final LivePlayController controller;
   const _InfoTabs({required this.controller});
