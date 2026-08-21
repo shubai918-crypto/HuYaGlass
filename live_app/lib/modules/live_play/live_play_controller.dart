@@ -37,7 +37,6 @@ class LivePlayController extends GetxController {
   final currentQuality = ''.obs;
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
-  final videoHostKey = GlobalKey();
   final roomTitle = ''.obs;
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
@@ -133,8 +132,7 @@ class LivePlayController extends GetxController {
     if (powerSave.value) {
       danmakuFps.value = 15;
       showDanmaku.value = false;
-      Get.snackbar('省电模式', '已开启：降弹幕帧率、关滚动弹幕',
-          snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('省电模式', '已开启：降弹幕帧率、关滚动弹幕', snackPosition: SnackPosition.BOTTOM);
     } else {
       danmakuFps.value = 30;
       Get.snackbar('省电模式', '已关闭', snackPosition: SnackPosition.BOTTOM);
@@ -182,8 +180,7 @@ class LivePlayController extends GetxController {
                               fontWeight: FontWeight.bold)),
                       const Spacer(),
                       Text(showDanmaku.value ? '滚动弹幕:开' : '滚动弹幕:关',
-                          style:
-                              const TextStyle(color: Colors.white54, fontSize: 12)),
+                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
                       Switch(
                         value: showDanmaku.value,
                         activeColor: const Color(0xFF00D2FF),
@@ -197,9 +194,7 @@ class LivePlayController extends GetxController {
                   const SizedBox(height: 4),
                   _seg('帧率', const ['15', '30', '60'], '${danmakuFps.value}', (v) {
                     danmakuFps.value = int.parse(v);
-                    if (powerSave.value && danmakuFps.value > 15) {
-                      powerSave.value = false;
-                    }
+                    if (powerSave.value && danmakuFps.value > 15) powerSave.value = false;
                     _saveSettings();
                   }),
                   _slider('速度', 60, 300, danmakuSpeed.value, (v) {
@@ -220,8 +215,7 @@ class LivePlayController extends GetxController {
                   }, '${(danmakuArea.value * 100).toInt()}%'),
                   Row(
                     children: [
-                      const Icon(Icons.battery_saver,
-                          color: Color(0xFF7ED97E), size: 20),
+                      const Icon(Icons.battery_saver, color: Color(0xFF7ED97E), size: 20),
                       const SizedBox(width: 8),
                       const Text('省电模式',
                           style: TextStyle(color: Colors.white, fontSize: 14)),
@@ -244,23 +238,20 @@ class LivePlayController extends GetxController {
     );
   }
 
-  Widget _seg(String label, List<String> options, String current,
-      ValueChanged<String> onPick) {
+  Widget _seg(String label, List<String> options, String current, ValueChanged<String> onPick) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           SizedBox(
               width: 52,
-              child: Text(label,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13))),
+              child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
           const SizedBox(width: 8),
           ...options.map((o) => GestureDetector(
                 onTap: () => onPick(o),
                 child: Container(
                   margin: const EdgeInsets.only(right: 6),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   decoration: BoxDecoration(
                     color: o == current
                         ? const Color(0xFF00D2FF).withOpacity(0.2)
@@ -273,9 +264,7 @@ class LivePlayController extends GetxController {
                   ),
                   child: Text(o,
                       style: TextStyle(
-                          color: o == current
-                              ? const Color(0xFF00D2FF)
-                              : Colors.white60,
+                          color: o == current ? const Color(0xFF00D2FF) : Colors.white60,
                           fontSize: 12)),
                 ),
               )),
@@ -290,8 +279,7 @@ class LivePlayController extends GetxController {
       children: [
         SizedBox(
             width: 52,
-            child: Text(label,
-                style: const TextStyle(color: Colors.white70, fontSize: 13))),
+            child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13))),
         Expanded(
           child: Slider(
             value: val,
@@ -304,8 +292,7 @@ class LivePlayController extends GetxController {
         ),
         SizedBox(
             width: 60,
-            child: Text(display,
-                style: const TextStyle(color: Colors.white54, fontSize: 12))),
+            child: Text(display, style: const TextStyle(color: Colors.white54, fontSize: 12))),
       ],
     );
   }
@@ -316,8 +303,7 @@ class LivePlayController extends GetxController {
     if (c == null || !c.value.isInitialized || !_playing) return;
     if (c.value.isBuffering) {
       _bufferingSince ??= DateTime.now();
-      if (DateTime.now().difference(_bufferingSince!) >
-          const Duration(seconds: 12)) {
+      if (DateTime.now().difference(_bufferingSince!) > const Duration(seconds: 12)) {
         _bufferingSince = null;
         _advance('卡顿');
       }
@@ -554,8 +540,7 @@ class LivePlayController extends GetxController {
     _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
     _danmakuClient!.onPopularity = (v) => heatCount.value = v;
     _danmakuClient!.onSendDebug = (s) => debugInfo.value = s;
-    _danmakuClient!.connect(
-        topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: roomId);
+    _danmakuClient!.connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: roomId);
     danmakuStream = _danmakuClient!.danmakuStream;
     danmakuStream!.listen((m) {
       danmakuList.add(m);
@@ -569,8 +554,7 @@ class LivePlayController extends GetxController {
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
-      Get.snackbar('提示', '请先在 设置→虎牙账号 登录',
-          snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('提示', '请先在 设置→虎牙账号 登录', snackPosition: SnackPosition.BOTTOM);
       return;
     }
     inputController.clear();
@@ -601,8 +585,7 @@ class LivePlayController extends GetxController {
     Get.dialog(
       AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('当前播放地址',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text('当前播放地址', style: TextStyle(color: Colors.white, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -625,8 +608,7 @@ class LivePlayController extends GetxController {
               Get.back();
               Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
             },
-            child:
-                const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
+            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF))),
           ),
           TextButton(
             onPressed: () => Get.back(),
@@ -644,11 +626,9 @@ class LivePlayController extends GetxController {
       case 1:
         return SizedBox.expand(child: VideoPlayer(c));
       case 2:
-        return Center(
-            child: AspectRatio(aspectRatio: 16 / 9, child: VideoPlayer(c)));
+        return Center(child: AspectRatio(aspectRatio: 16 / 9, child: VideoPlayer(c)));
       case 3:
-        return Center(
-            child: AspectRatio(aspectRatio: 4 / 3, child: VideoPlayer(c)));
+        return Center(child: AspectRatio(aspectRatio: 4 / 3, child: VideoPlayer(c)));
       case 4:
         return LayoutBuilder(builder: (ctx, cons) {
           final cw = cons.maxWidth, ch = cons.maxHeight;
@@ -665,8 +645,7 @@ class LivePlayController extends GetxController {
             h = cw / va;
           }
           return Center(
-              child:
-                  ClipRect(child: SizedBox(width: w, height: h, child: VideoPlayer(c))));
+              child: ClipRect(child: SizedBox(width: w, height: h, child: VideoPlayer(c))));
         });
       default:
         return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
@@ -685,8 +664,7 @@ class LivePlayController extends GetxController {
           shape: BoxShape.circle,
         ),
         child: Icon(icon,
-            color: selected ? const Color(0xFF7ED97E) : Colors.white,
-            size: size * 0.55),
+            color: selected ? const Color(0xFF7ED97E) : Colors.white, size: size * 0.55),
       ),
     );
   }
@@ -713,8 +691,7 @@ class LivePlayController extends GetxController {
               ),
             ] else
               const Spacer(),
-            _controlBtn(Icons.battery_saver, togglePowerSave,
-                selected: powerSave.value),
+            _controlBtn(Icons.battery_saver, togglePowerSave, selected: powerSave.value),
             const SizedBox(width: 6),
             _controlBtn(Icons.tune, showDanmakuSettings),
             if (fullscreen) ...[
@@ -731,19 +708,16 @@ class LivePlayController extends GetxController {
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Row(children: [
-            _controlBtn(
-                isPaused.value ? Icons.play_arrow : Icons.pause, togglePlay),
+            _controlBtn(isPaused.value ? Icons.play_arrow : Icons.pause, togglePlay),
             const SizedBox(width: 6),
             _controlBtn(Icons.refresh, refreshPlay),
             const SizedBox(width: 6),
-            _controlBtn(
-                showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
+            _controlBtn(showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
               showDanmaku.value = !showDanmaku.value;
               _scheduleHide(4);
             }),
             const SizedBox(width: 6),
-            _controlBtn(
-                isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
+            _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
             const SizedBox(width: 6),
             _controlBtn(Icons.aspect_ratio, cycleFit),
             const Spacer(),
@@ -753,12 +727,78 @@ class LivePlayController extends GetxController {
                 )),
             const SizedBox(width: 8),
             _controlBtn(
-                fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                toggleFullscreen),
+                fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, toggleFullscreen),
           ]),
         ),
       ),
     ]);
+  }
+
+  /// 全屏覆盖层：复用竖屏播放器的 textureId 再画一层 Texture（不重建播放器，黑屏根治）
+  Widget fullscreenOverlay() {
+    return Obx(() {
+      final c = _controller;
+      final tid = c?.textureId;
+      return GestureDetector(
+        onTap: onTapVideo,
+        onLongPress: _showUrlDialog,
+        child: Container(
+          color: Colors.black,
+          child: Stack(children: [
+            if (c != null && c.value.isInitialized && tid != null)
+              Positioned.fill(child: _textureByFit(c, tid)),
+            if (isPaused.value && !isLocked.value)
+              Center(
+                  child:
+                      _controlBtn(Icons.play_arrow, togglePlay, selected: true, size: 64)),
+            if (showControls.value && !isLocked.value) _buildControls(true),
+            if (isLocked.value && showControls.value)
+              Positioned(
+                left: 12,
+                top: 60,
+                child: _controlBtn(Icons.lock, toggleLock, selected: true, size: 40),
+              ),
+          ]),
+        ),
+      );
+    });
+  }
+
+  Widget _textureByFit(VideoPlayerController c, int tid) {
+    final va = c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9;
+    switch (fitMode.value) {
+      case 1:
+        return SizedBox.expand(child: Texture(textureId: tid));
+      case 2:
+        return Center(
+            child: AspectRatio(aspectRatio: 16 / 9, child: Texture(textureId: tid)));
+      case 3:
+        return Center(
+            child: AspectRatio(aspectRatio: 4 / 3, child: Texture(textureId: tid)));
+      case 4:
+        return LayoutBuilder(builder: (ctx, cons) {
+          final cw = cons.maxWidth, ch = cons.maxHeight;
+          if (cw <= 0 || ch <= 0) {
+            return Center(
+                child: AspectRatio(aspectRatio: va, child: Texture(textureId: tid)));
+          }
+          final ca = cw / ch;
+          double w, h;
+          if (va > ca) {
+            h = ch;
+            w = ch * va;
+          } else {
+            w = cw;
+            h = cw / va;
+          }
+          return Center(
+              child: ClipRect(
+                  child: SizedBox(width: w, height: h, child: Texture(textureId: tid))));
+        });
+      default:
+        return Center(
+            child: AspectRatio(aspectRatio: va, child: Texture(textureId: tid)));
+    }
   }
 
   Widget _videoCore({required bool fullscreen}) {
@@ -774,16 +814,15 @@ class LivePlayController extends GetxController {
             children: [
               if (c != null && c.value.isInitialized)
                 Positioned.fill(
-                  // Key 恒定：切屏时 Texture 永不重挂载（黑屏根治核心）
                   child: KeyedSubtree(
                     key: const ValueKey('vp'),
                     child: _videoByFit(c),
                   ),
                 ),
               if (isPaused.value && !isLocked.value)
-                  Center(
-                      child: _controlBtn(Icons.play_arrow, togglePlay,
-                          selected: true, size: 64)),
+                Center(
+                    child:
+                        _controlBtn(Icons.play_arrow, togglePlay, selected: true, size: 64)),
               if (showControls.value && !isLocked.value) _buildControls(fullscreen),
               if (isLocked.value && showControls.value)
                 Positioned(
