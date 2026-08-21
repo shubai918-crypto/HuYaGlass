@@ -11,119 +11,102 @@ class LivePlayPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(LivePlayController());
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
-      // 终极防黑屏：整个页面只有一个 Stack，视频永远在底层，只变定位参数，Widget 永不卸载
-      body: Stack(
-        children: [
-          // 1. 视频层（永远挂载）
-          Obx(() {
-            final fs = controller.isFullscreen.value;
-            if (fs) {
-              return Positioned.fill(child: controller.videoHost(true));
-            }
-            return LayoutBuilder(
-              builder: (ctx, cons) {
-                final mq = MediaQuery.of(ctx);
-                final topPad = mq.padding.top;
-                const topBarH = 80.0;
-                final w = cons.maxWidth;
-                final videoH = w * 9 / 16;
-                return Positioned(
-                  top: topPad + topBarH,
-                  left: 0,
-                  right: 0,
-                  height: videoH,
-                  child: controller.videoHost(false),
-                );
-              },
-            );
-          }),
-
-          // 2. 竖屏 UI 覆盖层
-          Obx(() => controller.isFullscreen.value
-              ? const SizedBox.shrink()
-              : _buildPortraitUI(controller)),
-
-          // 3. 全屏 UI 覆盖层
-          Obx(() => controller.isFullscreen.value
-              ? _buildFullscreenUI(controller)
-              : const SizedBox.shrink()),
-        ],
-      ),
-    );
+    return Obx(() {
+      final fs = controller.isFullscreen.value;
+      return PopScope(
+        canPop: !fs,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) controller.toggleFullscreen();
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFF0A0A0F),
+          body: _buildBody(controller, fs, context),
+        ),
+      );
+    });
   }
 
-  // ================= 竖屏 UI =================
-  Widget _buildPortraitUI(LivePlayController controller) {
-    return SafeArea(
-      child: Obx(() {
-        if (controller.loading.value) {
-          return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-        }
-        return Column(
-          children: [
-            const SizedBox(height: 80), // 留给顶栏的空间
-            _buildVideoDanmaku(controller),
+  Widget _buildBody(LivePlayController controller, bool fs, BuildContext context) {
+    final mq = MediaQuery.of(context);
+    const topBarH = 80.0;
+    final topPad = fs ? 0.0 : mq.padding.top;
+    final w = mq.size.width;
+    final videoH = w * 9 / 16;
+
+    if (controller.loading.value && !fs) {
+      return const Center(
+          child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+    }
+
+    // 单 Stack：所有 Positioned 都是直接子级；视频层 slot0 永不卸载
+    return Stack(children: [
+      // 0) 视频层（切全屏只改定位参数，Widget 不重建 → 不黑屏）
+      Positioned(
+        top: fs ? 0 : topPad + topBarH,
+        left: 0,
+        right: 0,
+        height: fs ? null : videoH,
+        bottom: fs ? 0 : null,
+        child: controller.videoHost(fs),
+      ),
+      if (!fs) ...[
+        // 1) 顶栏
+        Positioned(
+          top: topPad,
+          left: 0,
+          right: 0,
+          height: topBarH,
+          child: _buildTopBar(controller),
+        ),
+        // 2) 竖屏滚动弹幕
+        if (controller.showDanmaku.value && controller.danmakuStream != null)
+          Positioned(
+            top: topPad + topBarH + 4,
+            left: 0,
+            right: 0,
+            height: videoH,
+            child: IgnorePointer(
+              child: DanmakuView(
+                danmakuStream: controller.danmakuStream!,
+                height: videoH * controller.danmakuArea.value,
+                fontSize: controller.danmakuFontSize.value,
+                fps: controller.danmakuFps.value,
+                speed: controller.danmakuSpeed.value,
+                opacity: controller.danmakuOpacity.value,
+              ),
+            ),
+          ),
+        // 3) Tab + 发送栏
+        Positioned(
+          top: topPad + topBarH + videoH,
+          left: 0,
+          right: 0,
+          bottom: mq.padding.bottom,
+          child: Column(children: [
             Expanded(child: _InfoTabs(controller: controller)),
             _buildBottomBar(controller),
-          ],
-        );
-      }),
-    );
-  }
-
-  Widget _buildVideoDanmaku(LivePlayController controller) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: LayoutBuilder(
-        builder: (c, cons) => Stack(
-          children: [
-            Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
-                ? Positioned(
-                    top: 4,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      child: DanmakuView(
-                        danmakuStream: controller.danmakuStream!,
-                        height: cons.maxHeight * controller.danmakuArea.value,
-                        fontSize: controller.danmakuFontSize.value,
-                        fps: controller.danmakuFps.value,
-                        speed: controller.danmakuSpeed.value,
-                        opacity: controller.danmakuOpacity.value,
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink()),
-          ],
+          ]),
         ),
-      ),
-    );
-  }
-
-  // ================= 全屏 UI =================
-  Widget _buildFullscreenUI(LivePlayController controller) {
-    return Stack(children: [
-      const _KeepAliveRepaint(), // 保活重绘，防 Texture 被合成器丢弃
-      Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
-          ? Positioned(
-              top: 50,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: DanmakuView(
-                  danmakuStream: controller.danmakuStream!,
-                  height: 220 * controller.danmakuArea.value,
-                  fontSize: controller.danmakuFontSize.value,
-                  fps: controller.danmakuFps.value,
-                  speed: controller.danmakuSpeed.value,
-                  opacity: controller.danmakuOpacity.value,
-                ),
+      ],
+      if (fs) ...[
+        const _KeepAliveRepaint(),
+        if (controller.showDanmaku.value && controller.danmakuStream != null)
+          Positioned(
+            top: 50,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: DanmakuView(
+                danmakuStream: controller.danmakuStream!,
+                height: 220 * controller.danmakuArea.value,
+                fontSize: controller.danmakuFontSize.value,
+                fps: controller.danmakuFps.value,
+                speed: controller.danmakuSpeed.value,
+                opacity: controller.danmakuOpacity.value,
               ),
-            )
-          : const SizedBox.shrink()),
+            ),
+          ),
+      ],
     ]);
   }
 
