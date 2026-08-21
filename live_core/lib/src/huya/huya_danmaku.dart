@@ -23,6 +23,8 @@ class HuyaDanmakuClient {
   static const _appUa = 'HUYA/7.11.82 (Android 14; Pixel 5)';
 
   static const _endpoints = [
+    'wss://65cecb22-ws.va.huya.com', // 抓包得到的信令节点（处理 cmd=3）
+    'wss://ws.va.huya.com',
     'wss://wsapi.huya.com',
     'wss://cdnws.api.huya.com',
   ];
