@@ -734,6 +734,26 @@ class LivePlayController extends GetxController {
     ]);
   }
 
+/// 全屏视频：手动计算适配尺寸；异常时兜底铺满，杜绝"小黑点"黑屏
+  Widget _fullScreenVideo(VideoPlayerController c) {
+    return LayoutBuilder(builder: (ctx, cons) {
+      final cw = cons.maxWidth;
+      final ch = cons.maxHeight;
+      final va = c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9;
+      if (cw < 50 || ch < 50) return SizedBox.expand(child: VideoPlayer(c));
+      double w, h;
+      if (cw / ch > va) {
+        h = ch;
+        w = ch * va;
+      } else {
+        w = cw;
+        h = cw / va;
+      }
+      if (w < 50 || h < 50) return SizedBox.expand(child: VideoPlayer(c));
+      return Center(child: SizedBox(width: w, height: h, child: VideoPlayer(c)));
+    });
+  }
+  
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
       playerVersion.value;
@@ -749,7 +769,7 @@ class LivePlayController extends GetxController {
                 Positioned.fill(
                   child: KeyedSubtree(
                     key: const ValueKey('vp'),
-                    child: _videoByFit(c),
+                    child: fullscreen ? _fullScreenVideo(c) : _videoByFit(c),
                   ),
                 ),
               if (isPaused.value && !isLocked.value)
