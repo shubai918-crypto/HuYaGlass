@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
@@ -19,14 +20,14 @@ class LivePlayPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFF0A0A0F),
-          // 竖屏/全屏两分支，但视频用同一个 GlobalKey 搬家 → Texture 不重建
+          // 竖屏/全屏两分支，视频用同一个 GlobalKey 搬家 → Texture 不重建
           body: fs ? _buildFullscreen(controller) : _buildPortrait(controller),
         ),
       );
     });
   }
 
-  // ================= 竖屏（已验证结构） =================
+  // ================= 竖屏 =================
   Widget _buildPortrait(LivePlayController controller) {
     return SafeArea(
       child: Obx(() {
@@ -58,6 +59,8 @@ class LivePlayPage extends StatelessWidget {
             child: controller.videoHost(true),
           ),
         ),
+        // 全屏防黑屏：弹幕关闭后仍保持低频重绘，保住视频合成层
+        const _KeepAliveRepaint(),
         Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
             ? Positioned(
                 top: 50,
@@ -340,6 +343,61 @@ class LivePlayPage extends StatelessWidget {
     if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
     return '$count';
   }
+}
+
+// ================= 全屏保活重绘（防 Texture 被合成器丢弃） =================
+class _KeepAliveRepaint extends StatefulWidget {
+  const _KeepAliveRepaint();
+
+  @override
+  State<_KeepAliveRepaint> createState() => _KeepAliveRepaintState();
+}
+
+class _KeepAliveRepaintState extends State<_KeepAliveRepaint> {
+  Timer? _t;
+  int _tick = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (mounted) setState(() => _tick++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SizedBox(
+        width: 2,
+        height: 2,
+        child: CustomPaint(painter: _TickPainter(_tick)),
+      ),
+    );
+  }
+}
+
+class _TickPainter extends CustomPainter {
+  final int tick;
+  const _TickPainter(this.tick);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = const Color(0x01000000),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TickPainter oldDelegate) =>
+      oldDelegate.tick != tick;
 }
 
 // ================= 弹幕 / 主播详情 双 Tab =================
