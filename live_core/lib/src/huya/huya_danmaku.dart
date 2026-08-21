@@ -16,14 +16,11 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端
-/// 接收：WS (baseinfo) —— launch → Verify → Register → 1400 推送
-/// 发送：App 端身份 HTTP WUP（raw/带前缀双形态 × 双网关）+ WS cmd=3 备份
+/// 虎牙弹幕客户端（100% 复刻浏览器 WS 协议）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
   static const _appUa = 'HUYA/7.11.82 (Android 14; Pixel 5)';
-  static const _appHuYaUA = 'adr&7.11.82&2052&34';
 
   static const _endpoints = [
     'wss://wsapi.huya.com',
@@ -71,7 +68,7 @@ class HuyaDanmakuClient {
     return m?.group(1)?.trim() ?? '';
   }
 
-  // ================= WS 连接（仅接收） =================
+  // ================= WS 连接 =================
   Future<void> connect({
     required int topSid,
     required int subSid,
@@ -132,14 +129,21 @@ class HuyaDanmakuClient {
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
   }
 
+  /// baseinfo (WSConnectParaInfo) 逐字节对齐真实抓包
   String _buildBaseinfo() {
     final info = _TarsWriter();
-    info.writeInt(0, _loginUid);
-    info.writeString(1, _guid);
-    info.writeString(2, 'webh5&1.0.0&websocket');
-    info.writeString(3, 'HUYA');
-    info.writeString(4, _cookie);
-    info.writeMap(5, {'HUYA_NET': '0'});
+    info.writeInt(0, _loginUid); // lUid
+    info.writeString(1, _guid); // sGuid
+    // sUA: webh5&0.0.1&websocket&&h5_/<uid>
+    info.writeString(2, 'webh5&0.0.1&websocket&&h5_/${_loginUid > 0 ? _loginUid : 31283553}');
+    info.writeString(3, 'HUYA&ZH&2052'); // sAppSrc
+    info.writeString(4, ''); // sCookie 在 baseinfo 里必须为空！
+    info.writeString(5, '');
+    info.writeInt(6, 0);
+    info.writeString(7, '');
+    info.writeString(8, '');
+    info.writeString(9, '');
+    info.writeMap(10, const {});
     return base64Encode(info.toBytes());
   }
 
@@ -153,8 +157,8 @@ class HuyaDanmakuClient {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
     req.writeString(1, _guid);
-    req.writeString(2, 'webh5&1.0.0&websocket');
-    req.writeString(3, 'HUYA');
+    req.writeString(2, 'webh5&0.0.1&websocket&&h5_/${_loginUid > 0 ? _loginUid : 31283553}');
+    req.writeString(3, 'HUYA&ZH&2052');
     req.writeStruct(4, dev);
     return req.toBytes();
   }
@@ -162,11 +166,11 @@ class HuyaDanmakuClient {
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
-    req.writeString(1, 'webh5&1.0.0&websocket');
+    req.writeString(1, 'webh5&0.0.1&websocket&&h5_/${_loginUid > 0 ? _loginUid : 31283553}');
     req.writeString(2, _cookie);
     req.writeString(3, _guid);
     req.writeInt(4, 1);
-    req.writeString(5, 'HUYA');
+    req.writeString(5, 'HUYA&ZH&2052');
     final cmd = _TarsWriter();
     cmd.writeInt(0, 10);
     cmd.writeBytes(1, req.toBytes());
@@ -203,15 +207,11 @@ class HuyaDanmakuClient {
       _pendingDanmaku = text;
       await _ensureServerGuid();
       final req = _buildSendReq(text);
-      // 主通道：HTTP WUP（App 身份，raw/带前缀双形态）
-      _tryHttpSend(req);
-      // 备份：WS cmd=3
+      // 主通道：WS cmd=3 (带 4 字节长度前缀)
       _send(_wrapWsCmd(_buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, true), 3));
-      Timer(const Duration(milliseconds: 1200), () {
-        if (!_closed && _pendingDanmaku == text) {
-          _send(_wrapWsCmd(_buildWupEnvelope('GameLive', 'sendMessage', {'tReq': req}, true), 3));
-        }
-      });
+      _dbgPush('WS liveui 已发');
+      // HTTP 兜底
+      _tryHttpSend(req);
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
@@ -219,7 +219,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// App 端流程：launch 获取服务端下发的 sGuid
   Future<void> _ensureServerGuid() async {
     if (_serverGuid.isNotEmpty) return;
     final dev = _TarsWriter();
@@ -231,8 +230,8 @@ class HuyaDanmakuClient {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
     req.writeString(1, _guid);
-    req.writeString(2, _appHuYaUA);
-    req.writeString(3, 'huya&CN&2052');
+    req.writeString(2, 'webh5&0.0.1&websocket&&h5_/${_loginUid > 0 ? _loginUid : 31283553}');
+    req.writeString(3, 'HUYA&ZH&2052');
     req.writeStruct(4, dev);
     final wup = _buildWupEnvelope('launch', 'wsLaunch', {'tReq': req.toBytes()}, false);
     for (final url in ['https://wup.huya.com/', 'http://wup.huya.com:80/']) {
@@ -242,7 +241,7 @@ class HuyaDanmakuClient {
                 headers: {
                   'Content-Type': 'application/octet-stream',
                   'User-Agent': _appUa,
-                  'x-huya-appsrc': 'huya&CN&2052',
+                  'x-huya-appsrc': 'HUYA&ZH&2052',
                 },
                 body: wup)
             .timeout(const Duration(seconds: 5));
@@ -259,16 +258,19 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// SendMessageReq（App 端身份）
+  /// SendMessageReq (逐字节对齐浏览器真实发送帧)
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
     user.writeString(1, _serverGuid.isNotEmpty ? _serverGuid : _guid);
-    user.writeString(2, _token);
-    user.writeString(3, _appHuYaUA);
-    user.writeString(4, ''); // App 端 sCookie 为空
-    user.writeInt(5, 1); // iTokenType
-    user.writeString(6, 'Pixel 5'); // sDeviceInfo = Build.MODEL
+    user.writeString(2, ''); // sToken = "" (抓包确认)
+    user.writeString(3, 'webh5&2608191804&websocket'); // sHuYaUA (抓包确认)
+    user.writeString(4, _cookie); // sCookie = 完整 cookie
+    user.writeInt(5, 0); // iTokenType = 0 (抓包确认)
+    final devInfo = _cookieVal('_qimei_fingerprint');
+    user.writeString(6, devInfo.isNotEmpty ? devInfo : '585a800d3c7091d4c392676f9eec3d4d');
+    user.writeInt(7, -1); // tag7 = -1 (抓包确认)
+    user.writeInt(8, -1); // tag8 = -1 (抓包确认)
 
     final cf = _TarsWriter();
     cf.writeInt(0, -1);
@@ -285,17 +287,17 @@ class HuyaDanmakuClient {
 
     final req = _TarsWriter();
     req.writeStruct(0, user);
-    req.writeInt(1, _topSid); // lTid
-    req.writeInt(2, _subSid); // lSid
+    req.writeInt(1, _topSid);
+    req.writeInt(2, _subSid);
     req.writeString(3, text.replaceAll('\n', ' '));
     req.writeInt(4, 0);
     req.writeStruct(5, cf);
     req.writeStruct(6, bf);
-    req.writeInt(8, _ayyuid); // lPid 主播UID
+    req.writeInt(8, _ayyuid);
     return req.toBytes();
   }
 
-  /// WUP 信封；withPrefix=true 时加 4 字节大端长度前缀（WS 用），false 为纯包（HTTP 用）
+  /// WUP 信封
   Uint8List _buildWupEnvelope(
       String servant, String func, Map<String, List<int>> buffers,
       [bool withPrefix = false]) {
@@ -332,7 +334,6 @@ class HuyaDanmakuClient {
     return cmd.toBytes();
   }
 
-  /// HTTP WUP：raw/带前缀 × 双网关 全组合探测
   Future<void> _tryHttpSend(Uint8List req) async {
     final ts = DateTime.now().millisecondsSinceEpoch;
     final bi = Uri.encodeComponent(_buildBaseinfo());
@@ -340,7 +341,6 @@ class HuyaDanmakuClient {
       'raw': _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, false),
       'len': _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}, true),
     };
-    // URL 必须带 baseinfo(会话) + timestamp，否则网关 407
     final targets = [
       'https://wup.huya.com/?baseinfo=$bi&timestamp=$ts',
       'http://wup.huya.com:80/?baseinfo=$bi&timestamp=$ts',
