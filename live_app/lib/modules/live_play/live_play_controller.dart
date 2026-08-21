@@ -37,6 +37,7 @@ class LivePlayController extends GetxController {
   final currentQuality = ''.obs;
   final debugInfo = ''.obs;
   final playerVersion = 0.obs;
+  final videoRemount = 0.obs;
   final roomTitle = ''.obs;
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
@@ -513,8 +514,9 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
-    // 防黑屏：seek 当前帧强制重绘（不重建 Texture）
-    Future.delayed(const Duration(milliseconds: 300), () async {
+    // 防黑屏：旋转稳定后(1s)强制 Texture 重挂载 + seek 重绘
+    Future.delayed(const Duration(milliseconds: 1000), () async {
+      videoRemount.value++;
       final c = _controller;
       if (c != null && c.value.isInitialized) {
         try {
@@ -746,7 +748,7 @@ class LivePlayController extends GetxController {
 
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
-      playerVersion.value; // 建立依赖：换流时重建
+      playerVersion.value; // 换流时重建
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -757,9 +759,8 @@ class LivePlayController extends GetxController {
             children: [
               if (c != null && c.value.isInitialized)
                 Positioned.fill(
-                  // Key 恒定：切屏时 Texture 永不重挂载（黑屏根治）
                   child: KeyedSubtree(
-                    key: const ValueKey('vp'),
+                    key: ValueKey('vp-${videoRemount.value}'),
                     child: _videoByFit(c),
                   ),
                 ),
