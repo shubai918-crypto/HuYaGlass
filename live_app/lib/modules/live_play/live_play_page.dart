@@ -19,7 +19,7 @@ class LivePlayPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFF0A0A0F),
-          // 单 Stack 根：视频宿主固定槽位0，切屏只改定位参数 → Texture 永不重挂载（黑屏根治）
+          // 单 Stack 根：视频宿主固定槽位0，切屏只改定位参数（黑屏根治）
           body: LayoutBuilder(
             builder: (ctx, cons) {
               final mq = MediaQuery.of(ctx);
@@ -43,7 +43,7 @@ class LivePlayPage extends StatelessWidget {
                         left: 0,
                         right: 0,
                         height: topBarH,
-                        child: _buildTopBar(controller)),
+                        child: Obx(() => _buildTopBar(controller))),
                     Positioned(
                       top: topPad + topBarH + videoH,
                       left: 0,
@@ -51,7 +51,7 @@ class LivePlayPage extends StatelessWidget {
                       bottom: mq.padding.bottom,
                       child: Column(children: [
                         Expanded(child: _InfoTabs(controller: controller)),
-                        _buildBottomBar(controller),
+                        Obx(() => _buildBottomBar(controller)),
                       ]),
                     ),
                   ],
