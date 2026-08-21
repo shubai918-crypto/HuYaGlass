@@ -19,87 +19,64 @@ class LivePlayPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFF0A0A0F),
-          // 单 Stack 树：视频永远在 slot0，切屏只改定位参数 → Texture 不重建 → 不黑不卡
-          body: LayoutBuilder(
-            builder: (ctx, cons) {
-              final mq = MediaQuery.of(ctx);
-              final w = cons.maxWidth;
-              const topBarH = 80.0;
-              final topPad = fs ? 0.0 : mq.padding.top;
-              final videoH = w * 9 / 16;
-              return Stack(
-                children: [
-                  Positioned(
-                    top: fs ? 0 : topPad + topBarH,
-                    left: 0,
-                    right: 0,
-                    height: fs ? null : videoH,
-                    bottom: fs ? 0 : null,
-                    child: controller.videoHost(fs),
-                  ),
-                  if (!fs)
-                    Obx(() => controller.showDanmaku.value &&
-                            controller.danmakuStream != null
-                        ? Positioned(
-                            top: topPad + topBarH + 4,
-                            left: 0,
-                            right: 0,
-                            child: IgnorePointer(
-                              child: DanmakuView(
-                                danmakuStream: controller.danmakuStream!,
-                                height: videoH * controller.danmakuArea.value,
-                                fontSize: controller.danmakuFontSize.value,
-                                fps: controller.danmakuFps.value,
-                                speed: controller.danmakuSpeed.value,
-                                opacity: controller.danmakuOpacity.value,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink()),
-                  if (!fs)
-                    Positioned(
-                        top: topPad,
-                        left: 0,
-                        right: 0,
-                        height: topBarH,
-                        child: Obx(() => _buildTopBar(controller))),
-                  if (!fs)
-                    Positioned(
-                      top: topPad + topBarH + videoH,
-                      left: 0,
-                      right: 0,
-                      bottom: mq.padding.bottom,
-                      child: Column(children: [
-                        Expanded(child: _InfoTabs(controller: controller)),
-                        Obx(() => _buildBottomBar(controller)),
-                      ]),
-                    ),
-                  if (fs)
-                    Obx(() => controller.showDanmaku.value &&
-                            controller.danmakuStream != null
-                        ? Positioned(
-                            top: 50,
-                            left: 0,
-                            right: 0,
-                            child: IgnorePointer(
-                              child: DanmakuView(
-                                danmakuStream: controller.danmakuStream!,
-                                height: 220 * controller.danmakuArea.value,
-                                fontSize: controller.danmakuFontSize.value,
-                                fps: controller.danmakuFps.value,
-                                speed: controller.danmakuSpeed.value,
-                                opacity: controller.danmakuOpacity.value,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink()),
-                ],
-              );
-            },
-          ),
+          // 竖屏/全屏两分支，但视频用同一个 GlobalKey 搬家 → Texture 不重建
+          body: fs ? _buildFullscreen(controller) : _buildPortrait(controller),
         ),
       );
     });
+  }
+
+  // ================= 竖屏（已验证结构） =================
+  Widget _buildPortrait(LivePlayController controller) {
+    return SafeArea(
+      child: Obx(() {
+        if (controller.loading.value) {
+          return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+        }
+        return Column(
+          children: [
+            _buildTopBar(controller),
+            _buildVideoArea(controller),
+            Expanded(child: _InfoTabs(controller: controller)),
+            _buildBottomBar(controller),
+          ],
+        );
+      }),
+    );
+  }
+
+  // ================= 全屏 =================
+  Widget _buildFullscreen(LivePlayController controller) {
+    return Container(
+      color: Colors.black,
+      child: Stack(children: [
+        Positioned.fill(
+          child: Container(
+            // 同一个 GlobalKey：竖屏↔全屏只是搬家，视频不重载不黑屏
+            key: controller.videoHostKey,
+            child: controller.videoHost(true),
+          ),
+        ),
+        Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
+            ? Positioned(
+                top: 50,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: DanmakuView(
+                    danmakuStream: controller.danmakuStream!,
+                    height: 220 * controller.danmakuArea.value,
+                    fontSize: controller.danmakuFontSize.value,
+                    fps: controller.danmakuFps.value,
+                    speed: controller.danmakuSpeed.value,
+                    opacity: controller.danmakuOpacity.value,
+                  ),
+                ),
+              )
+            : const SizedBox.shrink()),
+      ]),
+    );
   }
 
   Widget _defaultAvatar() => Container(
@@ -109,6 +86,7 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
+  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -196,6 +174,43 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
+  // ================= 视频区 + 滚动弹幕 =================
+  Widget _buildVideoArea(LivePlayController controller) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: LayoutBuilder(
+        builder: (c, cons) => Stack(
+          children: [
+            Positioned.fill(
+              child: Container(
+                key: controller.videoHostKey,
+                child: controller.videoHost(false),
+              ),
+            ),
+            Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
+                ? Positioned(
+                    top: 4,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: DanmakuView(
+                        danmakuStream: controller.danmakuStream!,
+                        height: cons.maxHeight * controller.danmakuArea.value,
+                        fontSize: controller.danmakuFontSize.value,
+                        fps: controller.danmakuFps.value,
+                        speed: controller.danmakuSpeed.value,
+                        opacity: controller.danmakuOpacity.value,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
