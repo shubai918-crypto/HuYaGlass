@@ -513,16 +513,6 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
-    // 旋转稳定后强制解码器出新帧，防全屏陈旧黑屏
-    Future.delayed(const Duration(milliseconds: 800), () async {
-      final c = _controller;
-      if (c != null && c.value.isInitialized) {
-        try {
-          await c.seekTo(c.value.position);
-          if (!c.value.isPlaying && !isPaused.value) await c.play();
-        } catch (_) {}
-      }
-    });
   }
 
   void switchQuality(StreamQuality q) {
