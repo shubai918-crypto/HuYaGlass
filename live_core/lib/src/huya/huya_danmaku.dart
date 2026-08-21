@@ -127,7 +127,7 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // 先 wsLaunch（tReq=WSConnectParaInfo），再 Verify + Register
+    // 先 wsLaunch（tReq=WSConnectParaInfo，与抓包 baseinfo 同构），再 Verify + Register
     _send(_wrapWsCmd(
         _buildWupEnvelope('launch', 'wsLaunch', {'tReq': _buildLaunchReq()}), 3));
     Timer(const Duration(milliseconds: 600), () {
@@ -163,7 +163,7 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  /// wsLaunch 的 tReq = WSConnectParaInfo（含 sToken/sCookie/sTraceId）
+  /// wsLaunch 的 tReq = WSConnectParaInfo（token/cookie 留空，与抓包一致）
   Uint8List _buildLaunchReq() {
     final r = Random();
     final mid =
@@ -174,11 +174,10 @@ class HuyaDanmakuClient {
     req.writeString(2, _sendHuYaUA);
     req.writeString(3, 'HUYA&ZH&2052');
     req.writeString(4, mid);
-    req.writeString(5, '');
     req.writeInt(6, 0);
-    req.writeString(7, _token);
-    req.writeString(8, _cookie);
-    req.writeString(9, '$_traceId:$_traceId:0:1');
+    req.writeString(7, '');
+    req.writeString(8, '');
+    req.writeString(9, '');
     req.writeMap(10, const {
       'HUYA_NET': '0',
       'HUYA_VSDKUA': _sendHuYaUA,
