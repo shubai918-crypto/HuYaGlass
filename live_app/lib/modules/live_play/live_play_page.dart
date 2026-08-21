@@ -17,7 +17,6 @@ class LivePlayPage extends StatelessWidget {
           },
           child: Scaffold(
             backgroundColor: const Color(0xFF0A0A0F),
-            // 整棵树切换：竖屏/全屏永不同框
             body: controller.isFullscreen.value
                 ? _buildFullscreen(controller)
                 : _buildPortrait(controller),
@@ -25,7 +24,6 @@ class LivePlayPage extends StatelessWidget {
         ));
   }
 
-  // ================= 竖屏 =================
   Widget _buildPortrait(LivePlayController controller) {
     return SafeArea(
       child: Obx(() {
@@ -45,7 +43,6 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 全屏 =================
   Widget _buildFullscreen(LivePlayController controller) {
     return Container(
       color: Colors.black,
@@ -79,7 +76,6 @@ class LivePlayPage extends StatelessWidget {
         child: const Icon(Icons.person, color: Colors.white54),
       );
 
-  // ================= 顶栏 =================
   Widget _buildTopBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -167,7 +163,6 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 视频区 + 滚动弹幕 =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -198,7 +193,6 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 底部：画质 + 线路 + 发送 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
