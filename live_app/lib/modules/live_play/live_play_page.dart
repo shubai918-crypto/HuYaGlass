@@ -20,46 +20,39 @@ class LivePlayPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFF0A0A0F),
-          // 竖屏/全屏两分支，视频用同一个 GlobalKey 搬家 → Texture 不重建
-          body: fs ? _buildFullscreen(controller) : _buildPortrait(controller),
+          // 竖屏永远挂载；全屏=覆盖层复用同一 textureId → 视频不重建，黑屏根治
+          body: Stack(children: [
+            SafeArea(
+              child: Obx(() {
+                if (controller.loading.value) {
+                  return const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
+                }
+                return Column(
+                  children: [
+                    _buildTopBar(controller),
+                    _buildVideoArea(controller),
+                    Expanded(child: _InfoTabs(controller: controller)),
+                    _buildBottomBar(controller),
+                  ],
+                );
+              }),
+            ),
+            Obx(() => controller.isFullscreen.value
+                ? _buildFullscreenOverlay(controller)
+                : const SizedBox.shrink()),
+          ]),
         ),
       );
     });
   }
 
-  // ================= 竖屏 =================
-  Widget _buildPortrait(LivePlayController controller) {
-    return SafeArea(
-      child: Obx(() {
-        if (controller.loading.value) {
-          return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-        }
-        return Column(
-          children: [
-            _buildTopBar(controller),
-            _buildVideoArea(controller),
-            Expanded(child: _InfoTabs(controller: controller)),
-            _buildBottomBar(controller),
-          ],
-        );
-      }),
-    );
-  }
-
-  // ================= 全屏 =================
-  Widget _buildFullscreen(LivePlayController controller) {
-    return Container(
+  // ================= 全屏覆盖层 =================
+  Widget _buildFullscreenOverlay(LivePlayController controller) {
+    return Material(
       color: Colors.black,
       child: Stack(children: [
-        Positioned.fill(
-          child: Container(
-            // 同一个 GlobalKey：竖屏↔全屏只是搬家，视频不重载不黑屏
-            key: controller.videoHostKey,
-            child: controller.videoHost(true),
-          ),
-        ),
-        // 全屏防黑屏：弹幕关闭后仍保持低频重绘，保住视频合成层
+        Positioned.fill(child: controller.fullscreenOverlay()),
         const _KeepAliveRepaint(),
         Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
             ? Positioned(
@@ -177,19 +170,14 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 视频区 + 滚动弹幕 =================
+  // ================= 视频区（竖屏，唯一真实 VideoPlayer） =================
   Widget _buildVideoArea(LivePlayController controller) {
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: LayoutBuilder(
         builder: (c, cons) => Stack(
           children: [
-            Positioned.fill(
-              child: Container(
-                key: controller.videoHostKey,
-                child: controller.videoHost(false),
-              ),
-            ),
+            Positioned.fill(child: controller.videoHost(false)),
             Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
                 ? Positioned(
                     top: 4,
@@ -213,7 +201,7 @@ class LivePlayPage extends StatelessWidget {
     );
   }
 
-  // ================= 底部：画质 + 线路 + 发送 =================
+  // ================= 底部 =================
   Widget _buildBottomBar(LivePlayController controller) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -345,7 +333,7 @@ class LivePlayPage extends StatelessWidget {
   }
 }
 
-// ================= 全屏保活重绘（防 Texture 被合成器丢弃） =================
+// ================= 全屏保活重绘 =================
 class _KeepAliveRepaint extends StatefulWidget {
   const _KeepAliveRepaint();
 
@@ -400,7 +388,7 @@ class _TickPainter extends CustomPainter {
       oldDelegate.tick != tick;
 }
 
-// ================= 弹幕 / 主播详情 双 Tab =================
+// ================= 双 Tab / 详情 / 列表（同前） =================
 class _InfoTabs extends StatefulWidget {
   final LivePlayController controller;
   const _InfoTabs({required this.controller});
@@ -460,7 +448,6 @@ class _InfoTabsState extends State<_InfoTabs> {
   }
 }
 
-// ================= 主播详情 Tab =================
 class _DetailTab extends StatelessWidget {
   final LivePlayController controller;
   const _DetailTab({required this.controller});
@@ -639,7 +626,6 @@ class _DetailTab extends StatelessWidget {
   }
 }
 
-// ================= 弹幕列表 =================
 class _DanmakuList extends StatefulWidget {
   final LivePlayController controller;
   const _DanmakuList({required this.controller});
