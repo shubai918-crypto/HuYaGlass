@@ -10,63 +10,77 @@ class LivePlayPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(LivePlayController());
-    return Obx(() => PopScope(
-          canPop: !controller.isFullscreen.value,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) controller.toggleFullscreen();
-          },
-          child: Scaffold(
-            backgroundColor: const Color(0xFF0A0A0F),
-            body: controller.isFullscreen.value
-                ? _buildFullscreen(controller)
-                : _buildPortrait(controller),
-          ),
-        ));
-  }
-
-  Widget _buildPortrait(LivePlayController controller) {
-    return SafeArea(
-      child: Obx(() {
-        if (controller.loading.value) {
-          return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-        }
-        return Column(
-          children: [
-            _buildTopBar(controller),
-            _buildVideoArea(controller),
-            Expanded(child: _InfoTabs(controller: controller)),
-            _buildBottomBar(controller),
-          ],
-        );
-      }),
-    );
-  }
-
-  Widget _buildFullscreen(LivePlayController controller) {
-    return Container(
-      color: Colors.black,
-      child: Stack(children: [
-        Positioned.fill(child: controller.fullscreenWidget()),
-        Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
-            ? Positioned(
-                top: 50,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: DanmakuView(
-                    danmakuStream: controller.danmakuStream!,
-                    height: 220 * controller.danmakuArea.value,
-                    fontSize: controller.danmakuFontSize.value,
-                    fps: controller.danmakuFps.value,
-                    speed: controller.danmakuSpeed.value,
-                    opacity: controller.danmakuOpacity.value,
+    return Obx(() {
+      final fs = controller.isFullscreen.value;
+      return PopScope(
+        canPop: !fs,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) controller.toggleFullscreen();
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFF0A0A0F),
+          // 单 Stack 根：视频宿主固定槽位0，切屏只改定位参数 → Texture 永不重挂载（黑屏根治）
+          body: LayoutBuilder(
+            builder: (ctx, cons) {
+              final mq = MediaQuery.of(ctx);
+              final w = cons.maxWidth;
+              const topBarH = 80.0;
+              final topPad = fs ? 0.0 : mq.padding.top;
+              final videoH = w * 9 / 16;
+              return Stack(
+                children: [
+                  Positioned(
+                    top: fs ? 0 : topPad + topBarH,
+                    left: 0,
+                    right: 0,
+                    height: fs ? null : videoH,
+                    bottom: fs ? 0 : null,
+                    child: controller.videoHost(fs),
                   ),
-                ),
-              )
-            : const SizedBox.shrink()),
-      ]),
-    );
+                  if (!fs) ...[
+                    Positioned(
+                        top: topPad,
+                        left: 0,
+                        right: 0,
+                        height: topBarH,
+                        child: _buildTopBar(controller)),
+                    Positioned(
+                      top: topPad + topBarH + videoH,
+                      left: 0,
+                      right: 0,
+                      bottom: mq.padding.bottom,
+                      child: Column(children: [
+                        Expanded(child: _InfoTabs(controller: controller)),
+                        _buildBottomBar(controller),
+                      ]),
+                    ),
+                  ],
+                  if (fs)
+                    Obx(() => controller.showDanmaku.value &&
+                            controller.danmakuStream != null
+                        ? Positioned(
+                            top: 50,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              child: DanmakuView(
+                                danmakuStream: controller.danmakuStream!,
+                                height: 220 * controller.danmakuArea.value,
+                                fontSize: controller.danmakuFontSize.value,
+                                fps: controller.danmakuFps.value,
+                                speed: controller.danmakuSpeed.value,
+                                opacity: controller.danmakuOpacity.value,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink()),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    });
   }
 
   Widget _defaultAvatar() => Container(
@@ -159,36 +173,6 @@ class LivePlayPage extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildVideoArea(LivePlayController controller) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: LayoutBuilder(
-        builder: (c, cons) => Stack(
-          children: [
-            Positioned.fill(child: controller.videoWidget()),
-            Obx(() => controller.showDanmaku.value && controller.danmakuStream != null
-                ? Positioned(
-                    top: 4,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      child: DanmakuView(
-                        danmakuStream: controller.danmakuStream!,
-                        height: cons.maxHeight * controller.danmakuArea.value,
-                        fontSize: controller.danmakuFontSize.value,
-                        fps: controller.danmakuFps.value,
-                        speed: controller.danmakuSpeed.value,
-                        opacity: controller.danmakuOpacity.value,
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink()),
-          ],
-        ),
       ),
     );
   }
