@@ -513,9 +513,16 @@ class LivePlayController extends GetxController {
     }
     showControls.value = true;
     _scheduleHide(4);
-    // 防黑屏：切屏后强制重建视频纹理
-    Future.delayed(const Duration(milliseconds: 300), () {
+    // 防黑屏：强制视频纹理重挂载 + seek 当前帧强制重绘
+    Future.delayed(const Duration(milliseconds: 300), () async {
       playerVersion.value++;
+      final c = _controller;
+      if (c != null && c.value.isInitialized) {
+        try {
+          await c.seekTo(c.value.position);
+          if (!c.value.isPlaying) await c.play();
+        } catch (_) {}
+      }
     });
   }
 
@@ -554,7 +561,7 @@ class LivePlayController extends GetxController {
     });
   }
 
-  // ================= 发送弹幕（纯 WUP） =================
+  // ================= 发送弹幕 =================
   void sendDanmaku(String text) async {
     if (text.isEmpty) return;
     if (!_loginManager.isLoggedIn) {
@@ -740,7 +747,7 @@ class LivePlayController extends GetxController {
 
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
-      playerVersion.value; // 建立依赖：切屏时强制重建，防黑屏
+      playerVersion.value; // 建立依赖：切屏时强制重建
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -749,7 +756,14 @@ class LivePlayController extends GetxController {
           color: Colors.black,
           child: Stack(
             children: [
-              if (c != null && c.value.isInitialized) Positioned.fill(child: _videoByFit(c)),
+              if (c != null && c.value.isInitialized)
+                Positioned.fill(
+                  // 防黑屏：Key 随 playerVersion 变化，强制 Texture 重挂载
+                  child: KeyedSubtree(
+                    key: ValueKey('vp-$fullscreen-${playerVersion.value}'),
+                    child: _videoByFit(c),
+                  ),
+                ),
               if (isPaused.value && !isLocked.value)
                 Center(
                     child:
