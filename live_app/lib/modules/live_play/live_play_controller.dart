@@ -734,76 +734,9 @@ class LivePlayController extends GetxController {
     ]);
   }
 
-  /// 全屏覆盖层：复用竖屏播放器的 textureId 再画一层 Texture（不重建播放器，黑屏根治）
-  Widget fullscreenOverlay() {
-    return Obx(() {
-      final c = _controller;
-      final tid = c?.value.textureId; // 修正：video_player 2.x 中 textureId 在 value 内
-      return GestureDetector(
-        onTap: onTapVideo,
-        onLongPress: _showUrlDialog,
-        child: Container(
-          color: Colors.black,
-          child: Stack(children: [
-            if (c != null && c.value.isInitialized && tid != null)
-              Positioned.fill(child: _textureByFit(c, tid)),
-            if (isPaused.value && !isLocked.value)
-              Center(
-                  child:
-                      _controlBtn(Icons.play_arrow, togglePlay, selected: true, size: 64)),
-            if (showControls.value && !isLocked.value) _buildControls(true),
-            if (isLocked.value && showControls.value)
-              Positioned(
-                left: 12,
-                top: 60,
-                child: _controlBtn(Icons.lock, toggleLock, selected: true, size: 40),
-              ),
-          ]),
-        ),
-      );
-    });
-  }
-
-  Widget _textureByFit(VideoPlayerController c, int tid) {
-    final va = c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9;
-    switch (fitMode.value) {
-      case 1:
-        return SizedBox.expand(child: Texture(textureId: tid));
-      case 2:
-        return Center(
-            child: AspectRatio(aspectRatio: 16 / 9, child: Texture(textureId: tid)));
-      case 3:
-        return Center(
-            child: AspectRatio(aspectRatio: 4 / 3, child: Texture(textureId: tid)));
-      case 4:
-        return LayoutBuilder(builder: (ctx, cons) {
-          final cw = cons.maxWidth, ch = cons.maxHeight;
-          if (cw <= 0 || ch <= 0) {
-            return Center(
-                child: AspectRatio(aspectRatio: va, child: Texture(textureId: tid)));
-          }
-          final ca = cw / ch;
-          double w, h;
-          if (va > ca) {
-            h = ch;
-            w = ch * va;
-          } else {
-            w = cw;
-            h = cw / va;
-          }
-          return Center(
-              child: ClipRect(
-                  child: SizedBox(width: w, height: h, child: Texture(textureId: tid))));
-        });
-      default:
-        return Center(
-            child: AspectRatio(aspectRatio: va, child: Texture(textureId: tid)));
-    }
-  }
-
   Widget _videoCore({required bool fullscreen}) {
     return Obx(() {
-      playerVersion.value; // 建立依赖：换流时重建
+      playerVersion.value;
       final c = _controller;
       return GestureDetector(
         onTap: onTapVideo,
@@ -847,8 +780,7 @@ class LivePlayController extends GetxController {
     });
   }
 
-  Widget videoWidget() => _videoCore(fullscreen: false);
-  Widget fullscreenWidget() => _videoCore(fullscreen: true);
+  /// 提供给 Page 层调用，视频永远挂载在同一个 Stack 里
   Widget videoHost(bool fullscreen) => _videoCore(fullscreen: fullscreen);
 
   @override
