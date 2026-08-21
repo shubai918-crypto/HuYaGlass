@@ -16,13 +16,12 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（纯 WUP 路线）
-/// 连接：WS URL 带 baseinfo；握手顺序 launch → VerifyCookie → RegisterGroup
-/// 发送：WS cmd=3 WUP（servant=liveui，4 字节长度前缀）+ GameLive/HTTP 兜底
+/// 虎牙弹幕客户端
+/// 接收：WS (wsapi.huya.com) 用于注册、心跳、接收 1400 推送
+/// 发送：HTTP WUP (wup.huya.com) 网页端同款 sendWupHttp
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-  static const _appUa = 'adr&7.11.82&Pixel 5&31';
 
   static const _endpoints = [
     'wss://wsapi.huya.com',
@@ -69,7 +68,7 @@ class HuyaDanmakuClient {
     return m?.group(1)?.trim() ?? '';
   }
 
-  // ================= 连接 =================
+  // ================= WS 连接 (仅用于接收) =================
   Future<void> connect({
     required int topSid,
     required int subSid,
@@ -116,10 +115,10 @@ class HuyaDanmakuClient {
       return;
     }
     _ws = ws;
-    onStatus?.call('弹幕已连接，握手中…');
+    onStatus?.call('弹幕已连接，认证中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // 网页顺序：先 wsLaunch，再 Verify + Register
+    // 网页端顺序：先 wsLaunch，再 Verify + Register
     _send(_wrapWsCmd(
         _buildWupEnvelope('launch', 'wsLaunch', {'tReq': _buildLaunchReq()}), 3));
     Timer(const Duration(milliseconds: 600), () {
@@ -193,9 +192,9 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕 =================
+  // ================= 发送弹幕 (纯 HTTP WUP) =================
   Future<bool> sendDanmaku(String text) async {
-    if (_loginUid <= 0 || _ws == null) return false;
+    if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
       _dbgPush('未认证/未注册');
       return false;
@@ -203,14 +202,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
-      _send(_wrapWsCmd(_buildWupEnvelope('liveui', 'sendMessage', {'tReq': req}), 3));
-      _dbgPush('WS liveui 已发');
-      Timer(const Duration(milliseconds: 1200), () {
-        if (!_closed && _pendingDanmaku == text) {
-          _send(_wrapWsCmd(_buildWupEnvelope('GameLive', 'sendMessage', {'tReq': req}), 3));
-          _dbgPush('WS GameLive 补发');
-        }
-      });
+      // 网页端发弹幕走 HTTP WUP (sendWupHttp)
       _tryHttpSend(req);
       return true;
     } catch (e) {
@@ -219,36 +211,22 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// SendMessageReq（APK 确认字段顺序，lPid 必需）
+  /// SendMessageReq (网页端字段顺序)
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
     user.writeString(1, _guid);
     user.writeString(2, _token);
-    user.writeString(3, 'webh5&1.0.0&websocket');
+    user.writeString(3, _cookieVal('huya_ua').isEmpty ? 'webh5&1.0.0&websocket' : _cookieVal('huya_ua'));
     user.writeString(4, _cookie);
     user.writeInt(5, 0);
     user.writeString(6, '');
-    user.writeString(7, '');
 
     final cf = _TarsWriter();
     cf.writeInt(0, -1);
     cf.writeInt(1, 4);
     cf.writeInt(2, 0);
     cf.writeInt(3, -1);
-    cf.writeInt(4, -1);
-    cf.writeInt(5, -1);
-
-    final border = _TarsWriter();
-    border.writeInt(0, 0);
-    border.writeInt(1, 0);
-    border.writeInt(2, -1);
-    border.writeInt(3, 100);
-    border.writeInt(4, -1);
-    border.writeInt(5, 100);
-    border.writeString(6, '');
-    border.writeInt(7, -1);
-    border.writeInt(8, -1);
 
     final bf = _TarsWriter();
     bf.writeInt(0, -1);
@@ -256,56 +234,35 @@ class HuyaDanmakuClient {
     bf.writeInt(2, 0);
     bf.writeInt(3, 1);
     bf.writeInt(4, 0);
-    bf.writeStruct(5, border);
-    bf.writeInt(7, 0);
-    bf.writeInt(8, -1);
-
-    final sence = _TarsWriter();
-    sence.writeInt(0, 0);
-    sence.writeInt(1, 0);
-    sence.writeInt(2, 0);
 
     final req = _TarsWriter();
     req.writeStruct(0, user);
-    req.writeInt(1, 0); // lTid
-    req.writeInt(2, 0); // lSid
+    req.writeInt(1, _topSid); // lTid
+    req.writeInt(2, _subSid); // lSid
     req.writeString(3, text.replaceAll('\n', ' '));
-    req.writeInt(4, 0); // iShowMode
+    req.writeInt(4, 0);
     req.writeStruct(5, cf);
     req.writeStruct(6, bf);
     req.writeInt(8, _ayyuid); // lPid 主播UID
-    req.writeStruct(10, sence);
-    req.writeInt(11, 0); // iMessageMode
     return req.toBytes();
   }
 
-  /// WUP 信封 —— 4 字节大端长度前缀 + tag7=内层map字节流
+  /// WUP 信封 (HTTP 请求不需要 4 字节长度前缀！)
   Uint8List _buildWupEnvelope(
       String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
-    inner.writeBytesMap(0, buffers);
+    inner.writeBytesMap(0, buffers); // tag 0: map<string, bytes>
 
     final wup = _TarsWriter();
-    wup.writeInt(1, 3);
-    wup.writeInt(2, 0);
-    wup.writeInt(3, 0);
-    wup.writeInt(4, ++_reqId);
-    wup.writeString(5, servant);
-    wup.writeString(6, func);
-    wup.writeBytes(7, inner.toBytes());
-    wup.writeInt(8, 0);
-    wup.writeBytesMap(9, const {});
-    wup.writeBytesMap(10, const {});
-
-    final body = wup.toBytes();
-    final total = body.length + 4;
-    final out = BytesBuilder();
-    out.addByte((total >> 24) & 0xFF);
-    out.addByte((total >> 16) & 0xFF);
-    out.addByte((total >> 8) & 0xFF);
-    out.addByte(total & 0xFF);
-    out.add(body);
-    return out.toBytes();
+    wup.writeInt(1, 3); // iVersion = 3
+    wup.writeInt(2, 0); // cPacketType
+    wup.writeInt(3, 0); // iMessageType
+    wup.writeInt(4, ++_reqId); // iRequestId
+    wup.writeString(5, servant); // sServantName
+    wup.writeString(6, func); // sFuncName
+    wup.writeBytes(7, inner.toBytes()); // sBuffer
+    wup.writeInt(8, 0); // iTimeout
+    return wup.toBytes();
   }
 
   Uint8List _wrapWsCmd(Uint8List vData, int cmdType) {
@@ -316,47 +273,44 @@ class HuyaDanmakuClient {
     return cmd.toBytes();
   }
 
+  /// 网页端 sendWupHttp 复刻
   Future<void> _tryHttpSend(Uint8List req) async {
     final wup = _buildWupEnvelope('liveui', 'sendMessage', {'tReq': req});
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    
+    // 网页端 URL 带 timestamp 参数
     final targets = [
-      'https://wup.huya.com/',
-      'http://wup.huya.com:80/',
+      'https://wup.huya.com/?timestamp=$ts',
+      'https://cdn.wup.huya.com/?timestamp=$ts',
     ];
+
     for (final url in targets) {
       final host = Uri.parse(url).host;
       try {
         final res = await http
             .post(Uri.parse(url), headers: {
               'Content-Type': 'application/octet-stream',
-              'User-Agent': _appUa,
-              'Host': host,
+              'User-Agent': _ua,
+              'Origin': 'https://www.huya.com',
+              'Referer': 'https://www.huya.com/',
               if (_cookie.isNotEmpty) 'Cookie': _cookie,
             }, body: wup)
-            .timeout(const Duration(seconds: 5));
+            .timeout(const Duration(seconds: 6));
+            
         if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-          _dbgPush('HTTP $host → ${_describeWupRsp(res.bodyBytes)}');
+          _dbgPush('✔ $host → ${_describeWupRsp(res.bodyBytes)}');
         } else {
-          _dbgPush('HTTP $host:${res.statusCode}');
+          _dbgPush('$host:${res.statusCode}');
         }
       } catch (_) {
-        _dbgPush('HTTP $host:ERR');
+        _dbgPush('$host:ERR');
       }
     }
   }
 
-  Map<int, Object?> _readWupFields(List<int> bytes) {
-    var start = 0;
-    if (bytes.length > 4) {
-      final prefix =
-          (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
-      if (prefix == bytes.length) start = 4;
-    }
-    return _TarsReader(Uint8List.fromList(bytes.sublist(start))).readFields();
-  }
-
   String _describeWupRsp(List<int> bytes) {
     try {
-      final f = _readWupFields(bytes);
+      final f = _TarsReader(Uint8List.fromList(bytes)).readFields();
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
       int ret = -99;
@@ -416,7 +370,7 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  // ================= 收包 =================
+  // ================= WS 收包 (仅处理推送) =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
@@ -449,9 +403,6 @@ class HuyaDanmakuClient {
             _registered = true;
             _dbgPush('就绪，可发弹幕 ✔');
           }
-          break;
-        case 4:
-          _dbgPush('WupRsp ${_describeWupRsp(payload)}');
           break;
         case 21:
           break;
@@ -647,18 +598,12 @@ class _TarsReader {
   int _readValueInt() {
     final t = _byte();
     switch (t) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
-      default:
-        throw FormatException('tars: not an int, type=$t');
+      case 0: return _readIntN(1);
+      case 1: return _readIntN(2);
+      case 2: return _readIntN(4);
+      case 3: return _readIntN(8);
+      case 12: return 0;
+      default: throw FormatException('tars: not an int, type=$t');
     }
   }
 
@@ -677,16 +622,11 @@ class _TarsReader {
 
   Object? _readValue(int type) {
     switch (type) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
+      case 0: return _readIntN(1);
+      case 1: return _readIntN(2);
+      case 2: return _readIntN(4);
+      case 3: return _readIntN(8);
+      case 12: return 0;
       case 4:
         final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
         _pos += 4;
