@@ -24,6 +24,7 @@ class HuyaDanmakuClient {
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
   static const _endpoints = [
+    'wss://ded35397-ws.va.huya.com', // 2026-08-22 最新抓包节点
     'wss://65cecb22-ws.va.huya.com',
     'wss://ws.va.huya.com',
     'wss://wsapi.huya.com',
