@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'huya_login.dart';
 
 class DanmakuMessage {
@@ -302,7 +303,11 @@ Future<bool> sendDanmaku(String text) async {
 
       final framed = _withPrefix(wup.toBytes());
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-      _dbgPush('HD ${_hexHead(framed, 72)}');
+      // ★ 完整 hex 自动进剪贴板，长按粘贴即可
+      final fullHex =
+          framed.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      Clipboard.setData(ClipboardData(text: fullHex));
+      _dbgPush('HD 已复制 ${framed.length}B');
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
