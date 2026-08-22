@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/services.dart';
 import 'huya_login.dart';
 
 class DanmakuMessage {
@@ -18,7 +17,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-22 定稿：修复 _intValue 零值编码 = 单字节 0x0C）
+/// 虎牙弹幕客户端（最终版：接收 cmd16/22 + 发送 cmd33 授权 + cmd3 WUP）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -32,9 +31,11 @@ class HuyaDanmakuClient {
     'wss://cdnws.api.huya.com',
   ];
 
+  /// 房间 660118 的 cmd33 发送授权帧（topSid=1541541294）
   static const _frameRegister660118 =
       '00211d000100bf060c48555941265a482632303532162030613839333136653766303638393661336630316438363464393634636361352c3c6a080003060f6c6976653a31353431353431323934180005010c1e1002010c2010020117df101a011aec1007011f4610010612726576656e75653a3135343135343132393418000201057810010119661001060018000201184b1001011aeb1001180001060f636861743a31353431353431323934180003010578100d0118431005011845100430010b780c8c2c36004c5c6600';
 
+  /// 房间 691346 的 cmd33 发送授权帧（topSid=1259530742288）
   static const _frameRegister691346 =
       '00211d00010103060c48555941265a482632303532162030613839333136653766303638393661336630316438363464393634636361352c3c6a08000306126c6976653a3132353935333037343232383818000a010c1e1001010c2010010117df101601186310050118931001011a2c1001011a2e1001011aec1006011f46100102016fc7f510030615726576656e75653a313235393533303734323238381800010103e910010617636f6d6d3a313235393533303734323238382d6d7574651800020200124f8010020200124f8210021800010612636861743a3132353935333037343232383818000501057810080117de100101184210010118431005011845100530010b780c8c2c36004c5c6600';
 
@@ -87,14 +88,6 @@ class HuyaDanmakuClient {
       out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
     }
     return out;
-  }
-
-  static String _hexOf(List<int> b) {
-    final sb = StringBuffer();
-    for (final x in b) {
-      sb.write(x.toRadixString(16).padLeft(2, '0'));
-    }
-    return sb.toString();
   }
 
   // ================= 连接 =================
@@ -268,6 +261,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
 
+      // 发送前补发 cmd33 授权帧（按房间）
       if (_roomIdStr == '660118') {
         _send(_hexToBytes(_frameRegister660118));
       } else if (_roomIdStr == '691346') {
@@ -279,10 +273,7 @@ class HuyaDanmakuClient {
       final framed = _withPrefix(body);
 
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-
-      // ★ 完整 hex 进剪贴板，长按粘贴对拍
-      Clipboard.setData(ClipboardData(text: _hexOf(framed)));
-      _dbgPush('HD 已复制 ${framed.length}B');
+      _dbgPush('WS 已发');
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
@@ -612,7 +603,7 @@ class _TarsWriter {
     }
   }
 
-  /// ★ 无 tag 整数（list/map size）：0 必须写单字节 0x0C，否则后续字段错位
+  /// ★ 无 tag 整数（list/map size）：0 必须写单字节 0x0C
   void _intValue(int v) {
     final t = _intType(v);
     if (t == 12) {
