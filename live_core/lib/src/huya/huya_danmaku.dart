@@ -279,8 +279,8 @@ class HuyaDanmakuClient {
 
       // ★ JS 源码定稿：sMD5 = MD5(vData 整体，含4字节前缀)
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-      // ★ 对拍用：打印构造帧头部 hex
-      _dbgPush('HD $_hexHead(framed, 48)');
+      _dbgPush('HD ${_hexHead(framed, 64)}');   // ★ 必须用 ${} 包裹
+    
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
