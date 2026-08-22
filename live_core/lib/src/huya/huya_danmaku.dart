@@ -17,7 +17,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-22 抓包最终对齐版 · 无 WebView）
+/// 虎牙弹幕客户端（2026-08-22 最终版：cmd16 接收 + cmd33 按需发送）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -31,7 +31,7 @@ class HuyaDanmakuClient {
     'wss://cdnws.api.huya.com',
   ];
 
-  /// 房间660118 cmd=33 注册原帧 (topSid=1541541294)
+  /// 房间660118 cmd=33 注册原帧 (topSid=1541541294) —— 发送前按需补发
   static const _frameRegister660118 =
       '00211d000100bf060c48555941265a482632303532162030613839333136653766303638393661336630316438363464393634636361352c3c6a080003060f6c6976653a31353431353431323934180005010c1e1002010c2010020117df101a011aec1007011f4610010612726576656e75653a3135343135343132393418000201057810010119661001060018000201184b1001011aeb1001180001060f636861743a31353431353431323934180003010578100d0118431005011845100430010b780c8c2c36004c5c6600';
 
@@ -153,7 +153,7 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // ★ 顺序：VerifyCookie(10) → wsTimeSync(3) → RegisterGroup(cmd33原帧/兜底cmd16)
+    // ★ 顺序：VerifyCookie(10) → wsTimeSync(3) → RegisterGroup(cmd16 保证接收)
     _send(_buildVerifyCookie());
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
@@ -172,21 +172,11 @@ class HuyaDanmakuClient {
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
   }
 
+  /// 连接时只发 cmd16（基础订阅，保证能接收弹幕推送）
   void _sendRegister() {
-    String? frame;
-    if (_roomIdStr == '660118') {
-      frame = _frameRegister660118;
-    } else if (_roomIdStr == '691346') {
-      frame = _frameRegister691346;
-    }
-    if (frame != null) {
-      _send(_hexToBytes(frame));
-      _registered = true;
-      _dbgPush('Register(33) 已发');
-    } else {
-      _send(_buildRegisterGroup());
-      _dbgPush('Register(16) 已发');
-    }
+    _send(_buildRegisterGroup());
+    _registered = true;
+    _dbgPush('Register(16) 已发');
   }
 
   String _buildBaseinfo() {
@@ -264,7 +254,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕（三变体 sMd5 测试） =================
+  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -274,6 +264,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
 
+      // ★ 发送前临时补发 cmd33（按需获取发送权限，不干扰 cmd16 接收）
       if (_roomIdStr == '660118') {
         _send(_hexToBytes(_frameRegister660118));
       } else if (_roomIdStr == '691346') {
@@ -478,7 +469,6 @@ class HuyaDanmakuClient {
           final f = _TarsReader(payload).readFields();
           final v = f[0] is int ? f[0] as int : -1;
           _dbgPush('Register34 iResCode=$v');
-          if (v == 0) _registered = true;
           break;
         case 4:
           _dbgPush('WupRsp ${_describeWupRsp(payload)}');
