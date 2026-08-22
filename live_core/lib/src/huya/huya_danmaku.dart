@@ -31,11 +31,11 @@ class HuyaDanmakuClient {
     'wss://cdnws.api.huya.com',
   ];
 
-  /// 房间660118 最新 cmd=33 注册帧（发送前补发，授予发送权限）
+  /// 房间660118 cmd=33 注册原帧 (topSid=1541541294)
   static const _frameRegister660118 =
       '00211d000100bf060c48555941265a482632303532162030613839333136653766303638393661336630316438363464393634636361352c3c6a080003060f6c6976653a31353431353431323934180005010c1e1002010c2010020117df101a011aec1007011f4610010612726576656e75653a3135343135343132393418000201057810010119661001060018000201184b1001011aeb1001180001060f636861743a31353431353431323934180003010578100d0118431005011845100430010b780c8c2c36004c5c6600';
 
-  /// 房间691346 cmd=33 注册帧
+  /// 房间691346 cmd=33 注册原帧 (topSid=1259530742288)
   static const _frameRegister691346 =
       '00211d00010103060c48555941265a482632303532162030613839333136653766303638393661336630316438363464393634636361352c3c6a08000306126c6976653a3132353935333037343232383818000a010c1e1001010c2010010117df101601186310050118931001011a2c1001011a2e1001011aec1006011f46100102016fc7f510030615726576656e75653a313235393533303734323238381800010103e910010617636f6d6d3a313235393533303734323238382d6d7574651800020200124f8010020200124f8210021800010612636861743a3132353935333037343232383818000501057810080117de100101184210010118431005011845100530010b780c8c2c36004c5c6600';
 
@@ -172,7 +172,6 @@ class HuyaDanmakuClient {
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
   }
 
-  /// 按房间选 cmd33 原帧注册（授予发送权限），无匹配时兜底 cmd16
   void _sendRegister() {
     String? frame;
     if (_roomIdStr == '660118') {
@@ -265,7 +264,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕 =================
+  // ================= 发送弹幕（三变体 sMd5 测试） =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -275,7 +274,6 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
 
-      // ★ 模拟浏览器：发送前先补发 cmd=33 注册帧（授予发送权限）
       if (_roomIdStr == '660118') {
         _send(_hexToBytes(_frameRegister660118));
       } else if (_roomIdStr == '691346') {
@@ -286,8 +284,21 @@ class HuyaDanmakuClient {
       final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
 
-      _send(_wrapWsCmd(framed, 3));
-      _dbgPush('WS 已发');
+      // V1: md5(带前缀vData)
+      _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
+      _dbgPush('V1 已发');
+      // V2: md5(不带前缀WUP体)
+      Timer(const Duration(milliseconds: 1200), () {
+        if (_closed || _pendingDanmaku == null) return;
+        _send(_wrapWsCmd(framed, 3, md5.convert(body).toString()));
+        _dbgPush('V2 补发');
+      });
+      // V3: 空串
+      Timer(const Duration(milliseconds: 2400), () {
+        if (_closed || _pendingDanmaku == null) return;
+        _send(_wrapWsCmd(framed, 3, ''));
+        _dbgPush('V3 补发');
+      });
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
@@ -386,7 +397,7 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
-  /// WebSocketCommand（补上 tag2 lRequestId=0；sMd5 不校验，填 md5(vData) 占位）
+  /// WebSocketCommand（补上 tag2 lRequestId=0；sMd5 参数化）
   Uint8List _wrapWsCmd(Uint8List vData, int cmdType, [String? sMd5]) {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
