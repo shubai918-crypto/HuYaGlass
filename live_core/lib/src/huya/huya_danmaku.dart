@@ -17,7 +17,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-22 定稿：sBuffer=map{"tReq":bytes} 修复 + sMD5=md5(vData)）
+/// 虎牙弹幕客户端（sBuffer 用字节硬构造 map{"tReq":bytes}，确保 08 00 01 06 04 74526571 1d 在位）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -96,7 +96,6 @@ class HuyaDanmakuClient {
     return sb.toString();
   }
 
-  // ================= 连接 =================
   Future<void> connect({
     required int topSid,
     required int subSid,
@@ -257,7 +256,6 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -348,10 +346,41 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
-  /// ★ 关键：sBuffer 必须是 map{"tReq": bytes}，产出 08 00 01 06 04 "tReq" 1d …
-  Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
-    final inner = _TarsWriter();
-    inner.writeBytesMap(0, buffers);
+  // ===== Tars 整数字段（带类型头） =====
+  void _addInt(BytesBuilder b, int v) {
+    if (v == 0) {
+      b.addByte(0x00);
+    } else if (v >= -128 && v <= 127) {
+      b.addByte(0x00);
+      b.addByte(v & 0xFF);
+    } else if (v >= -32768 && v <= 32767) {
+      b.addByte(0x01);
+      b.addByte((v >> 8) & 0xFF);
+      b.addByte(v & 0xFF);
+    } else {
+      b.addByte(0x02);
+      b.addByte((v >> 24) & 0xFF);
+      b.addByte((v >> 16) & 0xFF);
+      b.addByte((v >> 8) & 0xFF);
+      b.addByte(v & 0xFF);
+    }
+  }
+
+  /// ★ sBuffer = map{"tReq": simplelist(treq)}，字节硬构造，保证 08 00 01 06 04 74526571 1d 在位
+  Uint8List _wupBody(String servant, String func, Map<String, Uint8List> buffers) {
+    final inner = BytesBuilder();
+    inner.addByte(0x08); // map head
+    _addInt(inner, buffers.length); // size
+    buffers.forEach((k, v) {
+      final kb = utf8.encode(k);
+      inner.addByte(0x06); // key string1
+      inner.addByte(kb.length);
+      inner.add(kb);
+      inner.addByte(0x1D); // value simplelist
+      inner.addByte(0x00);
+      _addInt(inner, v.length);
+      inner.add(v);
+    });
 
     final wup = _TarsWriter();
     wup.writeInt(1, 3);
@@ -362,8 +391,8 @@ class HuyaDanmakuClient {
     wup.writeString(6, func);
     wup.writeBytes(7, inner.toBytes());
     wup.writeInt(8, 0);
-    wup.writeBytesMap(9, const {});
-    wup.writeBytesMap(10, const {});
+    wup.writeInt(9, 0);
+    wup.writeInt(10, 0);
     return wup.toBytes();
   }
 
@@ -423,7 +452,6 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  // ================= 收包 =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
@@ -609,13 +637,6 @@ class _TarsWriter {
     }
   }
 
-  void _intValue(int v) {
-    final t = _intType(v);
-    if (t == 12) return;
-    _b.addByte(t);
-    _add(v, [1, 2, 4, 8][t]);
-  }
-
   void writeInt(int tag, int v) {
     final t = _intType(v);
     _head(tag, t);
@@ -637,15 +658,22 @@ class _TarsWriter {
 
   void writeStringList(int tag, List<String> items) {
     _head(tag, 9);
-    _intValue(items.length);
+    writeIntValue(items.length);
     for (final s in items) {
       writeString(0, s);
     }
   }
 
+  void writeIntValue(int v) {
+    final t = _intType(v);
+    if (t == 12) return;
+    _b.addByte(t);
+    _add(v, [1, 2, 4, 8][t]);
+  }
+
   void writeListInt(int tag, List<int> items) {
     _head(tag, 9);
-    _intValue(items.length);
+    writeIntValue(items.length);
     for (final v in items) {
       writeInt(0, v);
     }
@@ -654,26 +682,16 @@ class _TarsWriter {
   void writeBytes(int tag, List<int> bytes) {
     _head(tag, 13);
     _head(0, 0);
-    _intValue(bytes.length);
+    writeIntValue(bytes.length);
     _b.add(bytes);
   }
 
   void writeMap(int tag, Map<String, String> entries) {
     _head(tag, 8);
-    _intValue(entries.length);
+    writeIntValue(entries.length);
     entries.forEach((k, v) {
       writeString(0, k);
       writeString(1, v);
-    });
-  }
-
-  /// ★ map<string,bytes>：08 + size + (06 key)(1d value)
-  void writeBytesMap(int tag, Map<String, List<int>> entries) {
-    _head(tag, 8);
-    _intValue(entries.length);
-    entries.forEach((k, v) {
-      writeString(0, k);
-      writeBytes(1, v);
     });
   }
 
@@ -702,24 +720,6 @@ class _TarsReader {
     }
     final shift = 64 - 8 * n;
     return (v << shift) >> shift;
-  }
-
-  int _readValueInt() {
-    final t = _byte();
-    switch (t) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
-      default:
-        throw FormatException('tars: not an int, type=$t');
-    }
   }
 
   Map<int, Object?> readFields() {
@@ -795,6 +795,24 @@ class _TarsReader {
         return readFields();
       default:
         throw FormatException('tars: unknown type $type');
+    }
+  }
+
+  int _readValueInt() {
+    final t = _byte();
+    switch (t) {
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
+      default:
+        throw FormatException('tars: not an int, type=$t');
     }
   }
 }
