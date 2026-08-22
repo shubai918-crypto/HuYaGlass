@@ -126,7 +126,7 @@ class HuyaDanmakuClient {
             'User-Agent': _ua,
             'Cache-Control': 'no-cache',
           },
-          compression: CompressionOptions.compressionOn,
+          compression: CompressionOptions.compressionDefault,
         ).timeout(const Duration(seconds: 6));
         _endpointIndex = (_endpointIndex + i) % urls.length;
         connectedHost = Uri.parse(ep).host;
