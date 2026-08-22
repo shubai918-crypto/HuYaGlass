@@ -17,13 +17,14 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-21 抓包最终对齐版）
-/// 关键：连接后只发 VerifyCookie(10) + RegisterGroup(16)，绝不发 cmd3 launch！
+/// 虎牙弹幕客户端（2026-08-22 抓包最终对齐版）
+/// 会话顺序：launch.wsTimeSync → VerifyCookie(10) → RegisterGroup(16) → sendMessage(3)
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
+  /// 信令节点（抓包确认：只有 va 节点处理 WUP 发送）
   static const _endpoints = [
     'wss://65cecb22-ws.va.huya.com',
     'wss://ws.va.huya.com',
@@ -42,6 +43,7 @@ class HuyaDanmakuClient {
   int _subSid = 0;
   int _ayyuid = 0;
   int _reqId = 0;
+  int _cmdSeq = 0;
   String? _pendingDanmaku;
   bool _verified = false;
   bool _registered = false;
@@ -87,6 +89,7 @@ class HuyaDanmakuClient {
     _ayyuid = uid > 0 ? uid : topSid;
     _verified = false;
     _registered = false;
+    _cmdSeq = 0;
 
     _cookie = HuyaLoginManager().cookie;
     _loginUid = int.tryParse(_cookieVal('yyuid')) ??
@@ -130,8 +133,9 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // ★ 浏览器真实行为：连接后立即 VerifyCookie(10)，随后 RegisterGroup(16)
-    // ★ 绝不发送任何 cmd3 launch 帧（发了会毒化会话，导致后续 WUP 全被丢弃）
+    // ★ 浏览器真实顺序：launch.wsTimeSync → VerifyCookie(10) → RegisterGroup(16)
+    _send(_wrapWsCmd(
+        _withPrefix(_wupBody('launch', 'wsTimeSync', {'tReq': _buildLaunchReq()})), 3));
     _send(_buildVerifyCookie());
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
@@ -143,6 +147,7 @@ class HuyaDanmakuClient {
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
   }
 
+  /// baseinfo = WSConnectParaInfo（对齐抓包）
   String _buildBaseinfo() {
     final r = Random();
     final mid =
@@ -164,7 +169,15 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  /// VerifyCookieReq（逐字节对齐抓包首帧）
+  /// launch.wsTimeSync 的 tReq（逐字节对齐抓包）：struct{ tag0:"", tag1:668 }
+  Uint8List _buildLaunchReq() {
+    final req = _TarsWriter();
+    req.writeString(0, '');
+    req.writeInt(1, 668);
+    return req.toBytes();
+  }
+
+  /// VerifyCookieReq（对齐抓包首帧）
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
@@ -202,7 +215,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕 =================
+  // ================= 发送弹幕（sMD5 三变体） =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -215,16 +228,19 @@ class HuyaDanmakuClient {
       final body = _wupBody('liveui', 'sendMessage', {'tReq': req});
       final framed = _withPrefix(body);
 
-      _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
+      // V1：sMD5 = md5(vData 整体)（默认）
+      _send(_wrapWsCmd(framed, 3));
       _dbgPush('V1 md5(full) 已发');
 
       Timer(const Duration(milliseconds: 1500), () {
         if (_closed || _pendingDanmaku == null) return;
+        // V2：sMD5 = md5(去前缀WUP体)
         _send(_wrapWsCmd(framed, 3, md5.convert(body).toString()));
         _dbgPush('V2 md5(body) 补发');
       });
       Timer(const Duration(milliseconds: 3000), () {
         if (_closed || _pendingDanmaku == null) return;
+        // V3：sMD5 = 空串
         _send(_wrapWsCmd(framed, 3, ''));
         _dbgPush('V3 空md5 补发');
       });
@@ -235,6 +251,7 @@ class HuyaDanmakuClient {
     }
   }
 
+  /// SendMessageReq（逐字节对齐抓包）
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
@@ -297,6 +314,7 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
+  /// WUP 体（不含长度前缀）
   Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
@@ -315,6 +333,7 @@ class HuyaDanmakuClient {
     return wup.toBytes();
   }
 
+  /// 4 字节大端长度前缀
   Uint8List _withPrefix(Uint8List body) {
     final total = body.length + 4;
     final out = BytesBuilder();
@@ -326,14 +345,15 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
-  Uint8List _wrapWsCmd(Uint8List vData, int cmdType, String sMd5) {
+  /// WebSocketCommand（traceId 尾缀递增 :0:0 → :0:1；sMD5 默认 md5(vData)）
+  Uint8List _wrapWsCmd(Uint8List vData, int cmdType, [String? sMd5]) {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
     cmd.writeBytes(1, vData);
-    cmd.writeString(3, '$_traceId:$_traceId:0:1');
+    cmd.writeString(3, '$_traceId:$_traceId:0:${_cmdSeq++}');
     cmd.writeInt(4, 0);
     cmd.writeInt(5, 0);
-    cmd.writeString(6, sMd5);
+    cmd.writeString(6, sMd5 ?? md5.convert(vData).toString());
     return cmd.toBytes();
   }
 
