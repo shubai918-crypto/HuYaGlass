@@ -256,7 +256,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  Future<bool> sendDanmaku(String text) async {
+Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
       _dbgPush('未认证/未注册');
@@ -271,12 +271,38 @@ class HuyaDanmakuClient {
         _send(_hexToBytes(_frameRegister691346));
       }
 
-      final req = _buildSendReq(text);
-      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
-      final framed = _withPrefix(body);
+      final treq = _treq(_buildSendReq(text));
 
+      // ★ sBuffer = map{"tReq": simplelist(treq)}，逐字节硬写，杜绝任何 writer 差异
+      final sb = BytesBuilder();
+      sb.addByte(0x08); // map head
+      sb.addByte(0x00); // size type int8
+      sb.addByte(0x01); // size = 1
+      sb.addByte(0x06); // key string1
+      sb.addByte(0x04); // len 4
+      sb.add(utf8.encode('tReq'));
+      sb.addByte(0x1D); // value simplelist
+      sb.addByte(0x00); // inner head
+      sb.addByte(0x01); // len type int16
+      sb.addByte((treq.length >> 8) & 0xFF);
+      sb.addByte(treq.length & 0xFF);
+      sb.add(treq);
+
+      final wup = _TarsWriter();
+      wup.writeInt(1, 3);
+      wup.writeInt(2, 0);
+      wup.writeInt(3, 0);
+      wup.writeInt(4, ++_reqId);
+      wup.writeString(5, 'liveui');
+      wup.writeString(6, 'sendMessage');
+      wup.writeBytes(7, sb.toBytes());
+      wup.writeInt(8, 0);
+      wup.writeInt(9, 0);
+      wup.writeInt(10, 0);
+
+      final framed = _withPrefix(wup.toBytes());
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-      _dbgPush('HD ${_hexHead(framed, 64)}');
+      _dbgPush('HD ${_hexHead(framed, 72)}');
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
