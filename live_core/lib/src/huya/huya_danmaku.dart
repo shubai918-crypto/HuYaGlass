@@ -263,27 +263,28 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
 
+      // ★ 发送前补发 cmd33（授予发送权限）
       if (_roomIdStr == '660118') {
         _send(_hexToBytes(_frameRegister660118));
       } else if (_roomIdStr == '691346') {
         _send(_hexToBytes(_frameRegister691346));
       }
 
-      // V0: 重放浏览器抓包的完整 sendMessage 帧（含神秘 sMD5）
-      _send(_hexToBytes(_frameSendMessageReplay));
-      _dbgPush('V0 重放已发');
-
-      // V1: 我们自己构造的帧 (md5(vData))
+      // ★ 构造任意文本的 sendMessage 帧
       final req = _buildSendReq(text);
       final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
-      
+
+      // V1: sMd5 = md5(带前缀vData)
+      _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
+      _dbgPush('V1 任意文本已发');
+
+      // V2: 1.5s 无回显则补发空 sMd5 探针
       Timer(const Duration(milliseconds: 1500), () {
         if (_closed || _pendingDanmaku == null) return;
-        _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-        _dbgPush('V1 构造已发');
+        _send(_wrapWsCmd(framed, 3, ''));
+        _dbgPush('V2 空md5 补发');
       });
-      
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
