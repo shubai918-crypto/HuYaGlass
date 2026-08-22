@@ -17,7 +17,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-22 六帧抓包 + tReq 外层包装最终对齐版）
+/// 虎牙弹幕客户端（2026-08-22 最终对齐版：修复 tag2 缺失 + tReq 包装 + 首帧激活）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -99,6 +99,7 @@ class HuyaDanmakuClient {
 
     onStatus?.call('弹幕连接中…');
     final baseinfo = _buildBaseinfo();
+    // ★ baseinfo 必须 URL 编码
     final urls = [
       for (final ep in _endpoints)
         '$ep/?baseinfo=${Uri.encodeComponent(baseinfo)}'
@@ -134,7 +135,11 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // ★ 浏览器真实顺序：getLivingInfo(首帧) → VerifyCookie → wsTimeSync → RegisterGroup
+    // ★ 浏览器真实顺序：
+    // 1) huyaliveui.getLivingInfo（首帧 WUP，激活服务端 WUP 通道）
+    // 2) VerifyCookie(10)
+    // 3) launch.wsTimeSync
+    // 4) RegisterGroup(16)
     _send(_wrapWsCmd(
         _withPrefix(_wupBody('huyaliveui', 'getLivingInfo',
             {'tReq': _treq(_buildGetLivingInfoReq())})),
@@ -166,7 +171,8 @@ class HuyaDanmakuClient {
     info.writeString(1, _guid);
     info.writeString(2, _sendHuYaUA);
     info.writeString(3, 'HUYA&ZH&2052');
-    info.writeString(4, mid);
+    info.writeString(4, ''); // ★ tag4 必须是空串
+    info.writeString(5, mid); // ★ tag5 才是 mid
     info.writeInt(6, 0);
     info.writeString(7, '');
     info.writeString(8, '');
@@ -255,7 +261,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕（sMD5 三变体） =================
+  // ================= 发送弹幕（简化逻辑） =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -268,19 +274,9 @@ class HuyaDanmakuClient {
       final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
 
+      // 只发一次，MD5 填 vData 的 MD5
       _send(_wrapWsCmd(framed, 3));
-      _dbgPush('V1 md5(full) 已发');
-
-      Timer(const Duration(milliseconds: 1500), () {
-        if (_closed || _pendingDanmaku == null) return;
-        _send(_wrapWsCmd(framed, 3, md5.convert(body).toString()));
-        _dbgPush('V2 md5(body) 补发');
-      });
-      Timer(const Duration(milliseconds: 3000), () {
-        if (_closed || _pendingDanmaku == null) return;
-        _send(_wrapWsCmd(framed, 3, ''));
-        _dbgPush('V3 空md5 补发');
-      });
+      _dbgPush('WS 已发');
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
@@ -380,13 +376,15 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
+  /// WebSocketCommand（逐字节对齐抓包：补上 tag 2 lRequestId）
   Uint8List _wrapWsCmd(Uint8List vData, int cmdType, [String? sMd5]) {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
     cmd.writeBytes(1, vData);
+    cmd.writeInt(2, 0); // ★ 致命修复：补上 lRequestId = 0（抓包确认）
     cmd.writeString(3, '$_traceId:$_traceId:0:${_cmdSeq++}');
-    cmd.writeInt(4, 0);
-    cmd.writeInt(5, 0);
+    cmd.writeInt(4, 0); // iTimeout
+    cmd.writeInt(5, 0); // iReserved
     cmd.writeString(6, sMd5 ?? md5.convert(vData).toString());
     return cmd.toBytes();
   }
