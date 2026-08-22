@@ -17,7 +17,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-22：sMD5=md5(vData) 按 JS 源码定稿 + 构造帧 hex 对拍）
+/// 虎牙弹幕客户端（2026-08-22 定稿：sBuffer=map{"tReq":bytes} 修复 + sMD5=md5(vData)）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -277,10 +277,8 @@ class HuyaDanmakuClient {
       final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
 
-      // ★ JS 源码定稿：sMD5 = MD5(vData 整体，含4字节前缀)
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-      _dbgPush('HD ${_hexHead(framed, 64)}');   // ★ 必须用 ${} 包裹
-    
+      _dbgPush('HD ${_hexHead(framed, 64)}');
       return true;
     } catch (e) {
       _dbgPush('发送异常:$e');
@@ -350,6 +348,7 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
+  /// ★ 关键：sBuffer 必须是 map{"tReq": bytes}，产出 08 00 01 06 04 "tReq" 1d …
   Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
@@ -668,6 +667,7 @@ class _TarsWriter {
     });
   }
 
+  /// ★ map<string,bytes>：08 + size + (06 key)(1d value)
   void writeBytesMap(int tag, Map<String, List<int>> entries) {
     _head(tag, 8);
     _intValue(entries.length);
