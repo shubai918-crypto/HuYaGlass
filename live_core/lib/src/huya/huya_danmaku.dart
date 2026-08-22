@@ -17,23 +17,19 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（逐字节对齐 2026-08-21 真实抓包 + 压缩协商 + 差分诊断）
+/// 虎牙弹幕客户端（2026-08-21 抓包最终对齐版）
+/// 关键：连接后只发 VerifyCookie(10) + RegisterGroup(16)，绝不发 cmd3 launch！
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
-  /// 信令节点（抓包确认：只有 va 节点处理 WUP 发送）
   static const _endpoints = [
     'wss://65cecb22-ws.va.huya.com',
     'wss://ws.va.huya.com',
     'wss://wsapi.huya.com',
     'wss://cdnws.api.huya.com',
   ];
-
-  /// 浏览器抓包原始帧（差分测试：发送内容输入 replay 时原样重放）
-  static const _replayHex =
-      '00031d00010a2b00000a2b10032c3c404856066c6976657569660b73656e644d6573736167657d00010a020800010604745265711d000109f40a0a03000001174c374084162030613764666161323338353538323661326330316239383562613835363639632600361a7765626835263236303831393138303426776562736f636b6574470000093e76706c617965725f7362616e6e65725f313139393636353039303436305f313139393636353039303436303d313b205f5f79616d69645f7474313d302e3737323039393836313633323930383b205f5f79616d69645f6e65773d43424337354346413933383030303031333033333145413031323745314245423b207564625f67756964646174613d39613735393136666365303934376638616161316461643933303561666633313b207564625f61707069643d353030323b207564625f64657669636569643d775f313134313634393232373139323537383034393b20686469643d346461663233653365333564333034393932643236303061393932343161383731343037636662613b2067616d655f6469643d7732354b543459725643516a6d4b63674d653272574d725a5336365251355741736b373b20677569643d30613764666161323338353538323661326330316239383562613835363639633b205f71696d65695f7575696434323d31613831313038316132323130303438643865656363633166626463653830623238353034633338323b207564625f616e6f7569643d313437313231383037333333323b207564625f616e6f62697a746f6b656e3d4151424535796961754a62663576456450554950395539776f476b3467487751483866535f6e7239474e5758486d3464394d5a626231495143466b636d456746396c7a4c6b48325674524a6a536466485664514a4567485461423574485445755f4f4e62796d545574765a5743727651656946547379506146544257776a6c6c337065567138624a53534e5f4a754a704a66664d5554496b7a626e436450456a792d6350585842434c36445868722d6c496b663648357a6c4b5743526b506838566a76703831433233566a64523774445351764579456a343368436f434567595a6f6f4b494a33583550464f30334837554c6375423432526b574c7874374337396a33427079554a372d73437349747864724f505458355342746e4e306e7a2d65462d746a4a415153707532582d62635a545158656c70565268525051533462475974343755484f4a31484961506d513848336d6d54316f3b205f71696d65695f66696e6765727072696e743d36323833393839366233373235366335623663316662656130633838343161613b205f71696d65695f6833383d61666163623962396438656563636363316662646365383030323030303030353831613831313b20536f756e6456616c75653d302e35303b20616c70686156616c75653d302e38303b20677569643d30613764666161323338353538323661326330316239383562613835363639633b207564625f7569643d313139393537343536343939363b2079797569643d313139393537343536343939363b207564625f70617373706f72743d68795f3134313230303333323b20757365726e616d653d68795f3134313230303333323b207564625f76657273696f6e3d312e303b207564625f6f726967696e3d353b207564625f7374617475733d313b207564625f637265643d436d42534732423148643759686c386e7376366a48555732484b52364b51534e366d6f445763785a686470743578494567777050754c766a686672716768787372474245685f7a3167356b5f46454d596f64365739656e6c4a463855364376645a555571522d6551536551686b526e4b7150584953397975694f5f33795670624d4861485765486c494b305a38506764524761496a6464393b207564625f6f746865723d2537422532326c7425323225334125323231373836393236363734343838253232253243253232697352656d253232253341253232312532322537443b207564625f616363646174613d31353330343734353930393b207564625f62697a746f6b656e3d415143674a6872596d4e5571576f6b44423648464367317076785f4d39506c7a523474506a6d6c503738355956765969425a4c45766531317862656d4b6751724a4f74366a70346e394d62716b4b46363646616d51412d6e6749514e3235696d7674317871764478424233754d636336754a32614346385242583936626242714a634d574e714f485479686c2d5f794266595872344969466966536337647042375050696f636c317839753533686134425956744774747957655f7443317951576c357165313175496a455a5f345a76577869704b423166704a5f7544303458726a432d6f597232567a3436316649794e723851366a4c626457665a3050514b594e564d6d4870314664736e5356617143305f6977747046364f396c354c745a73577258645a3136644b4a3362797a69506f475935586c3566494959593735656b415647624376307038656756787869637a79686a4253303b20685f756e743d313738373331333130313b207564625f70617373646174613d333b20486d5f6c76745f35313730306236633732326635626234636633393930366135393665613431663d313738373233333033392c313738373237393335372c313738373239373432312c313738373331333130343b20484d4143434f554e543d303530324335433036444444354237453b205f5f7961736d69643d302e3737323039393836313633323930383b205f5f79616f6c6479797569643d313139393537343536343939363b205f7961736964733d5f5f726f6f7473696425334443424338434443383541373030303031413735423137343031423446314638443b205f7265705f636e743d323b20687579615f68645f7265705f636e743d353b20486d5f6c7076745f35313730306236633732326635626234636633393930366135393665613431663d313738373331333130373b20687579615f666c6173685f7265705f636e743d31363b206973496e4c697665526f6f6d3d3b20736469643d30556e48556776305f716d6644344b414b6c777a6871555a4c42524a496a536f544e4e694433345161465f49326c6c78546e51564a65555f646b7038436f4a654d766e4d63374b4d416c6c79342d317543797934503149706f6c64373538776a645235645f5658387076776e57566b6e394c7466464a775f516f346b674b72384f5a4844714e6e757767363132734779666c466e31646e4a507774505334386b4a6446314456586c696f4a4f7469744e4b57434d524d73796b4a717a596e6d59613b20687579615f7765625f7265705f636e743d3130363b20687579615f75613d776562683526302e312e3026776562736f636b65745c660365646776000b1300000117519c8f9c2300000117519c8f9c3606e6b58be8af954c5a00ff10042c30ff40ff50ff0b6a00ff10042c30014c5a0c1c20ff306440ff5064660070ff80ff0b690c7c80ff0b790c8300000117519c8f9c990caa0c1c2c0bbc0b8c980ca80c2c3625333232336361393833396133613437303a333232336361393833396133613437303a303a314c5c66206630303265396161653765333838393134313937623561653332653330316135';
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -76,14 +72,6 @@ class HuyaDanmakuClient {
     return m?.group(1)?.trim() ?? '';
   }
 
-  static Uint8List _hexToBytes(String hex) {
-    final out = Uint8List(hex.length ~/ 2);
-    for (var i = 0; i < out.length; i++) {
-      out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
-    }
-    return out;
-  }
-
   // ================= 连接 =================
   Future<void> connect({
     required int topSid,
@@ -118,7 +106,6 @@ class HuyaDanmakuClient {
       if (_closed) return;
       final ep = urls[(_endpointIndex + i) % urls.length];
       try {
-        // 关键：与浏览器一致协商 permessage-deflate，va 节点 WUP 通道按压缩会话处理
         ws = await WebSocket.connect(
           ep,
           headers: {
@@ -143,14 +130,11 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // 先 wsLaunch（tReq=WSConnectParaInfo），再 Verify + Register
-    _send(_wrapWsCmd(
-        _withPrefix(_wupBody('launch', 'wsLaunch', {'tReq': _buildLaunchReq()})),
-        3,
-        ''));
-    Timer(const Duration(milliseconds: 600), () {
+    // ★ 浏览器真实行为：连接后立即 VerifyCookie(10)，随后 RegisterGroup(16)
+    // ★ 绝不发送任何 cmd3 launch 帧（发了会毒化会话，导致后续 WUP 全被丢弃）
+    _send(_buildVerifyCookie());
+    Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
-      _send(_buildVerifyCookie());
       _send(_buildRegisterGroup());
     });
 
@@ -159,7 +143,6 @@ class HuyaDanmakuClient {
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
   }
 
-  /// baseinfo = WSConnectParaInfo（对齐抓包：sUA/sMid/HUYA_VSDKUA）
   String _buildBaseinfo() {
     final r = Random();
     final mid =
@@ -181,28 +164,7 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  /// wsLaunch 的 tReq = WSConnectParaInfo（token/cookie 留空，与抓包一致）
-  Uint8List _buildLaunchReq() {
-    final r = Random();
-    final mid =
-        '${(10000 + r.nextDouble() * 89999).toStringAsFixed(5)},${(10000 + r.nextDouble() * 89999).toStringAsFixed(6)}';
-    final req = _TarsWriter();
-    req.writeInt(0, _loginUid);
-    req.writeString(1, _guid);
-    req.writeString(2, _sendHuYaUA);
-    req.writeString(3, 'HUYA&ZH&2052');
-    req.writeString(4, mid);
-    req.writeInt(6, 0);
-    req.writeString(7, '');
-    req.writeString(8, '');
-    req.writeString(9, '');
-    req.writeMap(10, const {
-      'HUYA_NET': '0',
-      'HUYA_VSDKUA': _sendHuYaUA,
-    });
-    return req.toBytes();
-  }
-
+  /// VerifyCookieReq（逐字节对齐抓包首帧）
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
@@ -214,7 +176,11 @@ class HuyaDanmakuClient {
     final cmd = _TarsWriter();
     cmd.writeInt(0, 10);
     cmd.writeBytes(1, req.toBytes());
-    cmd.writeInt(2, ++_reqId);
+    cmd.writeInt(2, 0);
+    cmd.writeString(3, '');
+    cmd.writeInt(4, 0);
+    cmd.writeInt(5, 0);
+    cmd.writeString(6, '');
     return cmd.toBytes();
   }
 
@@ -236,7 +202,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕（replay 差分 + sMD5 三变体） =================
+  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -244,32 +210,21 @@ class HuyaDanmakuClient {
       return false;
     }
     try {
-      // 差分测试：输入 replay 时原样重放抓包帧
-      if (text == 'replay') {
-        _pendingDanmaku = '测试';
-        _send(_hexToBytes(_replayHex));
-        _dbgPush('REPLAY 原始帧已发');
-        return true;
-      }
-
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
       final body = _wupBody('liveui', 'sendMessage', {'tReq': req});
       final framed = _withPrefix(body);
 
-      // 变体1：sMD5 = md5(带前缀整体)
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
       _dbgPush('V1 md5(full) 已发');
 
       Timer(const Duration(milliseconds: 1500), () {
         if (_closed || _pendingDanmaku == null) return;
-        // 变体2：sMD5 = md5(去掉前缀的WUP体)
         _send(_wrapWsCmd(framed, 3, md5.convert(body).toString()));
         _dbgPush('V2 md5(body) 补发');
       });
       Timer(const Duration(milliseconds: 3000), () {
         if (_closed || _pendingDanmaku == null) return;
-        // 变体3：sMD5 = 空串
         _send(_wrapWsCmd(framed, 3, ''));
         _dbgPush('V3 空md5 补发');
       });
@@ -280,7 +235,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// SendMessageReq（逐字节对齐抓包）
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
@@ -343,7 +297,6 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
-  /// WUP 体（不含长度前缀）
   Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
@@ -362,7 +315,6 @@ class HuyaDanmakuClient {
     return wup.toBytes();
   }
 
-  /// 4 字节大端长度前缀
   Uint8List _withPrefix(Uint8List body) {
     final total = body.length + 4;
     final out = BytesBuilder();
@@ -374,7 +326,6 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
-  /// WebSocketCommand（对齐抓包：无 tag2，traceId 尾缀 :0:1，sMD5 参数化）
   Uint8List _wrapWsCmd(Uint8List vData, int cmdType, String sMd5) {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
@@ -465,7 +416,6 @@ class HuyaDanmakuClient {
           _handleMsgPushV1(payload);
           break;
         default:
-          // 未知命令全量打印：抓出服务器对 WUP 的真实回应
           _dbgPush('未知cmd=$cmdType len=${payload.length}');
           break;
       }
