@@ -17,14 +17,12 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（2026-08-22 六帧抓包最终对齐版）
-/// 会话顺序：getLivingInfo(首帧WUP) → VerifyCookie(10) → wsTimeSync → RegisterGroup(16) → sendMessage(3)
+/// 虎牙弹幕客户端（2026-08-22 六帧抓包 + tReq 外层包装最终对齐版）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
-  /// 信令节点（抓包确认：只有 va 节点处理 WUP 发送）
   static const _endpoints = [
     'wss://65cecb22-ws.va.huya.com',
     'wss://ws.va.huya.com',
@@ -101,7 +99,6 @@ class HuyaDanmakuClient {
 
     onStatus?.call('弹幕连接中…');
     final baseinfo = _buildBaseinfo();
-    // ★ baseinfo 必须 URL 编码，否则 +/= 被破坏，会话被标记为只读
     final urls = [
       for (final ep in _endpoints)
         '$ep/?baseinfo=${Uri.encodeComponent(baseinfo)}'
@@ -137,20 +134,18 @@ class HuyaDanmakuClient {
     onStatus?.call('弹幕已连接，握手中…');
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
-    // ★ 浏览器真实顺序：
-    // 1) huyaliveui.getLivingInfo（首帧 WUP，激活服务端 WUP 通道）
-    // 2) VerifyCookie(10)
-    // 3) launch.wsTimeSync
-    // 4) RegisterGroup(16)
+    // ★ 浏览器真实顺序：getLivingInfo(首帧) → VerifyCookie → wsTimeSync → RegisterGroup
     _send(_wrapWsCmd(
-        _withPrefix(
-            _wupBody('huyaliveui', 'getLivingInfo', {'tReq': _buildGetLivingInfoReq()})),
+        _withPrefix(_wupBody('huyaliveui', 'getLivingInfo',
+            {'tReq': _treq(_buildGetLivingInfoReq())})),
         3));
     _send(_buildVerifyCookie());
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
       _send(_wrapWsCmd(
-          _withPrefix(_wupBody('launch', 'wsTimeSync', {'tReq': _buildLaunchReq()})), 3));
+          _withPrefix(
+              _wupBody('launch', 'wsTimeSync', {'tReq': _treq(_buildLaunchReq())})),
+          3));
     });
     Timer(const Duration(milliseconds: 600), () {
       if (_closed) return;
@@ -162,7 +157,6 @@ class HuyaDanmakuClient {
         Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
   }
 
-  /// baseinfo = WSConnectParaInfo（对齐抓包）
   String _buildBaseinfo() {
     final r = Random();
     final mid =
@@ -184,7 +178,16 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  /// 首帧 WUP：huyaliveui.getLivingInfo（逐字节对齐抓包第 1 帧）
+  /// ★ tReq 值 = 外层 struct 包装（0x0A + 字段流 + 0x0B），逐字节对齐抓包
+  Uint8List _treq(Uint8List structFields) {
+    final out = BytesBuilder();
+    out.addByte(0x0A);
+    out.add(structFields);
+    out.addByte(0x0B);
+    return out.toBytes();
+  }
+
+  /// 首帧 WUP：huyaliveui.getLivingInfo 的 tReq 字段流
   Uint8List _buildGetLivingInfoReq() {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
@@ -197,17 +200,17 @@ class HuyaDanmakuClient {
     user.writeString(7, '');
     final req = _TarsWriter();
     req.writeStruct(0, user);
-    req.writeInt(1, 0); // tag1 zero
-    req.writeInt(3, _topSid); // tag3 int64 = 房间 topSid
-    req.writeString(4, ''); // tag4 房间路径串（空串容忍）
+    req.writeInt(1, 0);
+    req.writeInt(3, _topSid);
+    req.writeString(4, '');
     req.writeString(5, '');
     req.writeInt(6, 0);
     req.writeInt(7, 0);
-    req.writeInt(8, 1); // tag8 int8 = 1
+    req.writeInt(8, 1);
     return req.toBytes();
   }
 
-  /// launch.wsTimeSync 的 tReq（对齐抓包第 3/6 帧）：struct{ tag0:"", tag1:668 }
+  /// launch.wsTimeSync 的 tReq 字段流：struct{ tag0:"", tag1:668 }
   Uint8List _buildLaunchReq() {
     final req = _TarsWriter();
     req.writeString(0, '');
@@ -215,7 +218,6 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
-  /// VerifyCookieReq（对齐抓包第 2 帧）
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
@@ -263,22 +265,19 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
-      final body = _wupBody('liveui', 'sendMessage', {'tReq': req});
+      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
 
-      // V1：sMD5 = md5(vData 整体)
       _send(_wrapWsCmd(framed, 3));
       _dbgPush('V1 md5(full) 已发');
 
       Timer(const Duration(milliseconds: 1500), () {
         if (_closed || _pendingDanmaku == null) return;
-        // V2：sMD5 = md5(去前缀WUP体)
         _send(_wrapWsCmd(framed, 3, md5.convert(body).toString()));
         _dbgPush('V2 md5(body) 补发');
       });
       Timer(const Duration(milliseconds: 3000), () {
         if (_closed || _pendingDanmaku == null) return;
-        // V3：sMD5 = 空串
         _send(_wrapWsCmd(framed, 3, ''));
         _dbgPush('V3 空md5 补发');
       });
@@ -289,7 +288,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// SendMessageReq（逐字节对齐抓包）
+  /// SendMessageReq 字段流（逐字节对齐抓包）
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
@@ -352,7 +351,6 @@ class HuyaDanmakuClient {
     return req.toBytes();
   }
 
-  /// WUP 体（不含长度前缀）
   Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
@@ -371,7 +369,6 @@ class HuyaDanmakuClient {
     return wup.toBytes();
   }
 
-  /// 4 字节大端长度前缀
   Uint8List _withPrefix(Uint8List body) {
     final total = body.length + 4;
     final out = BytesBuilder();
@@ -383,7 +380,6 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
-  /// WebSocketCommand（traceId 尾缀递增 :0:0→:0:1；sMD5 默认 md5(vData)）
   Uint8List _wrapWsCmd(Uint8List vData, int cmdType, [String? sMd5]) {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
