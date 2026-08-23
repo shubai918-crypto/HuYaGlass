@@ -39,7 +39,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
   bool _loading = true;
   String _status = '';
 
-  // ★ 只用 video_player
   VideoPlayerController? _controller;
 
   final HuyaDanmakuClient _danmaku = HuyaDanmakuClient();
@@ -102,7 +101,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
     setState(() => _followed = !_followed);
   }
 
-  // ================= 解析房间 + 流 =================
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -175,7 +173,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
     return '${line.hlsUrl}/$_streamName.${line.suffix}?ratio=$ratio$anti';
   }
 
-  // ★ video_player 播放（HLS）
   Future<void> _play() async {
     final url = _buildUrl();
     if (url.isEmpty) return;
@@ -208,7 +205,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ★ 后台播放守卫：开关关时退后台自动暂停
+    // ★ 后台播放守卫
     return BackgroundPlayGuard(
       onPause: () => _controller?.pause(),
       child: Scaffold(
@@ -307,7 +304,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
                 ),
               ),
             ),
-          // 右侧控制列（含后台播放开关）
           Positioned(
             right: 8,
             top: 8,
@@ -367,7 +363,8 @@ class _LivePlayPageState extends State<LivePlayPage> {
                           ),
                           TextSpan(
                             text: m.content,
-                            style: const TextStyle(color: Colors.white87),
+                            // ★ 修复 white87 报错
+                            style: TextStyle(color: Colors.white.withOpacity(0.87)),
                           ),
                         ]),
                       ),
