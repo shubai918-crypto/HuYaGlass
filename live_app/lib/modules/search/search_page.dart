@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:live_core/src/huya/huya_search.dart'; // ★ 补充 import
+import 'package:live_core/src/huya/huya_search.dart';
+
 import 'search_controller.dart';
 
+/// 搜索页（dtv 风格：封面+角标 / 标题+副标题 / 心形收藏）
 class SearchPage extends StatefulWidget {
+  /// 点击结果卡片进房
   final void Function(String roomId, String nickname, String avatarUrl)
       onOpenRoom;
-  final Future<void> Function(String roomId, bool follow)? onToggleFollow;
+
+  /// 收藏 / 取消收藏（心形按钮）
+  final Future<void> Function(
+      String roomId, bool follow, String nickname, String avatarUrl)? onToggleFollow;
+
+  /// 查询是否已收藏
   final Future<bool> Function(String roomId)? isFollowed;
 
   const SearchPage({
@@ -20,7 +28,7 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
-  final HuyaSearchController _ctrl = HuyaSearchController(); // ★ 改名
+  final HuyaSearchController _ctrl = HuyaSearchController();
   final TextEditingController _text = TextEditingController();
   final FocusNode _focus = FocusNode();
 
@@ -62,6 +70,7 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  // ================= 顶部搜索栏 =================
   Widget _buildBar() {
     return Container(
       height: 52,
@@ -99,6 +108,7 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  // ================= 结果区域 =================
   Widget _buildBody() {
     if (_ctrl.loading) {
       return const Center(
@@ -128,6 +138,7 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  // ================= dtv 风格卡片 =================
   Widget _card(HuyaSearchItem it) {
     return Material(
       color: Colors.transparent,
@@ -143,6 +154,7 @@ class _SearchPageState extends State<SearchPage> {
           ),
           child: Row(
             children: [
+              // 封面 + 直播状态角标
               Stack(
                 children: [
                   ClipRRect(
@@ -182,6 +194,7 @@ class _SearchPageState extends State<SearchPage> {
                 ],
               ),
               const SizedBox(width: 12),
+              // 标题 + 副标题
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,8 +222,11 @@ class _SearchPageState extends State<SearchPage> {
                 ),
               ),
               const SizedBox(width: 8),
+              // 心形收藏
               _HeartButton(
                 roomId: it.roomId,
+                nickname: it.nickname,
+                avatarUrl: it.avatarUrl,
                 onToggle: widget.onToggleFollow,
                 isFollowed: widget.isFollowed,
               ),
@@ -230,13 +246,19 @@ class _SearchPageState extends State<SearchPage> {
       );
 }
 
+/// 右侧收藏心形按钮
 class _HeartButton extends StatefulWidget {
   final String roomId;
-  final Future<void> Function(String roomId, bool follow)? onToggle;
+  final String nickname;
+  final String avatarUrl;
+  final Future<void> Function(
+      String roomId, bool follow, String nickname, String avatarUrl)? onToggle;
   final Future<bool> Function(String roomId)? isFollowed;
 
   const _HeartButton({
     required this.roomId,
+    required this.nickname,
+    required this.avatarUrl,
     this.onToggle,
     this.isFollowed,
   });
@@ -268,10 +290,12 @@ class _HeartButtonState extends State<_HeartButton> {
         followed ? Icons.favorite : Icons.favorite_border,
         color: followed ? const Color(0xFFE5484D) : Colors.white38,
       ),
+      // 接了回调才可点；IconButton 吃掉点击，不会触发外层进房
       onPressed: widget.onToggle == null
           ? null
           : () async {
-              await widget.onToggle!(widget.roomId, !followed);
+              await widget.onToggle!(widget.roomId, !followed,
+                  widget.nickname, widget.avatarUrl);
               if (mounted) setState(() => _followed = !followed);
             },
     );
