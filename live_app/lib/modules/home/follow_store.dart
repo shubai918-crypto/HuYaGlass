@@ -62,6 +62,9 @@ class FollowStore {
     return list.any((e) => e.roomId == roomId);
   }
 
+  // ★ 新增：兼容播放页控制器的调用
+  static Future<bool> isFollowed(String roomId) => contains(roomId);
+
   static Future<void> _save(List<FollowItem> list) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_key, jsonEncode(list.map((e) => e.toJson()).toList()));
