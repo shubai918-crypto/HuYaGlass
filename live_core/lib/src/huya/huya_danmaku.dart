@@ -17,13 +17,13 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（多房间免抓包版：DNS 优选 + cmd16 接收 + 构造帧发送）
+/// 虎牙弹幕客户端（动态节点调度版：自动解析 launch 响应更新 WS 节点池）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
-  /// 候选 WS 节点（已移除无效的 ws.va.huya.com）
+  /// 兜底 WS 节点（已移除无效域名，仅作首次连接使用）
   static const _wsHosts = [
     'ded35397-ws.va.huya.com',
     '65cecb22-ws.va.huya.com',
@@ -53,6 +53,9 @@ class HuyaDanmakuClient {
   String _token = '';
   String _cookie = '';
 
+  /// ★ 动态获取的 WS 节点池（由 launch 响应自动更新）
+  List<String> _dynamicHosts = [];
+
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
   void Function(String)? onSendDebug;
@@ -75,8 +78,11 @@ class HuyaDanmakuClient {
 
   // ================= DNS 优选 =================
   Future<List<String>> _preferredHosts() async {
+    // ★ 优先使用动态获取的节点，兜底使用内置节点
+    final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
     final cost = <String, int>{};
-    await Future.wait(_wsHosts.map((h) async {
+    
+    await Future.wait(hosts.map((h) async {
       final sw = Stopwatch()..start();
       try {
         final addrs =
@@ -88,11 +94,11 @@ class HuyaDanmakuClient {
       }
     }));
 
-    final ok = _wsHosts.where((h) => (cost[h] ?? -1) >= 0).toList()
+    final ok = hosts.where((h) => (cost[h] ?? -1) >= 0).toList()
       ..sort((a, b) => cost[a]! - cost[b]!);
-    final bad = _wsHosts.where((h) => (cost[h] ?? -1) < 0);
+    final bad = hosts.where((h) => (cost[h] ?? -1) < 0);
     final ordered = [...ok, ...bad];
-    return ordered.isEmpty ? _wsHosts.toList() : ordered;
+    return ordered.isEmpty ? hosts.toList() : ordered;
   }
 
   // ================= 连接 =================
@@ -449,7 +455,7 @@ class HuyaDanmakuClient {
           _dbgPush('Register34 iResCode=$v');
           break;
         case 4:
-          _dbgPush('WupRsp ${_describeWupRsp(payload)}');
+          _handleWupRsp(payload);
           break;
         case 21:
           break;
@@ -477,7 +483,8 @@ class HuyaDanmakuClient {
     return _TarsReader(Uint8List.fromList(bytes.sublist(start))).readFields();
   }
 
-  String _describeWupRsp(List<int> bytes) {
+  /// ★ 解析 WupRsp，提取 launch 响应中的动态节点
+  void _handleWupRsp(List<int> bytes) {
     try {
       final f = _readWupFields(bytes);
       final servant = '${f[5] ?? ''}';
@@ -492,17 +499,48 @@ class HuyaDanmakuClient {
         if (map is List) {
           for (var i = 0; i + 1 < map.length; i += 2) {
             if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
-              final rsp = _TarsReader(Uint8List.fromList(
-                      (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList()))
-                  .readFields();
+              final rspBytes = Uint8List.fromList(
+                  (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList());
+              final rsp = _TarsReader(rspBytes).readFields();
               ret = rsp[0] is int ? rsp[0] as int : -99;
+              
+              if (servant == 'launch' && ret == 0) {
+                _parseLaunchRsp(rsp);
+              }
             }
           }
         }
       }
-      return '$servant.$func iRet=$ret';
+      _dbgPush('WupRsp $servant.$func iRet=$ret');
     } catch (_) {
-      return '解析失败';
+      _dbgPush('WupRsp 解析失败');
+    }
+  }
+
+  /// ★ 从 launch 响应中提取最新的 WS 域名和 IP
+  void _parseLaunchRsp(Map<int, Object?> rsp) {
+    final newHosts = <String>[];
+    // 遍历所有字段，寻找 list<string> 类型的节点列表
+    for (final entry in rsp.entries) {
+      if (entry.value is List) {
+        final list = entry.value as List;
+        if (list.isNotEmpty && list.first is String) {
+          for (final item in list) {
+            if (item is String) {
+              if (item.contains('huya.com')) {
+                newHosts.add(item);
+              } else if (item.contains(':')) {
+                newHosts.add(item.split(':').first);
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    if (newHosts.isNotEmpty) {
+      _dynamicHosts = newHosts.toSet().toList(); // 去重
+      _dbgPush('动态节点更新: ${_dynamicHosts.length}个');
     }
   }
 
