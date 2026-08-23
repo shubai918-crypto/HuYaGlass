@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import '../../common/widgets/danmaku_view.dart';
-import 'background_play.dart';
 import 'live_play_controller.dart';
 
 class LivePlayPage extends StatelessWidget {
@@ -43,30 +42,14 @@ class LivePlayPage extends StatelessWidget {
             child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
       }
       return Stack(children: [
-        // 视频层 + ★ 播放器右上角控件（刷新 / 后台播放开关）
+        // ★ 视频层：不再叠加多余按钮，控制层由 controller 自带（含刷新/后台播放）
         Positioned(
           top: fs ? 0 : topPad + topBarH,
           left: 0,
           right: 0,
           height: fs ? null : videoH,
           bottom: fs ? 0 : null,
-          child: Stack(
-            children: [
-              Positioned.fill(child: controller.videoHost(fs)),
-              Positioned(
-                right: 8,
-                top: fs ? 44 : 8,
-                child: Column(
-                  children: [
-                    // ★ 修复：原 controller 中对应的方法名为 refreshPlay
-                    _overlayBtn(Icons.refresh, () => controller.refreshPlay()),
-                    const SizedBox(height: 8),
-                    const _BgPlayToggle(), // ★ 后台播放开关
-                  ],
-                ),
-              ),
-            ],
-          ),
+          child: controller.videoHost(fs),
         ),
         if (!fs) ...[
           Positioned(
@@ -124,23 +107,6 @@ class LivePlayPage extends StatelessWidget {
         ],
       ]);
     });
-  }
-
-  // ★ 播放器悬浮圆形按钮
-  Widget _overlayBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.35),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24),
-        ),
-        child: Icon(icon, color: Colors.white70, size: 20),
-      ),
-    );
   }
 
   Widget _defaultAvatar() => Container(
@@ -374,36 +340,6 @@ class LivePlayPage extends StatelessWidget {
   String _formatCount(int count) {
     if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
     return '$count';
-  }
-}
-
-// ★ 后台播放开关（嵌在播放器上，与设置页联动）
-class _BgPlayToggle extends StatelessWidget {
-  const _BgPlayToggle();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: BackgroundPlayStore.enabled,
-      builder: (context, on, _) => GestureDetector(
-        onTap: () => BackgroundPlayStore.set(!on),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.35),
-            shape: BoxShape.circle,
-            border: Border.all(
-                color: on ? const Color(0xFF00D2FF) : Colors.white24),
-          ),
-          child: Icon(
-            Icons.headphones,
-            color: on ? const Color(0xFF00D2FF) : Colors.white70,
-            size: 20,
-          ),
-        ),
-      ),
-    );
   }
 }
 
