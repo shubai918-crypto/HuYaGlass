@@ -7,7 +7,6 @@ import 'package:video_player/video_player.dart';
 import 'package:live_core/live_core.dart';
 
 import '../home/follow_store.dart';
-import 'background_play.dart';
 
 class _Quality {
   final String name;
@@ -17,10 +16,9 @@ class _Quality {
 
 class _Line {
   final String name;
-  final String hlsUrl;
-  final String suffix;
-  final String anti;
-  const _Line(this.name, this.hlsUrl, this.suffix, this.anti);
+  final Map<String, dynamic>? flv;
+  final Map<String, dynamic>? hls;
+  const _Line(this.name, this.flv, this.hls);
 }
 
 class LivePlayPage extends StatefulWidget {
@@ -48,7 +46,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
   final List<DanmakuMessage> _messages = [];
   final TextEditingController _sendCtrl = TextEditingController();
 
-  String _streamName = '';
   List<_Quality> _qualities = [];
   int _qi = 0;
   List<_Line> _lines = [];
@@ -105,9 +102,12 @@ class _LivePlayPageState extends State<LivePlayPage> {
     setState(() => _followed = !_followed);
   }
 
-  // ================= 解析（空安全 + 正确开播判断） =================
+  // ================= 解析房间（空安全 + 正确开播判断） =================
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _status = '';
+    });
     try {
       final resp = await http.get(
         Uri.parse(
@@ -120,14 +120,15 @@ class _LivePlayPageState extends State<LivePlayPage> {
       final stream = data['stream'] as Map?;
       final base = stream?['baseStream'] as Map?;
 
-      _streamName = '${base?['sStreamName'] ?? ''}';
+      final streamName = '${base?['sStreamName'] ?? ''}';
 
+      // ★ 正确开播判断
       final liveStatus = '${data['liveStatus'] ?? ''}'.toUpperCase();
       final isOn = data['isOn'] == 1 ||
           live['isOn'] == 1 ||
           liveStatus == 'ON' ||
           liveStatus == 'LIVE' ||
-          (base != null && _streamName.isNotEmpty);
+          (base != null && streamName.isNotEmpty);
 
       int st = 0;
       for (final k in ['startTime', 'iStartTime', 'lStartTime']) {
@@ -159,21 +160,24 @@ class _LivePlayPageState extends State<LivePlayPage> {
         });
       }
 
-      final multi = (stream?['hlsMultiLine'] as List?) ?? [];
+      // ★ 线路：FLV + HLS 双地址
+      final flvMulti = (stream?['flvMultiLine'] as List?) ?? [];
+      final hlsMulti = (stream?['hlsMultiLine'] as List?) ?? [];
       _lines = [
-        if (base != null)
-          _Line('线路1', '${base['sHlsUrl'] ?? ''}',
-              '${base['sHlsUrlSuffix'] ?? ''}', '${base['sHlsAntiCode'] ?? ''}'),
-        for (final m in multi)
-          if (m is Map)
+        if (base != null) _Line('线路1', base, base),
+        for (var i = 0; i < flvMulti.length; i++)
+          if (flvMulti[i] is Map)
             _Line(
-              '${m['sCdnType'] ?? '线路'}',
-              '${m['sHlsUrl'] ?? base?['sHlsUrl'] ?? ''}',
-              '${m['sHlsUrlSuffix'] ?? base?['sHlsUrlSuffix'] ?? ''}',
-              '${m['sHlsAntiCode'] ?? base?['sHlsAntiCode'] ?? ''}',
+              '${flvMulti[i]['sCdnType'] ?? '线路${i + 2}'}',
+              flvMulti[i] as Map<String, dynamic>,
+              (i < hlsMulti.length && hlsMulti[i] is Map)
+                  ? hlsMulti[i] as Map<String, dynamic>
+                  : null,
             ),
       ];
+      if (_lines.isEmpty && base != null) _lines = [_Line('线路1', base, base)];
 
+      // 画质
       final rates = (stream?['flvRateArray'] as List?) ?? [];
       _qualities = [
         for (final r in rates)
@@ -190,13 +194,12 @@ class _LivePlayPageState extends State<LivePlayPage> {
         ];
       }
 
+      // 弹幕
       final sid = int.tryParse(_roomId) ?? 0;
       _danmaku.connect(topSid: sid, subSid: sid, roomIdStr: _roomId);
 
-      if (isOn && _streamName.isNotEmpty) {
+      if (isOn) {
         await _play();
-      } else if (isOn) {
-        setState(() => _status = '在播但流信息为空');
       }
     } catch (e) {
       setState(() => _status = '加载失败: $e');
@@ -205,37 +208,72 @@ class _LivePlayPageState extends State<LivePlayPage> {
     }
   }
 
-  String _buildUrl() {
-    if (_lines.isEmpty || _streamName.isEmpty) return '';
-    final line = _lines[_li];
-    final ratio = _qualities.isEmpty ? 0 : _qualities[_qi].ratio;
-    final anti = line.anti.isEmpty ? '' : '&${line.anti}';
-    return '${line.hlsUrl}/$_streamName.${line.suffix}?ratio=$ratio$anti';
+  String _flvUrl(Map b, int ratio) {
+    final u = '${b['sFlvUrl'] ?? ''}';
+    final n = '${b['sStreamName'] ?? ''}';
+    final s = '${b['sFlvUrlSuffix'] ?? 'flv'}';
+    final a = '${b['sFlvAntiCode'] ?? ''}';
+    if (u.isEmpty || n.isEmpty) return '';
+    return '$u/$n.$s?$a${ratio > 0 ? '&ratio=$ratio' : ''}';
   }
 
+  String _hlsUrl(Map b, int ratio) {
+    final u = '${b['sHlsUrl'] ?? ''}';
+    final n = '${b['sStreamName'] ?? ''}';
+    final s = '${b['sHlsUrlSuffix'] ?? 'm3u8'}';
+    final a = '${b['sHlsAntiCode'] ?? ''}';
+    if (u.isEmpty || n.isEmpty) return '';
+    return '$u/$n.$s?$a${ratio > 0 ? '&ratio=$ratio' : ''}';
+  }
+
+  // ★ FLV 优先 + HLS 兜底 + 10 秒超时，杜绝无限加载
   Future<void> _play() async {
-    final url = _buildUrl();
-    if (url.isEmpty) return;
-    setState(() => _loading = true);
-    try {
-      await _controller?.dispose();
-      _controller = null;
-      final c = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        httpHeaders: const {
-          'User-Agent': _ua,
-          'Referer': 'https://www.huya.com/',
-        },
-      );
-      _controller = c;
-      await c.initialize();
-      c.setLooping(false);
-      await c.play();
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (mounted) setState(() => _status = '播放失败: $e');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    setState(() {
+      _loading = true;
+      _status = '';
+    });
+    final line = _lines.isEmpty ? null : _lines[_li];
+    if (line == null) {
+      setState(() {
+        _loading = false;
+        _status = '无流信息';
+      });
+      return;
+    }
+    final ratio = _qualities.isEmpty ? 0 : _qualities[_qi].ratio;
+    final candidates = <String>[
+      if (line.flv != null) _flvUrl(line.flv!, ratio),
+      if (line.hls != null) _hlsUrl(line.hls!, ratio),
+    ].where((u) => u.contains('://')).toList();
+
+    Object? lastErr;
+    for (final url in candidates) {
+      try {
+        await _controller?.dispose();
+        _controller = null;
+        final c = VideoPlayerController.networkUrl(
+          Uri.parse(url),
+          httpHeaders: const {
+            'User-Agent': _ua,
+            'Referer': 'https://www.huya.com/',
+          },
+        );
+        _controller = c;
+        await c.initialize().timeout(const Duration(seconds: 10));
+        c.setLooping(false);
+        await c.play();
+        if (mounted) setState(() {});
+        if (mounted) setState(() => _loading = false);
+        return;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _status = '播放失败: $lastErr';
+      });
     }
   }
 
@@ -258,23 +296,19 @@ class _LivePlayPageState extends State<LivePlayPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BackgroundPlayGuard(
-      onPause: () => _controller?.pause(),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Column(
-          children: [
-            _buildHeader(context),
-            _buildVideo(),
-            Expanded(child: _buildTabs()),
-            _buildBottom(context), // ★ 固定紧凑，不再挤压
-          ],
-        ),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Column(
+        children: [
+          _buildHeader(context),
+          _buildVideo(),
+          Expanded(child: _buildTabs()),
+          _buildBottom(context),
+        ],
       ),
     );
   }
 
-  // ================= 头部 =================
   Widget _buildHeader(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final dur = _liveDurationText();
@@ -330,7 +364,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
     );
   }
 
-  // ================= 视频区 =================
   Widget _buildVideo() {
     final c = _controller;
     final ready = c != null && c.value.isInitialized;
@@ -346,15 +379,29 @@ class _LivePlayPageState extends State<LivePlayPage> {
                 child: VideoPlayer(c),
               ),
             )
-          else if (_isLive)
+          else if (_isLive && _loading)
             const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00D2FF)),
+            )
+          else if (_isLive)
+            Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Color(0xFF00D2FF)),
-                  SizedBox(height: 10),
-                  Text('直播流加载/解析中…',
-                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  const Icon(Icons.error_outline,
+                      color: Colors.redAccent, size: 32),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                        _status.isNotEmpty ? _status : '播放初始化失败',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12)),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('点击右上角刷新重试',
+                      style: TextStyle(color: Colors.white54, fontSize: 11)),
                 ],
               ),
             )
@@ -367,19 +414,11 @@ class _LivePlayPageState extends State<LivePlayPage> {
           Positioned(
             right: 8,
             top: 8,
-            child: Column(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.white70),
-                  onPressed: _load,
-                ),
-                const BackgroundPlayToggleButton(),
-              ],
+            child: IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white70),
+              onPressed: _load,
             ),
           ),
-          if (_loading)
-            const Center(
-                child: CircularProgressIndicator(color: Color(0xFF00D2FF))),
           Positioned(
             left: 8,
             bottom: 6,
@@ -391,7 +430,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
     );
   }
 
-  // ================= 弹幕/详情 =================
   Widget _buildTabs() {
     final dur = _liveDurationText();
     return DefaultTabController(
@@ -459,7 +497,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
     );
   }
 
-  // ================= 底部：横滑芯片 + 固定发送栏 =================
   Widget _buildBottom(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
     return Container(
@@ -495,7 +532,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
     );
   }
 
-  /// ★ 单行横向滑动芯片，不再换行占高度
   Widget _chipRow({
     required List<String> labels,
     required int selected,
