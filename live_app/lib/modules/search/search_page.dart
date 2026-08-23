@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/src/huya/huya_search.dart';
 
 import 'search_controller.dart';
 
-/// 搜索页（dtv 风格：封面+角标 / 标题+副标题 / 心形收藏）
+/// 搜索页（GlassSearchBar + dtv 风格卡片 + 心形收藏）
 class SearchPage extends StatefulWidget {
-  /// 点击结果卡片进房
   final void Function(String roomId, String nickname, String avatarUrl)
       onOpenRoom;
-
-  /// 收藏 / 取消收藏（心形按钮）
   final Future<void> Function(
       String roomId, bool follow, String nickname, String avatarUrl)? onToggleFollow;
-
-  /// 查询是否已收藏
   final Future<bool> Function(String roomId)? isFollowed;
 
   const SearchPage({
@@ -70,45 +66,36 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ================= 顶部搜索栏 =================
+  // ★ 2. 真正的玻璃搜索条 + 胶囊箭头按钮
   Widget _buildBar() {
-    return Container(
-      height: 52,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.10)),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 14),
-          const Icon(Icons.search, color: Color(0xFF29C5F6), size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: _text,
-              focusNode: _focus,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              onSubmitted: (_) => _submit(),
-              textInputAction: TextInputAction.search,
-              onChanged: _ctrl.setKeyword,
-              decoration: const InputDecoration(
-                hintText: '搜索虎牙主播/房间...',
-                hintStyle: TextStyle(color: Colors.white38, fontSize: 15),
-                border: InputBorder.none,
-              ),
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: GlassSearchBar(
+            controller: _text,
+            focusNode: _focus,
+            placeholder: '搜索虎牙主播/房间...',
+            onChanged: _ctrl.setKeyword,
+            onSubmitted: (_) => _submit(),
+            searchIconColor: const Color(0xFF29C5F6),
+            clearIconColor: Colors.white54,
+            textStyle: const TextStyle(color: Colors.white, fontSize: 15),
+            placeholderStyle:
+                const TextStyle(color: Colors.white38, fontSize: 15),
+            height: 52,
           ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward, color: Color(0xFF29C5F6)),
-            onPressed: _submit,
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 10),
+        GlassButton(
+          icon: const Icon(Icons.arrow_forward),
+          onTap: _submit,
+          width: 52,
+          height: 52,
+        ),
+      ],
     );
   }
 
-  // ================= 结果区域 =================
   Widget _buildBody() {
     if (_ctrl.loading) {
       return const Center(
@@ -138,14 +125,12 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ================= dtv 风格卡片 =================
   Widget _card(HuyaSearchItem it) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () =>
-            widget.onOpenRoom(it.roomId, it.nickname, it.avatarUrl),
+        onTap: () => widget.onOpenRoom(it.roomId, it.nickname, it.avatarUrl),
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -155,7 +140,6 @@ class _SearchPageState extends State<SearchPage> {
           ),
           child: Row(
             children: [
-              // 封面 + 直播状态角标
               Stack(
                 children: [
                   ClipRRect(
@@ -166,8 +150,7 @@ class _SearchPageState extends State<SearchPage> {
                             width: 96,
                             height: 72,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _coverPlaceholder(),
+                            errorBuilder: (_, __, ___) => _coverPlaceholder(),
                           )
                         : _coverPlaceholder(),
                   ),
@@ -185,9 +168,8 @@ class _SearchPageState extends State<SearchPage> {
                         it.isLive ? '直播中' : '未开播',
                         style: TextStyle(
                           fontSize: 10,
-                          color: it.isLive
-                              ? const Color(0xFF29C5F6)
-                              : Colors.white70,
+                          color:
+                              it.isLive ? const Color(0xFF29C5F6) : Colors.white70,
                         ),
                       ),
                     ),
@@ -195,7 +177,6 @@ class _SearchPageState extends State<SearchPage> {
                 ],
               ),
               const SizedBox(width: 12),
-              // 标题 + 副标题
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,14 +197,12 @@ class _SearchPageState extends State<SearchPage> {
                       it.nickname,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 13),
+                      style: const TextStyle(color: Colors.white54, fontSize: 13),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              // 心形收藏
               _HeartButton(
                 roomId: it.roomId,
                 nickname: it.nickname,
@@ -247,7 +226,7 @@ class _SearchPageState extends State<SearchPage> {
       );
 }
 
-/// 右侧收藏心形按钮
+/// 心形收藏按钮
 class _HeartButton extends StatefulWidget {
   final String roomId;
   final String nickname;
@@ -291,12 +270,11 @@ class _HeartButtonState extends State<_HeartButton> {
         followed ? Icons.favorite : Icons.favorite_border,
         color: followed ? const Color(0xFFE5484D) : Colors.white38,
       ),
-      // 接了回调才可点；IconButton 吃掉点击，不会触发外层进房
       onPressed: widget.onToggle == null
           ? null
           : () async {
-              await widget.onToggle!(widget.roomId, !followed,
-                  widget.nickname, widget.avatarUrl);
+              await widget.onToggle!(
+                  widget.roomId, !followed, widget.nickname, widget.avatarUrl);
               if (mounted) setState(() => _followed = !followed);
             },
     );
