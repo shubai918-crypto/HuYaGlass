@@ -33,12 +33,15 @@ class _LivePlayPageState extends State<LivePlayPage> {
   late final String _roomId;
   String _nickname = '';
   String _avatar = '';
+  String _intro = '';
   int _fans = 0;
+  int _startTime = 0;
   bool _isLive = false;
   bool _followed = false;
   bool _loading = true;
   String _status = '';
 
+  Timer? _tickTimer;
   VideoPlayerController? _controller;
 
   final HuyaDanmakuClient _danmaku = HuyaDanmakuClient();
@@ -80,6 +83,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
 
   @override
   void dispose() {
+    _tickTimer?.cancel();
     _controller?.dispose();
     _danmaku.disconnect();
     _sendCtrl.dispose();
@@ -95,13 +99,14 @@ class _LivePlayPageState extends State<LivePlayPage> {
     if (_followed) {
       await FollowStore.remove(_roomId);
     } else {
-      await FollowStore.add(FollowItem(
-          roomId: _roomId, name: _nickname, avatar: _avatar));
+      await FollowStore.add(
+          FollowItem(roomId: _roomId, name: _nickname, avatar: _avatar));
     }
     setState(() => _followed = !_followed);
   }
 
-Future<void> _load() async {
+  // ================= 解析房间 + 流（空安全 + 正确开播判断） =================
+  Future<void> _load() async {
     setState(() => _loading = true);
     try {
       final resp = await http.get(
@@ -110,25 +115,54 @@ Future<void> _load() async {
         headers: {'User-Agent': _ua},
       );
       final j = jsonDecode(resp.body);
-
-      // ★ 全链路空安全：未开播房间 stream/baseStream 可能为 null
       final data = (j is Map ? j['data'] : null) as Map? ?? {};
       final live = (data['liveData'] as Map?) ?? {};
+      final stream = data['stream'] as Map?;
+      final base = stream?['baseStream'] as Map?;
+
+      _streamName = '${base?['sStreamName'] ?? ''}';
+
+      // ★ 正确的开播判断：liveStatus=="ON" / liveData.isOn / baseStream 存在
+      final liveStatus = '${data['liveStatus'] ?? ''}'.toUpperCase();
+      final isOn = data['isOn'] == 1 ||
+          live['isOn'] == 1 ||
+          liveStatus == 'ON' ||
+          liveStatus == 'LIVE' ||
+          (base != null && _streamName.isNotEmpty);
+
+      // 开播时间（多字段兜底）
+      int st = 0;
+      for (final k in ['startTime', 'iStartTime', 'lStartTime']) {
+        if (live[k] is num) {
+          st = (live[k] as num).toInt();
+          break;
+        }
+        if (base?[k] is num) {
+          st = (base![k] as num).toInt();
+          break;
+        }
+      }
 
       setState(() {
         _nickname = _nickname.isEmpty ? '${live['nick'] ?? ''}' : _nickname;
         _avatar = _avatar.isEmpty ? '${live['avatar180'] ?? ''}' : _avatar;
+        _intro = '${live['introduction'] ?? live['slogan'] ?? ''}';
         _fans = (live['totalCount'] is num)
             ? (live['totalCount'] as num).toInt()
             : 0;
-        _isLive = data['isOn'] == 1;
+        _isLive = isOn;
+        _startTime = st;
       });
 
-      final stream = data['stream'] as Map?;
-      final base = stream?['baseStream'] as Map?;
-      _streamName = '${base?['sStreamName'] ?? ''}';
+      // 开播时长计时器
+      _tickTimer?.cancel();
+      if (isOn && st > 0) {
+        _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (mounted) setState(() {});
+        });
+      }
 
-      // 线路（未开播时为空列表，不崩）
+      // 线路
       final multi = (stream?['hlsMultiLine'] as List?) ?? [];
       _lines = [
         if (base != null)
@@ -161,12 +195,11 @@ Future<void> _load() async {
         ];
       }
 
-      // 弹幕照常连接（未开播也能收/发）
+      // 弹幕
       final sid = int.tryParse(_roomId) ?? 0;
       _danmaku.connect(topSid: sid, subSid: sid, roomIdStr: _roomId);
 
-      // ★ 只有真正在播且有流名时才起播
-      if (_isLive && _streamName.isNotEmpty) {
+      if (isOn && _streamName.isNotEmpty) {
         await _play();
       }
     } catch (e) {
@@ -191,7 +224,6 @@ Future<void> _load() async {
     try {
       await _controller?.dispose();
       _controller = null;
-
       final c = VideoPlayerController.networkUrl(
         Uri.parse(url),
         httpHeaders: const {
@@ -214,9 +246,21 @@ Future<void> _load() async {
   String _wan(int n) =>
       n >= 10000 ? '${(n / 10000).toStringAsFixed(1)}万' : '$n';
 
+  // ★ 开播时长
+  String _liveDurationText() {
+    if (_startTime <= 0 || !_isLive) return '';
+    final dur = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(_startTime * 1000));
+    if (dur.isNegative) return '';
+    String two(int v) => v.toString().padLeft(2, '0');
+    final h = dur.inHours;
+    final m = dur.inMinutes % 60;
+    final s = dur.inSeconds % 60;
+    return h > 0 ? '$two(h):$two(m):$two(s)' : '$two(m):$two(s)';
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ★ 后台播放守卫
     return BackgroundPlayGuard(
       onPause: () => _controller?.pause(),
       child: Scaffold(
@@ -236,6 +280,7 @@ Future<void> _load() async {
   }
 
   Widget _buildHeader() {
+    final dur = _liveDurationText();
     return Container(
       color: const Color(0xFF101018),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -244,8 +289,7 @@ Future<void> _load() async {
           CircleAvatar(
             radius: 20,
             backgroundColor: Colors.white10,
-            backgroundImage:
-                _avatar.isNotEmpty ? NetworkImage(_avatar) : null,
+            backgroundImage: _avatar.isNotEmpty ? NetworkImage(_avatar) : null,
             child: _avatar.isEmpty
                 ? const Icon(Icons.person, color: Colors.white54)
                 : null,
@@ -260,8 +304,10 @@ Future<void> _load() async {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w600)),
-                Text('粉丝 ${_wan(_fans)}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                Text(
+                  '粉丝 ${_wan(_fans)}${dur.isNotEmpty ? ' · 已播 $dur' : ''}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -297,23 +343,16 @@ Future<void> _load() async {
           if (_isLive && ready)
             Center(
               child: AspectRatio(
-                aspectRatio: c.value.aspectRatio > 0
-                    ? c.value.aspectRatio
-                    : 16 / 9,
+                aspectRatio:
+                    c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9,
                 child: VideoPlayer(c),
               ),
             )
           else
             const Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(color: Colors.black87),
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('主播未开播\n当前直播间没有在直播',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70)),
-                ),
-              ),
+              child: Text('主播未开播\n当前直播间没有在直播',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70)),
             ),
           Positioned(
             right: 8,
@@ -324,18 +363,20 @@ Future<void> _load() async {
                   icon: const Icon(Icons.refresh, color: Colors.white70),
                   onPressed: _load,
                 ),
-                const BackgroundPlayToggleButton(), // ★ 后台播放开关
+                const BackgroundPlayToggleButton(),
               ],
             ),
           ),
           if (_loading)
             const Center(
-                child: CircularProgressIndicator(color: Color(0xFF00D2FF))),
+                child:
+                    CircularProgressIndicator(color: Color(0xFF00D2FF))),
           Positioned(
             left: 8,
             bottom: 6,
-            child:
-                Text(_status, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+            child: Text(_status,
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 10)),
           ),
         ],
       ),
@@ -343,6 +384,7 @@ Future<void> _load() async {
   }
 
   Widget _buildTabs() {
+    final dur = _liveDurationText();
     return DefaultTabController(
       length: 2,
       child: Column(
@@ -374,8 +416,8 @@ Future<void> _load() async {
                           ),
                           TextSpan(
                             text: m.content,
-                            // ★ 修复 white87 报错
-                            style: TextStyle(color: Colors.white.withOpacity(0.87)),
+                            style: TextStyle(
+                                color: Colors.white.withOpacity(0.87)),
                           ),
                         ]),
                       ),
@@ -393,6 +435,12 @@ Future<void> _load() async {
                         style: const TextStyle(color: Colors.white70)),
                     Text(_isLive ? '状态：直播中' : '状态：未开播',
                         style: const TextStyle(color: Colors.white70)),
+                    if (dur.isNotEmpty)
+                      Text('开播时长：$dur',
+                          style: const TextStyle(color: Colors.white70)),
+                    if (_intro.isNotEmpty)
+                      Text('简介：$_intro',
+                          style: const TextStyle(color: Colors.white70)),
                   ],
                 ),
               ],
