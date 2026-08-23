@@ -5,9 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import 'modules/home/home_page.dart';
-import 'modules/live_play/live_play_page.dart';
-import 'modules/settings/huya_login_page.dart';
-import 'modules/settings/settings_page.dart';
+import 'modules/live_play/background_play.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,10 +15,9 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
 
-  // 恢复虎牙登录态（磁盘持久化）
   await HuyaLoginManager.init();
+  await BackgroundPlayStore.init(); // ★ 后台播放开关初始化
 
-  // liquid_glass_widgets：非阻塞初始化，防止首帧玻璃白闪
   await LiquidGlassWidgets.initialize(warmUpMode: GlassWarmUpMode.auto);
 
   runApp(
@@ -46,11 +43,6 @@ class HuyaLiveApp extends StatelessWidget {
         colorScheme: const ColorScheme.dark(primary: Color(0xFF00D2FF)),
       ),
       home: const HomePage(),
-      routes: {
-        '/live': (_) => const LivePlayPage(),
-        '/settings': (_) => const SettingsPage(),
-        '/login': (_) => const HuyaLoginPage(),
-      },
     );
   }
 }
