@@ -1,165 +1,228 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-import 'package:live_core/live_core.dart';
-import '../../common/widgets/liquid_glass.dart';
-import '../../app/routes.dart';
-import 'search_controller.dart' as search_ctrl;
+import 'search_controller.dart';
 
-class SearchPage extends StatelessWidget {
-  const SearchPage({super.key});
+/// 搜索页（液态玻璃深色风格）
+class SearchPage extends StatefulWidget {
+  /// 点击结果进房回调（与订阅列表同一入口）
+  final void Function(String roomId, String nickname, String avatarUrl)
+      onOpenRoom;
+
+  const SearchPage({super.key, required this.onOpenRoom});
+
+  @override
+  State<SearchPage> createState() => _SearchPageState();
+}
+
+class _SearchPageState extends State<SearchPage> {
+  final SearchController _ctrl = SearchController();
+  final TextEditingController _text = TextEditingController();
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_onCtrl);
+  }
+
+  void _onCtrl() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onCtrl);
+    _ctrl.dispose();
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _ctrl.submit();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(search_ctrl.SearchController());
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('搜索直播间'),
-      ),
-      body: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Column(
         children: [
-          // 搜索框
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: LiquidGlass(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: TextField(
-                controller: controller.searchController,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: '搜索主播或直播间...',
-                  prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.clear, color: Colors.white38),
-                    onPressed: () {
-                      controller.searchController.clear();
-                      controller.results.clear();
-                    },
-                  ),
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (text) => controller.search(text),
-              ),
-            ),
-          ),
-
-          // 搜索结果
-          Expanded(
-            child: Obx(() {
-              if (controller.searching.value) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (controller.results.isEmpty) {
-                return Center(
-                  child: Text(
-                    controller.hasSearched.value ? '没有找到结果' : '输入关键词搜索',
-                    style: TextStyle(color: Colors.white.withOpacity(0.4)),
-                  ),
-                );
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: controller.results.length,
-                itemBuilder: (context, index) {
-                  final room = controller.results[index];
-                  return _RoomCard(room: room);
-                },
-              );
-            }),
-          ),
+          _buildBar(),
+          const SizedBox(height: 16),
+          Expanded(child: _buildBody()),
         ],
       ),
     );
   }
-}
 
-class _RoomCard extends StatelessWidget {
-  final LiveRoom room;
-
-  const _RoomCard({required this.room});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Get.toNamed(
-          '${AppRoutes.livePlay}?roomId=${room.roomId}&uid=${room.presenterUid}',
-        );
-      },
-      child: LiquidGlass(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            // 封面
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: room.coverUrl.isNotEmpty
-                  ? Image.network(
-                      room.coverUrl,
-                      width: 120,
-                      height: 68,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      width: 120,
-                      height: 68,
-                      color: const Color(0xFF2D2D44),
-                    ),
+  // ================= 顶部搜索栏 =================
+  Widget _buildBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: Colors.white.withOpacity(0.10)),
             ),
-            const SizedBox(width: 12),
-            // 信息
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    room.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    room.streamerName,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 13,
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                const Icon(Icons.search, color: Color(0xFF29C5F6), size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _text,
+                    focusNode: _focus,
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                    onSubmitted: (_) => _submit(),
+                    textInputAction: TextInputAction.search,
+                    onChanged: _ctrl.setKeyword,
+                    decoration: const InputDecoration(
+                      hintText: '搜索主播 / 输入房间号',
+                      hintStyle:
+                          TextStyle(color: Colors.white38, fontSize: 15),
+                      border: InputBorder.none,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (room.isLive)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF6B6B).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            '直播中',
-                            style: TextStyle(color: Color(0xFFFF6B6B), fontSize: 11),
-                          ),
-                        ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '粉丝 ${room.fansCount}',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        GestureDetector(
+          onTap: _submit,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.arrow_forward,
+                color: Color(0xFF29C5F6)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= 结果区域 =================
+  Widget _buildBody() {
+    if (_ctrl.loading) {
+      return const Center(
+        child: CircularProgressIndicator(
+            color: Color(0xFF29C5F6), strokeWidth: 2.5),
+      );
+    }
+    final err = _ctrl.error;
+    if (err != null) {
+      return Center(
+        child: Text(err, style: const TextStyle(color: Colors.white38)),
+      );
+    }
+    if (!_ctrl.searched) {
+      return const Center(
+        child: Text('搜索主播，或直接输入房间号进入',
+            style: TextStyle(color: Colors.white24)),
+      );
+    }
+    if (_ctrl.items.isEmpty) {
+      return const Center(
+        child: Text('未找到相关主播',
+            style: TextStyle(color: Colors.white38)),
+      );
+    }
+    return ListView.separated(
+      itemCount: _ctrl.items.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (_, i) => _buildCard(_ctrl.items[i]),
+    );
+  }
+
+  Widget _buildCard(HuyaSearchItem it) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () =>
+            widget.onOpenRoom(it.roomId, it.nickname, it.avatarUrl),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: Colors.white10,
+                backgroundImage: it.avatarUrl.isNotEmpty
+                    ? NetworkImage(it.avatarUrl)
+                    : null,
+                child: it.avatarUrl.isEmpty
+                    ? Text(it.nickname.isNotEmpty ? it.nickname[0] : '?')
+                    : null,
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      it.nickname,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: it.isLive
+                                ? Colors.redAccent.withOpacity(0.2)
+                                : Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            it.isLive ? '直播中' : '未开播',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: it.isLive
+                                    ? Colors.redAccent
+                                    : Colors.white38),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('房间 ${it.roomId}',
+                            style: const TextStyle(
+                                color: Colors.white30, fontSize: 12)),
+                        if (it.totalCount > 0) ...[
+                          const SizedBox(width: 8),
+                          Text('${_ctrl.wan(it.totalCount)}热度',
+                              style: const TextStyle(
+                                  color: Colors.white30, fontSize: 12)),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white24),
+            ],
+          ),
         ),
       ),
     );
