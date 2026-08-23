@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 后台播放开关（全局持久化）
+/// 后台播放开关（全局持久化 + 原生唤醒锁/电池白名单）
 class BackgroundPlayStore {
   static const _key = 'huya_background_play';
   static final ValueNotifier<bool> enabled = ValueNotifier<bool>(false);
+  static const _channel = MethodChannel('com.huyalive/background');
 
   static Future<void> init() async {
     final sp = await SharedPreferences.getInstance();
@@ -15,75 +17,27 @@ class BackgroundPlayStore {
     enabled.value = v;
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_key, v);
-  }
-}
-
-/// 控件行里的"后台播放"开关按钮
-class BackgroundPlayToggleButton extends StatelessWidget {
-  const BackgroundPlayToggleButton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: BackgroundPlayStore.enabled,
-      builder: (context, on, _) => IconButton(
-        tooltip: on ? '后台播放：开' : '后台播放：关',
-        icon: Icon(
-          on ? Icons.headphones : Icons.headphones_outlined,
-          color: on ? const Color(0xFF00D2FF) : Colors.white54,
-        ),
-        onPressed: () => BackgroundPlayStore.set(!on),
-      ),
-    );
-  }
-}
-
-/// 生命周期守卫：退后台时按开关决定是否暂停
-class BackgroundPlayGuard extends StatefulWidget {
-  final VoidCallback onPause;
-  final VoidCallback? onResume;
-  final Widget child;
-
-  const BackgroundPlayGuard({
-    super.key,
-    required this.onPause,
-    required this.child,
-    this.onResume,
-  });
-
-  @override
-  State<BackgroundPlayGuard> createState() => _BackgroundPlayGuardState();
-}
-
-class _BackgroundPlayGuardState extends State<BackgroundPlayGuard>
-    with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    if (v) await requestBatteryWhitelist();
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
-        if (!BackgroundPlayStore.enabled.value) widget.onPause();
-        break;
-      case AppLifecycleState.resumed:
-        widget.onResume?.call();
-        break;
-      default:
-        break;
+  /// ★ MIUI/HyperOS 必须忽略电池优化，否则后台必被杀
+  static Future<void> requestBatteryWhitelist() async {
+    try {
+      await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
+    } catch (e) {
+      debugPrint('battery whitelist: $e');
     }
   }
 
-  @override
-  Widget build(BuildContext context) => widget.child;
+  static Future<void> acquireWakeLock() async {
+    try {
+      await _channel.invokeMethod('acquireWakeLock');
+    } catch (_) {}
+  }
+
+  static Future<void> releaseWakeLock() async {
+    try {
+      await _channel.invokeMethod('releaseWakeLock');
+    } catch (_) {}
+  }
 }
