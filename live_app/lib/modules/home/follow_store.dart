@@ -1,39 +1,47 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 订阅主播条目
 class FollowItem {
   final String roomId;
   final String name;
   final String avatar;
-  FollowItem({required this.roomId, required this.name, this.avatar = ''});
 
-  Map<String, dynamic> toJson() => {'roomId': roomId, 'name': name, 'avatar': avatar};
+  const FollowItem({
+    required this.roomId,
+    required this.name,
+    this.avatar = '',
+  });
 
-  factory FollowItem.fromJson(Map<String, dynamic> j) => FollowItem(
+  Map<String, dynamic> toJson() => {
+        'roomId': roomId,
+        'name': name,
+        'avatar': avatar,
+      };
+
+  static FollowItem fromJson(Map<String, dynamic> j) => FollowItem(
         roomId: '${j['roomId'] ?? ''}',
         name: '${j['name'] ?? ''}',
         avatar: '${j['avatar'] ?? ''}',
       );
 }
 
+/// 订阅数据持久化（SharedPreferences + JSON）
 class FollowStore {
   static const _key = 'huya_follows';
 
   static Future<List<FollowItem>> all() async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_key);
+    if (raw == null || raw.isEmpty) return [];
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_key);
-      if (raw == null || raw.isEmpty) return [];
       final list = jsonDecode(raw) as List;
-      return list.map((e) => FollowItem.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => FollowItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
-  }
-
-  static Future<bool> isFollowed(String roomId) async {
-    final list = await all();
-    return list.any((e) => e.roomId == roomId);
   }
 
   static Future<void> add(FollowItem item) async {
@@ -49,8 +57,13 @@ class FollowStore {
     await _save(list);
   }
 
+  static Future<bool> contains(String roomId) async {
+    final list = await all();
+    return list.any((e) => e.roomId == roomId);
+  }
+
   static Future<void> _save(List<FollowItem> list) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(list.map((e) => e.toJson()).toList()));
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_key, jsonEncode(list.map((e) => e.toJson()).toList()));
   }
 }
