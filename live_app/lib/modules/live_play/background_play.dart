@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 后台播放开关（全局持久化 + 原生唤醒锁/电池白名单）
+/// 后台播放：持久化开关 + 电池白名单 + 唤醒锁 + 前台服务
 class BackgroundPlayStore {
   static const _key = 'huya_background_play';
   static final ValueNotifier<bool> enabled = ValueNotifier<bool>(false);
@@ -17,10 +17,15 @@ class BackgroundPlayStore {
     enabled.value = v;
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_key, v);
-    if (v) await requestBatteryWhitelist();
+    if (v) {
+      await requestBatteryWhitelist();
+      await startService(); // ★ 开启即挂前台服务，ColorOS 不敢杀
+    } else {
+      await stopService();
+      await releaseWakeLock();
+    }
   }
 
-  /// ★ MIUI/HyperOS 必须忽略电池优化，否则后台必被杀
   static Future<void> requestBatteryWhitelist() async {
     try {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
@@ -38,6 +43,18 @@ class BackgroundPlayStore {
   static Future<void> releaseWakeLock() async {
     try {
       await _channel.invokeMethod('releaseWakeLock');
+    } catch (_) {}
+  }
+
+  static Future<void> startService() async {
+    try {
+      await _channel.invokeMethod('startForegroundService');
+    } catch (_) {}
+  }
+
+  static Future<void> stopService() async {
+    try {
+      await _channel.invokeMethod('stopForegroundService');
     } catch (_) {}
   }
 }
