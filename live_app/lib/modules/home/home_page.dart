@@ -39,13 +39,6 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   bool _compact = false;
 
-  static const _tabIcons = [
-    Icons.home,
-    Icons.search,
-    Icons.subscriptions_outlined,
-    Icons.settings,
-  ];
-
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
@@ -64,26 +57,22 @@ class _HomePageState extends State<HomePage> {
         ),
         statusBarStyle: GlassStatusBarStyle.light,
         appBar: GlassAppBar(
-          // ★ 3. 标题用胶囊包裹
-          title: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withOpacity(0.15)),
-            ),
+          // ★ 3. 顶栏标题用玻璃胶囊包裹 (使用 shape 参数)
+          title: GlassContainer(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+            useOwnLayer: true,
+            settings: LiquidGlassSettings(blur: 8, thickness: 20),
             child: const Text(
               'HuyaLive',
-              style: TextStyle(
-                  color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
             ),
           ),
           actions: [
-            // ★ 2. 圆形设置按钮（不再扭曲）
+            // ★ 2. 右上角圆形设置按钮 (GlassIconButton 接收 Widget)
             GlassIconButton(
-              icon: const Icon(Icons.settings),
-              width: 44,
-              height: 44,
+              icon: const Icon(Icons.settings, color: Colors.white),
+              size: 44,
               onPressed: () => setState(() => _selectedIndex = 3),
             ),
           ],
@@ -99,7 +88,6 @@ class _HomePageState extends State<HomePage> {
           ),
           child: Stack(
             children: [
-              // 主内容
               NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
                 child: IndexedStack(
@@ -161,10 +149,11 @@ class _HomePageState extends State<HomePage> {
       selectedIndex: _selectedIndex,
       onTabSelected: (i) => setState(() => _selectedIndex = i),
       tabs: const [
-        GlassTab(icon: Icon(Icons.home), label: '首页'),
-        GlassTab(icon: Icon(Icons.search), label: '搜索'),
-        GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-        GlassTab(icon: Icon(Icons.settings), label: '设置'),
+        // ★ GlassTab 接收 IconData
+        GlassTab(icon: Icons.home, label: '首页'),
+        GlassTab(icon: Icons.search, label: '搜索'),
+        GlassTab(icon: Icons.subscriptions_outlined, label: '订阅'),
+        GlassTab(icon: Icons.settings, label: '设置'),
       ],
     );
   }
@@ -175,10 +164,10 @@ class _HomePageState extends State<HomePage> {
       selectedIndex: _selectedIndex,
       onTabSelected: (i) => setState(() => _selectedIndex = i),
       tabs: const [
-        GlassTab(icon: Icon(Icons.home)),
-        GlassTab(icon: Icon(Icons.search)),
-        GlassTab(icon: Icon(Icons.subscriptions_outlined)),
-        GlassTab(icon: Icon(Icons.settings)),
+        GlassTab(icon: Icons.home),
+        GlassTab(icon: Icons.search),
+        GlassTab(icon: Icons.subscriptions_outlined),
+        GlassTab(icon: Icons.settings),
       ],
     );
   }
@@ -191,17 +180,18 @@ class _MiniBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ★ 使用 shape 参数控制圆角
     return GlassContainer(
-      borderRadius: BorderRadius.circular(20),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 22),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      useOwnLayer: true,
+      settings: LiquidGlassSettings(blur: 10, thickness: 30),
       child: Row(
         children: [
-          // 圆角封面
           ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             child: room.avatarUrl.isNotEmpty
-                ? Image.network(room.avatarUrl,
-                    width: 40, height: 40, fit: BoxFit.cover,
+                ? Image.network(room.avatarUrl, width: 44, height: 44, fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _artPlaceholder())
                 : _artPlaceholder(),
           ),
@@ -211,30 +201,21 @@ class _MiniBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(room.nickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-                const Text('正在观看 · 点击回到直播',
-                    style: TextStyle(color: Colors.white54, fontSize: 11)),
+                Text(room.nickname, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text('正在观看 · 点击回到直播', style: TextStyle(color: Colors.white54, fontSize: 11)),
               ],
             ),
           ),
           GlassIconButton(
             icon: const Icon(Icons.play_arrow, color: Color(0xFF00D2FF)),
-            width: 40,
-            height: 40,
-            onPressed: () => goLive(room.roomId,
-                nickname: room.nickname, avatarUrl: room.avatarUrl),
+            size: 40,
+            onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
           ),
           const SizedBox(width: 4),
           GlassIconButton(
             icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-            width: 36,
-            height: 36,
+            size: 36,
             onPressed: () => NowWatching.notifier.value = null,
           ),
         ],
@@ -243,14 +224,13 @@ class _MiniBar extends StatelessWidget {
   }
 
   Widget _artPlaceholder() => Container(
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-              colors: [Color(0xFF00D2FF), Color(0xFF7C6BFF)]),
-          borderRadius: BorderRadius.all(Radius.circular(10)),
+          gradient: LinearGradient(colors: [Color(0xFF00D2FF), Color(0xFF7C6BFF)]),
+          borderRadius: BorderRadius.all(Radius.circular(12)),
         ),
-        child: const Icon(Icons.live_tv, size: 18, color: Colors.white),
+        child: const Icon(Icons.live_tv, size: 20, color: Colors.white),
       );
 }
 
@@ -265,8 +245,7 @@ class _HomeView extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('进入直播间',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 16)),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -311,14 +290,10 @@ class _HomeView extends StatelessWidget {
               const Icon(Icons.live_tv, size: 56, color: Colors.white),
               const SizedBox(height: 12),
               const Text('虎牙直播 · 液态玻璃',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Text('看直播 · 弹幕 · 订阅 · 真实发送',
-                  style:
-                      TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
+                  style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
               const SizedBox(height: 18),
               GlassButton(
                 icon: const Icon(Icons.play_arrow),
@@ -410,7 +385,6 @@ class _OpaqueContentCard extends StatelessWidget {
   }
 }
 
-// ================= 订阅 Tab =================
 class _FollowsView extends StatefulWidget {
   const _FollowsView();
   @override
@@ -496,7 +470,6 @@ class _FollowsViewState extends State<_FollowsView> {
   }
 }
 
-// ================= 设置 Tab =================
 class _SettingsView extends StatelessWidget {
   const _SettingsView();
 
