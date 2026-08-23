@@ -105,7 +105,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
     setState(() => _followed = !_followed);
   }
 
-  // ================= 解析房间 + 流（空安全 + 正确开播判断） =================
+  // ================= 解析（空安全 + 正确开播判断） =================
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -122,7 +122,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
 
       _streamName = '${base?['sStreamName'] ?? ''}';
 
-      // ★ 正确的开播判断：liveStatus=="ON" / liveData.isOn / baseStream 存在
       final liveStatus = '${data['liveStatus'] ?? ''}'.toUpperCase();
       final isOn = data['isOn'] == 1 ||
           live['isOn'] == 1 ||
@@ -130,7 +129,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
           liveStatus == 'LIVE' ||
           (base != null && _streamName.isNotEmpty);
 
-      // 开播时间（多字段兜底）
       int st = 0;
       for (final k in ['startTime', 'iStartTime', 'lStartTime']) {
         if (live[k] is num) {
@@ -154,7 +152,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
         _startTime = st;
       });
 
-      // 开播时长计时器
       _tickTimer?.cancel();
       if (isOn && st > 0) {
         _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -162,7 +159,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
         });
       }
 
-      // 线路
       final multi = (stream?['hlsMultiLine'] as List?) ?? [];
       _lines = [
         if (base != null)
@@ -178,7 +174,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
             ),
       ];
 
-      // 画质
       final rates = (stream?['flvRateArray'] as List?) ?? [];
       _qualities = [
         for (final r in rates)
@@ -195,12 +190,13 @@ class _LivePlayPageState extends State<LivePlayPage> {
         ];
       }
 
-      // 弹幕
       final sid = int.tryParse(_roomId) ?? 0;
       _danmaku.connect(topSid: sid, subSid: sid, roomIdStr: _roomId);
 
       if (isOn && _streamName.isNotEmpty) {
         await _play();
+      } else if (isOn) {
+        setState(() => _status = '在播但流信息为空');
       }
     } catch (e) {
       setState(() => _status = '加载失败: $e');
@@ -246,7 +242,6 @@ class _LivePlayPageState extends State<LivePlayPage> {
   String _wan(int n) =>
       n >= 10000 ? '${(n / 10000).toStringAsFixed(1)}万' : '$n';
 
-  // ★ 开播时长
   String _liveDurationText() {
     if (_startTime <= 0 || !_isLive) return '';
     final dur = DateTime.now().difference(
@@ -256,7 +251,9 @@ class _LivePlayPageState extends State<LivePlayPage> {
     final h = dur.inHours;
     final m = dur.inMinutes % 60;
     final s = dur.inSeconds % 60;
-    return h > 0 ? '$two(h):$two(m):$two(s)' : '$two(m):$two(s)';
+    return h > 0
+        ? '${two(h)}:${two(m)}:${two(s)}'
+        : '${two(m)}:${two(s)}';
   }
 
   @override
@@ -265,25 +262,25 @@ class _LivePlayPageState extends State<LivePlayPage> {
       onPause: () => _controller?.pause(),
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              _buildVideo(),
-              _buildTabs(),
-              _buildBottom(),
-            ],
-          ),
+        body: Column(
+          children: [
+            _buildHeader(context),
+            _buildVideo(),
+            Expanded(child: _buildTabs()),
+            _buildBottom(context), // ★ 固定紧凑，不再挤压
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  // ================= 头部 =================
+  Widget _buildHeader(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
     final dur = _liveDurationText();
     return Container(
       color: const Color(0xFF101018),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: EdgeInsets.fromLTRB(12, topPad + 8, 12, 10),
       child: Row(
         children: [
           CircleAvatar(
@@ -333,11 +330,12 @@ class _LivePlayPageState extends State<LivePlayPage> {
     );
   }
 
+  // ================= 视频区 =================
   Widget _buildVideo() {
     final c = _controller;
     final ready = c != null && c.value.isInitialized;
     return SizedBox(
-      height: 220,
+      height: 210,
       child: Stack(
         children: [
           if (_isLive && ready)
@@ -346,6 +344,18 @@ class _LivePlayPageState extends State<LivePlayPage> {
                 aspectRatio:
                     c.value.aspectRatio > 0 ? c.value.aspectRatio : 16 / 9,
                 child: VideoPlayer(c),
+              ),
+            )
+          else if (_isLive)
+            const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF00D2FF)),
+                  SizedBox(height: 10),
+                  Text('直播流加载/解析中…',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
               ),
             )
           else
@@ -369,20 +379,19 @@ class _LivePlayPageState extends State<LivePlayPage> {
           ),
           if (_loading)
             const Center(
-                child:
-                    CircularProgressIndicator(color: Color(0xFF00D2FF))),
+                child: CircularProgressIndicator(color: Color(0xFF00D2FF))),
           Positioned(
             left: 8,
             bottom: 6,
             child: Text(_status,
-                style: const TextStyle(
-                    color: Colors.white38, fontSize: 10)),
+                style: const TextStyle(color: Colors.white38, fontSize: 10)),
           ),
         ],
       ),
     );
   }
 
+  // ================= 弹幕/详情 =================
   Widget _buildTabs() {
     final dur = _liveDurationText();
     return DefaultTabController(
@@ -395,8 +404,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
             indicatorColor: Color(0xFF00D2FF),
             tabs: [Tab(text: '弹幕'), Tab(text: '主播详情')],
           ),
-          SizedBox(
-            height: 220,
+          Expanded(
             child: TabBarView(
               children: [
                 ListView.builder(
@@ -451,79 +459,106 @@ class _LivePlayPageState extends State<LivePlayPage> {
     );
   }
 
-  Widget _buildBottom() {
-    return Expanded(
-      child: Container(
-        color: const Color(0xFF101018),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (var i = 0; i < _qualities.length; i++)
-                  ChoiceChip(
-                    label: Text(_qualities[i].name),
-                    selected: _qi == i,
-                    onSelected: (v) {
-                      setState(() => _qi = i);
-                      _play();
-                    },
-                  ),
-              ],
+  // ================= 底部：横滑芯片 + 固定发送栏 =================
+  Widget _buildBottom(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    return Container(
+      color: const Color(0xFF101018),
+      padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPad + 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isLive && _qualities.isNotEmpty)
+            _chipRow(
+              labels: [for (final q in _qualities) q.name],
+              selected: _qi,
+              onSelected: (i) {
+                setState(() => _qi = i);
+                _play();
+              },
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (var i = 0; i < (_lines.isEmpty ? 3 : _lines.length); i++)
-                  ChoiceChip(
-                    label: Text('线路${i + 1}'),
-                    selected: _li == i,
-                    onSelected: (v) {
-                      setState(() => _li = i);
-                      _play();
-                    },
-                  ),
-              ],
+          if (_isLive && _qualities.isNotEmpty && _lines.isNotEmpty)
+            const SizedBox(height: 6),
+          if (_isLive && _lines.isNotEmpty)
+            _chipRow(
+              labels: [for (final l in _lines) l.name],
+              selected: _li,
+              onSelected: (i) {
+                setState(() => _li = i);
+                _play();
+              },
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _sendCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: '发送弹幕...',
-                      hintStyle: const TextStyle(color: Colors.white38),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.06),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Color(0xFF00D2FF)),
-                  onPressed: () async {
-                    final t = _sendCtrl.text.trim();
-                    if (t.isEmpty) return;
-                    await _danmaku.sendDanmaku(t);
-                    _sendCtrl.clear();
-                  },
-                ),
-              ],
-            ),
-          ],
+          const SizedBox(height: 8),
+          _sendBar(),
+        ],
+      ),
+    );
+  }
+
+  /// ★ 单行横向滑动芯片，不再换行占高度
+  Widget _chipRow({
+    required List<String> labels,
+    required int selected,
+    required ValueChanged<int> onSelected,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: labels.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (c, i) => ChoiceChip(
+          label: Text(labels[i]),
+          selected: selected == i,
+          selectedColor: const Color(0xFF00D2FF),
+          backgroundColor: Colors.white.withOpacity(0.06),
+          side: BorderSide(color: Colors.white.withOpacity(0.15)),
+          labelStyle: TextStyle(
+              color: selected == i ? Colors.black87 : Colors.white70),
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onSelected: (_) => onSelected(i),
         ),
       ),
+    );
+  }
+
+  Widget _sendBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 46,
+            child: TextField(
+              controller: _sendCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: '发送弹幕...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.06),
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(23),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.send, color: Color(0xFF00D2FF)),
+          onPressed: () async {
+            final t = _sendCtrl.text.trim();
+            if (t.isEmpty) return;
+            await _danmaku.sendDanmaku(t);
+            _sendCtrl.clear();
+          },
+        ),
+      ],
     );
   }
 }
