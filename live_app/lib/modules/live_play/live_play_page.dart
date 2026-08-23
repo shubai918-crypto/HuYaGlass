@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import 'package:live_core/live_core.dart';
 
 import '../home/follow_store.dart';
+import 'background_play.dart'; // ★ 加回后台播放模块
 
 class _Quality {
   final String name;
@@ -102,7 +103,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
     setState(() => _followed = !_followed);
   }
 
-  // ================= 解析房间（空安全 + 正确开播判断） =================
+  // ================= 解析房间（修复 Map 类型转换 + 正确开播判断） =================
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -116,13 +117,14 @@ class _LivePlayPageState extends State<LivePlayPage> {
       );
       final j = jsonDecode(resp.body);
       final data = (j is Map ? j['data'] : null) as Map? ?? {};
-      final live = (data['liveData'] as Map?) ?? {};
-      final stream = data['stream'] as Map?;
-      final base = stream?['baseStream'] as Map?;
+      
+      // ★ 修复：显式 cast 为 Map<String, dynamic>，解决编译报错
+      final live = (data['liveData'] as Map?)?.cast<String, dynamic>() ?? {};
+      final stream = (data['stream'] as Map?)?.cast<String, dynamic>();
+      final base = (stream?['baseStream'] as Map?)?.cast<String, dynamic>();
 
       final streamName = '${base?['sStreamName'] ?? ''}';
 
-      // ★ 正确开播判断
       final liveStatus = '${data['liveStatus'] ?? ''}'.toUpperCase();
       final isOn = data['isOn'] == 1 ||
           live['isOn'] == 1 ||
@@ -160,7 +162,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
         });
       }
 
-      // ★ 线路：FLV + HLS 双地址
+      // ★ 线路：FLV + HLS 双地址（带 cast）
       final flvMulti = (stream?['flvMultiLine'] as List?) ?? [];
       final hlsMulti = (stream?['hlsMultiLine'] as List?) ?? [];
       _lines = [
@@ -169,9 +171,9 @@ class _LivePlayPageState extends State<LivePlayPage> {
           if (flvMulti[i] is Map)
             _Line(
               '${flvMulti[i]['sCdnType'] ?? '线路${i + 2}'}',
-              flvMulti[i] as Map<String, dynamic>,
+              (flvMulti[i] as Map).cast<String, dynamic>(),
               (i < hlsMulti.length && hlsMulti[i] is Map)
-                  ? hlsMulti[i] as Map<String, dynamic>
+                  ? (hlsMulti[i] as Map).cast<String, dynamic>()
                   : null,
             ),
       ];
@@ -226,7 +228,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
     return '$u/$n.$s?$a${ratio > 0 ? '&ratio=$ratio' : ''}';
   }
 
-  // ★ FLV 优先 + HLS 兜底 + 10 秒超时，杜绝无限加载
+  // ★ FLV 优先 + HLS 兜底 + 10 秒超时
   Future<void> _play() async {
     setState(() {
       _loading = true;
@@ -296,15 +298,19 @@ class _LivePlayPageState extends State<LivePlayPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Column(
-        children: [
-          _buildHeader(context),
-          _buildVideo(),
-          Expanded(child: _buildTabs()),
-          _buildBottom(context),
-        ],
+    // ★ 加回后台播放守卫
+    return BackgroundPlayGuard(
+      onPause: () => _controller?.pause(),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Column(
+          children: [
+            _buildHeader(context),
+            _buildVideo(),
+            Expanded(child: _buildTabs()),
+            _buildBottom(context),
+          ],
+        ),
       ),
     );
   }
@@ -414,9 +420,15 @@ class _LivePlayPageState extends State<LivePlayPage> {
           Positioned(
             right: 8,
             top: 8,
-            child: IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white70),
-              onPressed: _load,
+            child: Column(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.white70),
+                  onPressed: _load,
+                ),
+                // ★ 加回后台播放开关按钮
+                const BackgroundPlayToggleButton(), 
+              ],
             ),
           ),
           Positioned(
