@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:live_core/src/huya/huya_search.dart'; // ★ 补充 import
 import 'search_controller.dart';
 
 class SearchPage extends StatefulWidget {
@@ -19,8 +20,9 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
-  final SearchController _ctrl = SearchController();
+  final HuyaSearchController _ctrl = HuyaSearchController(); // ★ 改名
   final TextEditingController _text = TextEditingController();
+  final FocusNode _focus = FocusNode();
 
   @override
   void initState() {
@@ -37,6 +39,7 @@ class _SearchPageState extends State<SearchPage> {
     _ctrl.removeListener(_onCtrl);
     _ctrl.dispose();
     _text.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -75,6 +78,7 @@ class _SearchPageState extends State<SearchPage> {
           Expanded(
             child: TextField(
               controller: _text,
+              focusNode: _focus,
               style: const TextStyle(color: Colors.white, fontSize: 15),
               onSubmitted: (_) => _submit(),
               textInputAction: TextInputAction.search,
@@ -108,7 +112,9 @@ class _SearchPageState extends State<SearchPage> {
           child: Text(err, style: const TextStyle(color: Colors.white38)));
     }
     if (!_ctrl.searched) {
-      return const SizedBox.shrink();
+      return const Center(
+          child: Text('搜索主播，或直接输入房间号进入',
+              style: TextStyle(color: Colors.white24)));
     }
     if (_ctrl.items.isEmpty) {
       return const Center(
@@ -122,7 +128,6 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ============ dtv 风格卡片：封面+角标 / 标题+副标题 / 心形 ============
   Widget _card(HuyaSearchItem it) {
     return Material(
       color: Colors.transparent,
@@ -138,7 +143,6 @@ class _SearchPageState extends State<SearchPage> {
           ),
           child: Row(
             children: [
-              // 封面 + 角标
               Stack(
                 children: [
                   ClipRRect(
@@ -178,7 +182,6 @@ class _SearchPageState extends State<SearchPage> {
                 ],
               ),
               const SizedBox(width: 12),
-              // 标题 + 副标题
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,7 +209,6 @@ class _SearchPageState extends State<SearchPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              // 收藏心形
               _HeartButton(
                 roomId: it.roomId,
                 onToggle: widget.onToggleFollow,
@@ -228,7 +230,6 @@ class _SearchPageState extends State<SearchPage> {
       );
 }
 
-/// 右侧收藏心形按钮
 class _HeartButton extends StatefulWidget {
   final String roomId;
   final Future<void> Function(String roomId, bool follow)? onToggle;
