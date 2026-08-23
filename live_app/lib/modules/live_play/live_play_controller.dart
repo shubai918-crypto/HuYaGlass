@@ -6,8 +6,9 @@ import 'package:live_core/live_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../home/follow_store.dart';
+import 'background_play.dart'; // ★ 新增：后台播放存储
 
-class LivePlayController extends GetxController {
+class LivePlayController extends GetxController with WidgetsBindingObserver {
   final roomId = _readRoomId();
   final presenterUid = int.tryParse(Get.parameters['uid'] ?? '0') ?? 0;
 
@@ -93,9 +94,26 @@ class LivePlayController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this); // ★ 新增：注册生命周期观察
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _loadSettings();
     _loadStream();
+  }
+
+  // ★ 新增：后台播放守卫
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      // 退后台：如果后台播放关闭，暂停视频
+      if (!BackgroundPlayStore.enabled.value) {
+        _controller?.pause();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // 回前台：如果之前是播放状态，恢复播放
+      if (_playing && !isPaused.value) {
+        _controller?.play();
+      }
+    }
   }
 
   // ================= 设置持久化 =================
@@ -787,6 +805,7 @@ class LivePlayController extends GetxController {
 
   @override
   void onClose() {
+    WidgetsBinding.instance.removeObserver(this); // ★ 新增：移除观察
     _hideTimer?.cancel();
     _stallTimer?.cancel();
     _durationTimer?.cancel();
