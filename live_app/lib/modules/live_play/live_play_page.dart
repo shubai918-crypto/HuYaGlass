@@ -1,682 +1,473 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
+import 'package:video_player/video_player.dart';
 import 'package:live_core/live_core.dart';
-import '../../common/widgets/danmaku_view.dart';
-import 'live_play_controller.dart';
 
-class LivePlayPage extends StatelessWidget {
+import '../home/follow_store.dart';
+import 'background_play.dart';
+
+class _Quality {
+  final String name;
+  final int ratio;
+  const _Quality(this.name, this.ratio);
+}
+
+class _Line {
+  final String name;
+  final String hlsUrl;
+  final String suffix;
+  final String anti;
+  const _Line(this.name, this.hlsUrl, this.suffix, this.anti);
+}
+
+class LivePlayPage extends StatefulWidget {
   const LivePlayPage({super.key});
+  @override
+  State<LivePlayPage> createState() => _LivePlayPageState();
+}
+
+class _LivePlayPageState extends State<LivePlayPage> {
+  late final String _roomId;
+  String _nickname = '';
+  String _avatar = '';
+  int _fans = 0;
+  bool _isLive = false;
+  bool _followed = false;
+  bool _loading = true;
+  String _status = '';
+
+  // ★ 只用 video_player
+  VideoPlayerController? _controller;
+
+  final HuyaDanmakuClient _danmaku = HuyaDanmakuClient();
+  final List<DanmakuMessage> _messages = [];
+  final TextEditingController _sendCtrl = TextEditingController();
+
+  String _streamName = '';
+  List<_Quality> _qualities = [];
+  int _qi = 0;
+  List<_Line> _lines = [];
+  int _li = 0;
+
+  static const _ua =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
+
+  @override
+  void initState() {
+    super.initState();
+    final args = Get.arguments as Map<String, dynamic>? ?? {};
+    _roomId = '${args['roomId'] ?? ''}';
+    _nickname = '${args['nickname'] ?? ''}';
+    _avatar = '${args['avatarUrl'] ?? ''}';
+
+    _danmaku.onStatus = (s) {
+      if (mounted) setState(() => _status = s);
+    };
+    _danmaku.danmakuStream.listen((m) {
+      if (mounted) {
+        setState(() {
+          _messages.add(m);
+          if (_messages.length > 300) _messages.removeAt(0);
+        });
+      }
+    });
+
+    _followedCheck();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    _danmaku.disconnect();
+    _sendCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _followedCheck() async {
+    final v = await FollowStore.contains(_roomId);
+    if (mounted) setState(() => _followed = v);
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_followed) {
+      await FollowStore.remove(_roomId);
+    } else {
+      await FollowStore.add(FollowItem(
+          roomId: _roomId, name: _nickname, avatar: _avatar));
+    }
+    setState(() => _followed = !_followed);
+  }
+
+  // ================= 解析房间 + 流 =================
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final resp = await http.get(
+        Uri.parse(
+            'https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$_roomId'),
+        headers: {'User-Agent': _ua},
+      );
+      final j = jsonDecode(resp.body);
+      final data = j['data'];
+      final live = data['liveData'] ?? {};
+      setState(() {
+        _nickname = _nickname.isEmpty ? '${live['nick'] ?? ''}' : _nickname;
+        _avatar = _avatar.isEmpty ? '${live['avatar180'] ?? ''}' : _avatar;
+        _fans = (live['totalCount'] is num)
+            ? (live['totalCount'] as num).toInt()
+            : 0;
+        _isLive = data['isOn'] == 1;
+      });
+
+      final stream = data['stream'];
+      final base = stream['baseStream'];
+      _streamName = '${base['sStreamName'] ?? ''}';
+
+      final multi = (stream['hlsMultiLine'] as List?) ?? [];
+      _lines = [
+        _Line('线路1', '${base['sHlsUrl'] ?? ''}',
+            '${base['sHlsUrlSuffix'] ?? ''}', '${base['sHlsAntiCode'] ?? ''}'),
+        for (final m in multi)
+          _Line(
+            '${m['sCdnType'] ?? '线路'}',
+            '${m['sHlsUrl'] ?? base['sHlsUrl'] ?? ''}',
+            '${m['sHlsUrlSuffix'] ?? base['sHlsUrlSuffix'] ?? ''}',
+            '${m['sHlsAntiCode'] ?? base['sHlsAntiCode'] ?? ''}',
+          ),
+      ];
+
+      final rates = (stream['flvRateArray'] as List?) ?? [];
+      _qualities = [
+        for (final r in rates)
+          _Quality('${r['sName'] ?? ''}', (r['iBitRate'] is num)
+              ? (r['iBitRate'] as num).toInt()
+              : 0),
+      ];
+      if (_qualities.isEmpty) {
+        _qualities = const [
+          _Quality('蓝光10M', 0),
+          _Quality('蓝光4M', 1000),
+          _Quality('超清', 2000),
+          _Quality('流畅', 3000),
+        ];
+      }
+
+      final sid = int.tryParse(_roomId) ?? 0;
+      _danmaku.connect(topSid: sid, subSid: sid, roomIdStr: _roomId);
+
+      if (_isLive) await _play();
+    } catch (e) {
+      setState(() => _status = '加载失败: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _buildUrl() {
+    if (_lines.isEmpty || _streamName.isEmpty) return '';
+    final line = _lines[_li];
+    final ratio = _qualities.isEmpty ? 0 : _qualities[_qi].ratio;
+    final anti = line.anti.isEmpty ? '' : '&${line.anti}';
+    return '${line.hlsUrl}/$_streamName.${line.suffix}?ratio=$ratio$anti';
+  }
+
+  // ★ video_player 播放（HLS）
+  Future<void> _play() async {
+    final url = _buildUrl();
+    if (url.isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      await _controller?.dispose();
+      _controller = null;
+
+      final c = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: const {
+          'User-Agent': _ua,
+          'Referer': 'https://www.huya.com/',
+        },
+      );
+      _controller = c;
+      await c.initialize();
+      c.setLooping(false);
+      await c.play();
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) setState(() => _status = '播放失败: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _wan(int n) =>
+      n >= 10000 ? '${(n / 10000).toStringAsFixed(1)}万' : '$n';
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(LivePlayController());
-    return Obx(() {
-      final fs = controller.isFullscreen.value;
-      return PopScope(
-        canPop: !fs,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) controller.toggleFullscreen();
-        },
-        child: Scaffold(
-          backgroundColor: const Color(0xFF0A0A0F),
-          // 全屏保活：整屏微透明度振荡，关弹幕也不黑屏
-          body: _KeepAlive(
-            active: fs,
-            child: _buildBody(context, controller, fs),
+    // ★ 后台播放守卫：开关关时退后台自动暂停
+    return BackgroundPlayGuard(
+      onPause: () => _controller?.pause(),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(),
+              _buildVideo(),
+              _buildTabs(),
+              _buildBottom(),
+            ],
           ),
         ),
-      );
-    });
-  }
-
-  Widget _buildBody(BuildContext context, LivePlayController controller, bool fs) {
-    final mq = MediaQuery.of(context);
-    const topBarH = 80.0;
-    final topPad = fs ? 0.0 : mq.padding.top;
-    final w = mq.size.width;
-    final videoH = w * 9 / 16;
-
-    return Obx(() {
-      if (controller.loading.value && !fs) {
-        return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF00D2FF)));
-      }
-      return Stack(children: [
-        // 视频层：slot0 永不卸载，切屏只改定位参数
-        Positioned(
-          top: fs ? 0 : topPad + topBarH,
-          left: 0,
-          right: 0,
-          height: fs ? null : videoH,
-          bottom: fs ? 0 : null,
-          child: controller.videoHost(fs),
-        ),
-        if (!fs) ...[
-          Positioned(
-            top: topPad,
-            left: 0,
-            right: 0,
-            height: topBarH,
-            child: _buildTopBar(controller),
-          ),
-          if (controller.showDanmaku.value && controller.danmakuStream != null)
-            Positioned(
-              top: topPad + topBarH + 4,
-              left: 0,
-              right: 0,
-              height: videoH,
-              child: IgnorePointer(
-                child: DanmakuView(
-                  danmakuStream: controller.danmakuStream!,
-                  height: videoH * controller.danmakuArea.value,
-                  fontSize: controller.danmakuFontSize.value,
-                  fps: controller.danmakuFps.value,
-                  speed: controller.danmakuSpeed.value,
-                  opacity: controller.danmakuOpacity.value,
-                ),
-              ),
-            ),
-          Positioned(
-            top: topPad + topBarH + videoH,
-            left: 0,
-            right: 0,
-            bottom: mq.padding.bottom,
-            child: Column(children: [
-              Expanded(child: _InfoTabs(controller: controller)),
-              _buildBottomBar(controller),
-            ]),
-          ),
-        ],
-        if (fs) ...[
-          if (controller.showDanmaku.value && controller.danmakuStream != null)
-            Positioned(
-              top: 50,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: DanmakuView(
-                  danmakuStream: controller.danmakuStream!,
-                  height: 220 * controller.danmakuArea.value,
-                  fontSize: controller.danmakuFontSize.value,
-                  fps: controller.danmakuFps.value,
-                  speed: controller.danmakuSpeed.value,
-                  opacity: controller.danmakuOpacity.value,
-                ),
-              ),
-            ),
-        ],
-      ]);
-    });
-  }
-
-  Widget _defaultAvatar() => Container(
-        width: 44,
-        height: 44,
-        color: const Color(0xFF2D2D44),
-        child: const Icon(Icons.person, color: Colors.white54),
-      );
-
-  Widget _buildTopBar(LivePlayController controller) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF16161E),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      color: const Color(0xFF101018),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          ClipOval(
-            child: controller.streamerAvatar.value.isNotEmpty
-                ? Image.network(
-                    controller.streamerAvatar.value,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _defaultAvatar(),
-                  )
-                : _defaultAvatar(),
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.white10,
+            backgroundImage:
+                _avatar.isNotEmpty ? NetworkImage(_avatar) : null,
+            child: _avatar.isEmpty
+                ? const Icon(Icons.person, color: Colors.white54)
+                : null,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  controller.streamerName.value.isEmpty
-                      ? '虎牙主播'
-                      : controller.streamerName.value,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Text(_nickname.isEmpty ? '虎牙主播' : _nickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600)),
+                Text('粉丝 ${_wan(_fans)}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _toggleFollow,
+            style: TextButton.styleFrom(
+              side: BorderSide(
+                  color: _followed ? const Color(0xFFE5484D) : Colors.white24),
+            ),
+            child: Text(
+              _followed ? '已订阅' : '订阅',
+              style: TextStyle(
+                  color: _followed ? const Color(0xFFE5484D) : Colors.white70),
+            ),
+          ),
+          const SizedBox(width: 6),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white70),
+            onPressed: () => Get.back(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideo() {
+    final c = _controller;
+    final ready = c != null && c.value.isInitialized;
+    return SizedBox(
+      height: 220,
+      child: Stack(
+        children: [
+          if (_isLive && ready)
+            Center(
+              child: AspectRatio(
+                aspectRatio: c.value.aspectRatio > 0
+                    ? c.value.aspectRatio
+                    : 16 / 9,
+                child: VideoPlayer(c),
+              ),
+            )
+          else
+            const Center(
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: Colors.black87),
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('主播未开播\n当前直播间没有在直播',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70)),
                 ),
-                Text(
-                  '粉丝 ${_formatCount(controller.fansCount.value)}',
-                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          // 右侧控制列（含后台播放开关）
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Column(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.white70),
+                  onPressed: _load,
+                ),
+                const BackgroundPlayToggleButton(), // ★ 后台播放开关
+              ],
+            ),
+          ),
+          if (_loading)
+            const Center(
+                child: CircularProgressIndicator(color: Color(0xFF00D2FF))),
+          Positioned(
+            left: 8,
+            bottom: 6,
+            child:
+                Text(_status, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabs() {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const TabBar(
+            labelColor: Color(0xFF00D2FF),
+            unselectedLabelColor: Colors.white54,
+            indicatorColor: Color(0xFF00D2FF),
+            tabs: [Tab(text: '弹幕'), Tab(text: '主播详情')],
+          ),
+          SizedBox(
+            height: 220,
+            child: TabBarView(
+              children: [
+                ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _messages.length,
+                  itemBuilder: (c, i) {
+                    final m = _messages[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: RichText(
+                        text: TextSpan(children: [
+                          TextSpan(
+                            text: '${m.nickname}: ',
+                            style: const TextStyle(
+                                color: Color(0xFF29C5F6),
+                                fontWeight: FontWeight.w600),
+                          ),
+                          TextSpan(
+                            text: m.content,
+                            style: const TextStyle(color: Colors.white87),
+                          ),
+                        ]),
+                      ),
+                    );
+                  },
+                ),
+                ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    Text('房间号：$_roomId',
+                        style: const TextStyle(color: Colors.white70)),
+                    Text('昵称：$_nickname',
+                        style: const TextStyle(color: Colors.white70)),
+                    Text('粉丝：${_wan(_fans)}',
+                        style: const TextStyle(color: Colors.white70)),
+                    Text(_isLive ? '状态：直播中' : '状态：未开播',
+                        style: const TextStyle(color: Colors.white70)),
+                  ],
                 ),
               ],
             ),
           ),
-          GestureDetector(
-            onTap: () => controller.toggleFollow(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: controller.isFollowed.value
-                    ? const Color(0xFFFF6B6B).withOpacity(0.2)
-                    : Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                    color: controller.isFollowed.value
-                        ? const Color(0xFFFF6B6B)
-                        : Colors.white.withOpacity(0.15)),
-              ),
-              child: Text(
-                controller.isFollowed.value ? '已订阅' : '订阅',
-                style: TextStyle(
-                    color: controller.isFollowed.value
-                        ? const Color(0xFFFF6B6B)
-                        : Colors.white70,
-                    fontSize: 13),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close, color: Colors.white70, size: 20),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildBottomBar(LivePlayController controller) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF16161E),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (controller.qualities.isNotEmpty) ...[
-            SizedBox(
-              height: 34,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: controller.qualities.map((q) {
-                  final selected = q.name == controller.currentQuality.value;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: GestureDetector(
-                      onTap: () => controller.switchQuality(q),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? const Color(0xFF00D2FF).withOpacity(0.15)
-                              : Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                              color: selected
-                                  ? const Color(0xFF00D2FF)
-                                  : Colors.white.withOpacity(0.1)),
-                        ),
-                        child: Text(
-                          q.name,
-                          style: TextStyle(
-                              color: selected ? const Color(0xFF00D2FF) : Colors.white60,
-                              fontSize: 12),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 30,
-              child: Obx(() => ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: List.generate(controller.lines.length, (i) {
-                      final selected = i == controller.currentLine.value;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: GestureDetector(
-                          onTap: () => controller.switchLine(i),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? const Color(0xFF00D2FF).withOpacity(0.15)
-                                  : Colors.white.withOpacity(0.05),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: selected
-                                      ? const Color(0xFF00D2FF)
-                                      : Colors.white.withOpacity(0.1)),
-                            ),
-                            child: Text(
-                              '线路${i + 1}',
-                              style: TextStyle(
-                                  color: selected
-                                      ? const Color(0xFF00D2FF)
-                                      : Colors.white60,
-                                  fontSize: 11),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  )),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller.inputController,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: '发送弹幕...',
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.08),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none),
-                  ),
-                  onSubmitted: (t) => controller.sendDanmaku(t),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => controller.sendDanmaku(controller.inputController.text),
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF00D2FF),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatCount(int count) {
-    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
-    return '$count';
-  }
-}
-
-// ================= 全屏保活：整屏微透明度振荡，强制持续重合成 =================
-class _KeepAlive extends StatefulWidget {
-  final bool active;
-  final Widget child;
-  const _KeepAlive({required this.active, required this.child});
-
-  @override
-  State<_KeepAlive> createState() => _KeepAliveState();
-}
-
-class _KeepAliveState extends State<_KeepAlive> {
-  Timer? _t;
-  bool _on = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _tick();
-  }
-
-  void _tick() {
-    _t?.cancel();
-    _t = Timer.periodic(const Duration(milliseconds: 150), (_) {
-      if (mounted) setState(() => _on = !_on);
-    });
-  }
-
-  @override
-  void dispose() {
-    _t?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: widget.active && !_on ? 0.985 : 1.0,
-      child: widget.child,
-    );
-  }
-}
-
-// ================= 双 Tab / 详情 / 列表 =================
-class _InfoTabs extends StatefulWidget {
-  final LivePlayController controller;
-  const _InfoTabs({required this.controller});
-
-  @override
-  State<_InfoTabs> createState() => _InfoTabsState();
-}
-
-class _InfoTabsState extends State<_InfoTabs> {
-  int _tab = 0;
-
-  Widget _tabBtn(String label, int index) {
-    final selected = _tab == index;
-    return GestureDetector(
-      onTap: () => setState(() => _tab = index),
+  Widget _buildBottom() {
+    return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected ? const Color(0xFF00D2FF) : Colors.transparent,
-              width: 2,
+        color: const Color(0xFF101018),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var i = 0; i < _qualities.length; i++)
+                  ChoiceChip(
+                    label: Text(_qualities[i].name),
+                    selected: _qi == i,
+                    onSelected: (v) {
+                      setState(() => _qi = i);
+                      _play();
+                    },
+                  ),
+              ],
             ),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? const Color(0xFF00D2FF) : Colors.white54,
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-          ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var i = 0; i < (_lines.isEmpty ? 3 : _lines.length); i++)
+                  ChoiceChip(
+                    label: Text('线路${i + 1}'),
+                    selected: _li == i,
+                    onSelected: (v) {
+                      setState(() => _li = i);
+                      _play();
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _sendCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: '发送弹幕...',
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.06),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.send, color: Color(0xFF00D2FF)),
+                  onPressed: () async {
+                    final t = _sendCtrl.text.trim();
+                    if (t.isEmpty) return;
+                    await _danmaku.sendDanmaku(t);
+                    _sendCtrl.clear();
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            _tabBtn('弹幕', 0),
-            _tabBtn('主播详情', 1),
-            const Spacer(),
-          ],
-        ),
-        const Divider(height: 1, color: Color(0xFF2A2A35)),
-        Expanded(
-          child: _tab == 0
-              ? _DanmakuList(controller: widget.controller)
-              : _DetailTab(controller: widget.controller),
-        ),
-      ],
-    );
-  }
-}
-
-class _DetailTab extends StatelessWidget {
-  final LivePlayController controller;
-  const _DetailTab({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() => ListView(
-          padding: const EdgeInsets.all(14),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16161E),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
-              ),
-              child: Row(
-                children: [
-                  ClipOval(
-                    child: controller.streamerAvatar.value.isNotEmpty
-                        ? Image.network(
-                            controller.streamerAvatar.value,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person, color: Colors.white54, size: 30),
-                          )
-                        : const Icon(Icons.person, color: Colors.white54, size: 30),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          controller.streamerName.value,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '房间号 ${controller.roomId} · ${controller.isLive.value ? "直播中" : "未开播"}',
-                          style: TextStyle(
-                              color: Colors.white.withOpacity(0.55), fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: controller.isLive.value
-                          ? const Color(0xFFFF6B6B).withOpacity(0.2)
-                          : Colors.white.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      controller.isLive.value ? 'LIVE' : 'OFF',
-                      style: TextStyle(
-                          color: controller.isLive.value
-                              ? const Color(0xFFFF6B6B)
-                              : Colors.white38,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16161E),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
-              ),
-              child: Row(
-                children: [
-                  _statCell('粉丝', _formatFull(controller.fansCount.value)),
-                  _divider(),
-                  _statCell('热度', _formatFull(controller.heatCount.value)),
-                  _divider(),
-                  _statCell('清晰度', '${controller.qualities.length} 档'),
-                ],
-              ),
-            ),
-            Obx(() => controller.liveDurationText.value.isNotEmpty
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF16161E),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.06)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.schedule, color: Color(0xFF7ED97E), size: 20),
-                          const SizedBox(width: 10),
-                          const Text('开播时长',
-                              style: TextStyle(color: Colors.white54, fontSize: 13)),
-                          const Spacer(),
-                          Text(
-                            controller.liveDurationText.value,
-                            style: const TextStyle(
-                                color: Color(0xFF7ED97E),
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink()),
-            const SizedBox(height: 12),
-            if (controller.roomTitle.value.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF16161E),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.06)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('直播标题',
-                        style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text(
-                      controller.roomTitle.value,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ));
-  }
-
-  Widget _divider() => Container(
-        width: 1,
-        height: 30,
-        margin: const EdgeInsets.symmetric(horizontal: 10),
-        color: Colors.white.withOpacity(0.1),
-      );
-
-  Widget _statCell(String label, String value) => Expanded(
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: const TextStyle(
-                  color: Color(0xFF00D2FF),
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 2),
-            Text(label,
-                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
-          ],
-        ),
-      );
-
-  String _formatFull(int count) {
-    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
-    return '$count';
-  }
-}
-
-class _DanmakuList extends StatefulWidget {
-  final LivePlayController controller;
-  const _DanmakuList({required this.controller});
-
-  @override
-  State<_DanmakuList> createState() => _DanmakuListState();
-}
-
-class _DanmakuListState extends State<_DanmakuList> {
-  final ScrollController _scroll = ScrollController();
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      final list = widget.controller.danmakuList;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scroll.hasClients && _scroll.position.maxScrollExtent > 0) {
-          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-        }
-      });
-      if (list.isEmpty) {
-        return Center(
-          child: Obx(() => Text(
-                widget.controller.danmakuStatus.value,
-                style: const TextStyle(color: Colors.white24, fontSize: 12),
-              )),
-        );
-      }
-      return ListView.builder(
-        controller: _scroll,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        itemCount: list.length,
-        itemBuilder: (c, i) {
-          final m = list[i];
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: '${m.nickname}: ',
-                    style: const TextStyle(
-                        color: Color(0xFF00D2FF),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  TextSpan(
-                    text: m.content,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    });
   }
 }
