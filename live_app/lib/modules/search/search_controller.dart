@@ -1,34 +1,62 @@
-import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-import 'package:live_core/live_core.dart';
+import 'package:flutter/foundation.dart';
+import 'package:live_core/src/huya/huya_search.dart';
 
-class SearchController extends GetxController {
-  final searchController = TextEditingController();
-  final results = <LiveRoom>[].obs;
-  final searching = false.obs;
-  final hasSearched = false.obs;
+/// 搜索页控制器：关键词 / 加载 / 错误 / 结果 状态管理
+class SearchController extends ChangeNotifier {
+  String _keyword = '';
+  bool _loading = false;
+  bool _searched = false;
+  String? _error;
+  List<HuyaSearchItem> _items = [];
 
-  final HuyaApi _api = HuyaApi();
+  String get keyword => _keyword;
+  bool get loading => _loading;
+  bool get searched => _searched;
+  String? get error => _error;
+  List<HuyaSearchItem> get items => List.unmodifiable(_items);
 
-  Future<void> search(String keyword) async {
-    if (keyword.isEmpty) return;
-    searching.value = true;
-    hasSearched.value = true;
+  void setKeyword(String v) {
+    _keyword = v;
+    notifyListeners();
+  }
+
+  void clear() {
+    _keyword = '';
+    _items = [];
+    _searched = false;
+    _error = null;
+    notifyListeners();
+  }
+
+  /// 提交搜索：纯数字走房间号直查，否则走关键词搜索
+  Future<void> submit() async {
+    final q = _keyword.trim();
+    if (q.isEmpty || _loading) return;
+
+    _loading = true;
+    _error = null;
+    notifyListeners();
 
     try {
-      final rooms = await _api.searchRooms(keyword);
-      results.assignAll(rooms);
-    } catch (e) {
-      results.clear();
-      Get.snackbar('错误', '搜索失败: $e');
+      if (RegExp(r'^\d{3,12}$').hasMatch(q)) {
+        // 直输房间号
+        final room = await HuyaSearchApi.getRoom(q);
+        _items = room != null
+            ? [room]
+            : [HuyaSearchItem(roomId: q, nickname: '房间 $q')];
+      } else {
+        _items = await HuyaSearchApi.search(q);
+      }
+      _searched = true;
+    } catch (_) {
+      _error = '搜索失败，请检查网络后重试';
     } finally {
-      searching.value = false;
+      _loading = false;
+      notifyListeners();
     }
   }
 
-  @override
-  void onClose() {
-    searchController.dispose();
-    super.onClose();
-  }
+  /// 热度格式化：>=1万 显示 x.x万
+  String wan(int n) =>
+      n >= 10000 ? '${(n / 10000).toStringAsFixed(1)}万' : '$n';
 }
