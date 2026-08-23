@@ -58,7 +58,8 @@ class LivePlayPage extends StatelessWidget {
                 top: fs ? 44 : 8,
                 child: Column(
                   children: [
-                    _overlayBtn(Icons.refresh, () => controller.reload()),
+                    // ★ 修复：原 controller 中对应的方法名为 refreshPlay
+                    _overlayBtn(Icons.refresh, () => controller.refreshPlay()),
                     const SizedBox(height: 8),
                     const _BgPlayToggle(), // ★ 后台播放开关
                   ],
