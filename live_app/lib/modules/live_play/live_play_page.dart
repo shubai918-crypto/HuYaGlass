@@ -101,7 +101,7 @@ class _LivePlayPageState extends State<LivePlayPage> {
     setState(() => _followed = !_followed);
   }
 
-  Future<void> _load() async {
+Future<void> _load() async {
     setState(() => _loading = true);
     try {
       final resp = await http.get(
@@ -110,8 +110,11 @@ class _LivePlayPageState extends State<LivePlayPage> {
         headers: {'User-Agent': _ua},
       );
       final j = jsonDecode(resp.body);
-      final data = j['data'];
-      final live = data['liveData'] ?? {};
+
+      // ★ 全链路空安全：未开播房间 stream/baseStream 可能为 null
+      final data = (j is Map ? j['data'] : null) as Map? ?? {};
+      final live = (data['liveData'] as Map?) ?? {};
+
       setState(() {
         _nickname = _nickname.isEmpty ? '${live['nick'] ?? ''}' : _nickname;
         _avatar = _avatar.isEmpty ? '${live['avatar180'] ?? ''}' : _avatar;
@@ -121,29 +124,33 @@ class _LivePlayPageState extends State<LivePlayPage> {
         _isLive = data['isOn'] == 1;
       });
 
-      final stream = data['stream'];
-      final base = stream['baseStream'];
-      _streamName = '${base['sStreamName'] ?? ''}';
+      final stream = data['stream'] as Map?;
+      final base = stream?['baseStream'] as Map?;
+      _streamName = '${base?['sStreamName'] ?? ''}';
 
-      final multi = (stream['hlsMultiLine'] as List?) ?? [];
+      // 线路（未开播时为空列表，不崩）
+      final multi = (stream?['hlsMultiLine'] as List?) ?? [];
       _lines = [
-        _Line('线路1', '${base['sHlsUrl'] ?? ''}',
-            '${base['sHlsUrlSuffix'] ?? ''}', '${base['sHlsAntiCode'] ?? ''}'),
+        if (base != null)
+          _Line('线路1', '${base['sHlsUrl'] ?? ''}',
+              '${base['sHlsUrlSuffix'] ?? ''}', '${base['sHlsAntiCode'] ?? ''}'),
         for (final m in multi)
-          _Line(
-            '${m['sCdnType'] ?? '线路'}',
-            '${m['sHlsUrl'] ?? base['sHlsUrl'] ?? ''}',
-            '${m['sHlsUrlSuffix'] ?? base['sHlsUrlSuffix'] ?? ''}',
-            '${m['sHlsAntiCode'] ?? base['sHlsAntiCode'] ?? ''}',
-          ),
+          if (m is Map)
+            _Line(
+              '${m['sCdnType'] ?? '线路'}',
+              '${m['sHlsUrl'] ?? base?['sHlsUrl'] ?? ''}',
+              '${m['sHlsUrlSuffix'] ?? base?['sHlsUrlSuffix'] ?? ''}',
+              '${m['sHlsAntiCode'] ?? base?['sHlsAntiCode'] ?? ''}',
+            ),
       ];
 
-      final rates = (stream['flvRateArray'] as List?) ?? [];
+      // 画质
+      final rates = (stream?['flvRateArray'] as List?) ?? [];
       _qualities = [
         for (final r in rates)
-          _Quality('${r['sName'] ?? ''}', (r['iBitRate'] is num)
-              ? (r['iBitRate'] as num).toInt()
-              : 0),
+          if (r is Map)
+            _Quality('${r['sName'] ?? ''}',
+                (r['iBitRate'] is num) ? (r['iBitRate'] as num).toInt() : 0),
       ];
       if (_qualities.isEmpty) {
         _qualities = const [
@@ -154,10 +161,14 @@ class _LivePlayPageState extends State<LivePlayPage> {
         ];
       }
 
+      // 弹幕照常连接（未开播也能收/发）
       final sid = int.tryParse(_roomId) ?? 0;
       _danmaku.connect(topSid: sid, subSid: sid, roomIdStr: _roomId);
 
-      if (_isLive) await _play();
+      // ★ 只有真正在播且有流名时才起播
+      if (_isLive && _streamName.isNotEmpty) {
+        await _play();
+      }
     } catch (e) {
       setState(() => _status = '加载失败: $e');
     } finally {
