@@ -66,31 +66,46 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ★ 2. 真正的玻璃搜索条 + 胶囊箭头按钮
+// ★ 4. Messages 同款玻璃胶囊搜索条
   Widget _buildBar() {
     return Row(
       children: [
         Expanded(
-          child: GlassSearchBar(
-            controller: _text,
-            focusNode: _focus,
-            placeholder: '搜索虎牙主播/房间...',
-            onChanged: _ctrl.setKeyword,
-            onSubmitted: (_) => _submit(),
-            searchIconColor: const Color(0xFF29C5F6),
-            clearIconColor: Colors.white54,
-            textStyle: const TextStyle(color: Colors.white, fontSize: 15),
-            placeholderStyle:
-                const TextStyle(color: Colors.white38, fontSize: 15),
-            height: 52,
+          child: GlassContainer(
+            borderRadius: BorderRadius.circular(999),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: SizedBox(
+              height: 50,
+              child: Row(
+                children: [
+                  const Icon(Icons.search, color: Color(0xFF29C5F6), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _text,
+                      focusNode: _focus,
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                      onSubmitted: (_) => _submit(),
+                      textInputAction: TextInputAction.search,
+                      onChanged: _ctrl.setKeyword,
+                      decoration: const InputDecoration(
+                        hintText: '搜索虎牙主播/房间...',
+                        hintStyle: TextStyle(color: Colors.white38, fontSize: 15),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 10),
-        GlassButton(
-          icon: const Icon(Icons.arrow_forward),
-          onTap: _submit,
-          width: 52,
-          height: 52,
+        GlassIconButton(
+          icon: const Icon(Icons.arrow_forward, color: Colors.white),
+          width: 50,
+          height: 50,
+          onPressed: _submit,
         ),
       ],
     );
