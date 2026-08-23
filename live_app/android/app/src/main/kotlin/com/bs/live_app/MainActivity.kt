@@ -3,9 +3,10 @@ package com.bs.live_app
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import io.flutter.embedding.android.FlutterActivity   // ★ 关键：之前漏了这行
+import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -34,9 +35,7 @@ class MainActivity : FlutterActivity() {
                     val pm = getSystemService(POWER_SERVICE) as PowerManager
                     if (wakeLock == null) {
                         wakeLock = pm.newWakeLock(
-                            PowerManager.PARTIAL_WAKE_LOCK,
-                            "huyalive:bgplay"
-                        )
+                            PowerManager.PARTIAL_WAKE_LOCK, "huyalive:bgplay")
                     }
                     wakeLock?.acquire(60 * 60 * 1000L)
                     result.success(null)
@@ -44,6 +43,19 @@ class MainActivity : FlutterActivity() {
                 "releaseWakeLock" -> {
                     wakeLock?.let { if (it.isHeld) it.release() }
                     wakeLock = null
+                    result.success(null)
+                }
+                "startForegroundService" -> {
+                    val i = Intent(this, BackgroundPlayService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(i)
+                    } else {
+                        startService(i)
+                    }
+                    result.success(null)
+                }
+                "stopForegroundService" -> {
+                    stopService(Intent(this, BackgroundPlayService::class.java))
                     result.success(null)
                 }
                 else -> result.notImplemented()
