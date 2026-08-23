@@ -11,55 +11,49 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "com.huyalive/background"
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "requestIgnoreBatteryOptimizations" -> {
-                    val pm = getSystemService(POWER_SERVICE) as PowerManager
-                    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                        @SuppressLint("BatteryLife")
-                        val intent = Intent(
-                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                        ).apply { data = Uri.parse("package:$packageName") }
-                        runCatching { startActivity(intent) }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.huyalive/background")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestIgnoreBatteryOptimizations" -> {
+                        val pm = getSystemService(POWER_SERVICE) as PowerManager
+                        val already = pm.isIgnoringBatteryOptimizations(packageName)
+                        if (!already) {
+                            @SuppressLint("BatteryLife")
+                            val dialog = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                .apply { data = Uri.parse("package:$packageName") }
+                            val ok = runCatching { startActivity(dialog); true }.getOrDefault(false)
+                            if (!ok) openAppDetails() // ★ ColorOS 拦截时兜底
+                        }
+                        result.success(already)
                     }
-                    result.success(null)
-                }
-                "acquireWakeLock" -> {
-                    val pm = getSystemService(POWER_SERVICE) as PowerManager
-                    if (wakeLock == null) {
-                        wakeLock = pm.newWakeLock(
-                            PowerManager.PARTIAL_WAKE_LOCK, "huyalive:bgplay")
+                    "openAppDetails" -> {
+                        openAppDetails()
+                        result.success(true)
                     }
-                    wakeLock?.acquire(60 * 60 * 1000L)
-                    result.success(null)
-                }
-                "releaseWakeLock" -> {
-                    wakeLock?.let { if (it.isHeld) it.release() }
-                    wakeLock = null
-                    result.success(null)
-                }
-                "startForegroundService" -> {
-                    val i = Intent(this, BackgroundPlayService::class.java)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(i)
-                    } else {
-                        startService(i)
+                    "startForegroundService" -> {
+                        val i = Intent(this, BackgroundPlayService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
+                        else startService(i)
+                        result.success(true)
                     }
-                    result.success(null)
+                    "stopForegroundService" -> {
+                        stopService(Intent(this, BackgroundPlayService::class.java))
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
                 }
-                "stopForegroundService" -> {
-                    stopService(Intent(this, BackgroundPlayService::class.java))
-                    result.success(null)
-                }
-                else -> result.notImplemented()
             }
+    }
+
+    private fun openAppDetails() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .apply { data = Uri.parse("package:$packageName") }
+            )
         }
     }
 }
