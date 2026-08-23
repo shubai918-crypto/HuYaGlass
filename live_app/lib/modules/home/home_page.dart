@@ -57,7 +57,6 @@ class _HomePageState extends State<HomePage> {
         ),
         statusBarStyle: GlassStatusBarStyle.light,
         appBar: GlassAppBar(
-          // ★ 3. 顶栏标题用玻璃胶囊包裹 (使用 shape 参数)
           title: GlassContainer(
             shape: const LiquidRoundedSuperellipse(borderRadius: 999),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
@@ -69,7 +68,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           actions: [
-            // ★ 2. 右上角圆形设置按钮 (GlassIconButton 接收 Widget)
             GlassIconButton(
               icon: const Icon(Icons.settings, color: Colors.white),
               size: 44,
@@ -112,7 +110,6 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              // ★ 1. 迷你播放条：悬浮在底栏上方
               Positioned(
                 left: 16,
                 right: 16,
@@ -143,17 +140,17 @@ class _HomePageState extends State<HomePage> {
     return false;
   }
 
+  // ★ 修复：icon 参数必须传入 Widget (使用 Icon 包裹)
   Widget _buildFullBar() {
     return GlassTabBar.bottom(
       key: const ValueKey('full'),
       selectedIndex: _selectedIndex,
       onTabSelected: (i) => setState(() => _selectedIndex = i),
       tabs: const [
-        // ★ GlassTab 接收 IconData
-        GlassTab(icon: Icons.home, label: '首页'),
-        GlassTab(icon: Icons.search, label: '搜索'),
-        GlassTab(icon: Icons.subscriptions_outlined, label: '订阅'),
-        GlassTab(icon: Icons.settings, label: '设置'),
+        GlassTab(icon: Icon(Icons.home), label: '首页'),
+        GlassTab(icon: Icon(Icons.search), label: '搜索'),
+        GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+        GlassTab(icon: Icon(Icons.settings), label: '设置'),
       ],
     );
   }
@@ -164,23 +161,21 @@ class _HomePageState extends State<HomePage> {
       selectedIndex: _selectedIndex,
       onTabSelected: (i) => setState(() => _selectedIndex = i),
       tabs: const [
-        GlassTab(icon: Icons.home),
-        GlassTab(icon: Icons.search),
-        GlassTab(icon: Icons.subscriptions_outlined),
-        GlassTab(icon: Icons.settings),
+        GlassTab(icon: Icon(Icons.home)),
+        GlassTab(icon: Icon(Icons.search)),
+        GlassTab(icon: Icon(Icons.subscriptions_outlined)),
+        GlassTab(icon: Icon(Icons.settings)),
       ],
     );
   }
 }
 
-// ================= Apple Music 同款迷你播放条 =================
 class _MiniBar extends StatelessWidget {
   final NowRoom room;
   const _MiniBar({required this.room});
 
   @override
   Widget build(BuildContext context) {
-    // ★ 使用 shape 参数控制圆角
     return GlassContainer(
       shape: const LiquidRoundedSuperellipse(borderRadius: 22),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -234,7 +229,6 @@ class _MiniBar extends StatelessWidget {
       );
 }
 
-// ================= 首页 Tab =================
 class _HomeView extends StatelessWidget {
   final VoidCallback onOpenFollows;
   const _HomeView({required this.onOpenFollows});
