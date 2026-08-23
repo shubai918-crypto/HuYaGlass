@@ -8,9 +8,30 @@ import '../search/search_page.dart';
 import '../settings/huya_login_page.dart';
 import 'follow_store.dart';
 
-/// 进入直播间（arguments 传参，不依赖路由表）
-void goLive(String roomId) {
+/// "正在观看"数据持有
+class NowRoom {
+  final String roomId;
+  final String nickname;
+  final String avatarUrl;
+  const NowRoom({
+    required this.roomId,
+    required this.nickname,
+    this.avatarUrl = '',
+  });
+}
+
+class NowWatching {
+  static final ValueNotifier<NowRoom?> notifier = ValueNotifier(null);
+}
+
+/// 进入直播间
+void goLive(String roomId, {String nickname = '', String avatarUrl = ''}) {
   if (roomId.isEmpty) return;
+  NowWatching.notifier.value = NowRoom(
+    roomId: roomId,
+    nickname: nickname.isEmpty ? '虎牙主播' : nickname,
+    avatarUrl: avatarUrl,
+  );
   Get.to(() => const LivePlayPage(), arguments: {'roomId': roomId});
 }
 
@@ -22,8 +43,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-
-  // ★ 上拉时底栏切换为简化版
   bool _compact = false;
 
   static const _tabIcons = [
@@ -54,76 +73,97 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         statusBarStyle: GlassStatusBarStyle.light,
+        // ★ 4. 顶栏胶囊按钮风格
         appBar: GlassAppBar(
           title: const Text('HuyaLive'),
           actions: [
-            // ★ 右上角改为设置图标，点击跳到设置 Tab
-            GlassIconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => setState(() => _selectedIndex = 3),
+            GlassButton(
+              icon: const Icon(Icons.settings, size: 18),
+              label: '设置',
+              onTap: () => setState(() => _selectedIndex = 3),
             ),
           ],
         ),
-        // ★ 底栏：完整 / 简化 之间动画切换
+        // ★ 1. 底栏：完整(图标+文字) / 简化(纯图标) 均为真实玻璃
         bottomBar: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
-          child: _compact ? _buildCompactBar(key: const ValueKey('c')) : _buildFullBar(key: const ValueKey('f')),
+          child: _compact ? _buildCompactBar() : _buildFullBar(),
         ),
-        body: NotificationListener<ScrollNotification>(
-          onNotification: _onScroll,
-          child: Padding(
-            padding: EdgeInsets.only(
-              top: topPad + 64,
-              bottom: bottomPad + (_compact ? 64 : 88),
-            ),
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: [
-                _HomeView(
-                  onOpenFollows: () => setState(() => _selectedIndex = 2),
+        body: Padding(
+          padding: EdgeInsets.only(
+            top: topPad + 64,
+            bottom: bottomPad + (_compact ? 64 : 88),
+          ),
+          child: Column(
+            children: [
+              // ★ 3. "正在观看"玻璃迷你条
+              ValueListenableBuilder<NowRoom?>(
+                valueListenable: NowWatching.notifier,
+                builder: (context, room, _) => room == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: _NowWatchingBar(room: room),
+                      ),
+              ),
+              Expanded(
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _onScroll,
+                  child: IndexedStack(
+                    index: _selectedIndex,
+                    children: [
+                      _HomeView(
+                        onOpenFollows: () =>
+                            setState(() => _selectedIndex = 2),
+                      ),
+                      SearchPage(
+                        onOpenRoom: (roomId, nickname, avatarUrl) => goLive(
+                          roomId,
+                          nickname: nickname,
+                          avatarUrl: avatarUrl,
+                        ),
+                        isFollowed: (roomId) => FollowStore.contains(roomId),
+                        onToggleFollow: (roomId, follow, nickname, avatar) async {
+                          if (follow) {
+                            await FollowStore.add(FollowItem(
+                                roomId: roomId,
+                                name: nickname,
+                                avatar: avatar));
+                          } else {
+                            await FollowStore.remove(roomId);
+                          }
+                        },
+                      ),
+                      const _FollowsView(),
+                      const _SettingsView(),
+                    ],
+                  ),
                 ),
-                SearchPage(
-                  onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId),
-                  isFollowed: (roomId) => FollowStore.contains(roomId),
-                  onToggleFollow: (roomId, follow, nickname, avatar) async {
-                    if (follow) {
-                      await FollowStore.add(FollowItem(
-                          roomId: roomId, name: nickname, avatar: avatar));
-                    } else {
-                      await FollowStore.remove(roomId);
-                    }
-                  },
-                ),
-                const _FollowsView(),
-                const _SettingsView(),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // ================= 滚动监听：上拉简化 / 下拉恢复 =================
   bool _onScroll(ScrollNotification n) {
     if (n is ScrollUpdateNotification) {
       final delta = n.scrollDelta ?? 0;
       final pixels = n.metrics.pixels;
       if (delta > 0 && pixels > 80 && !_compact) {
-        // 上拉（向下滑动列表）→ 简化版
         setState(() => _compact = true);
       } else if ((delta < 0 || pixels <= 0) && _compact) {
-        // 下拉 / 回到顶部 → 完整版
         setState(() => _compact = false);
       }
     }
     return false;
   }
 
-  // ================= 完整版底栏（图标+文字） =================
-  Widget _buildFullBar({Key? key}) {
+  // 完整版：图标+文字
+  Widget _buildFullBar() {
     return GlassTabBar.bottom(
-      key: key,
+      key: const ValueKey('full'),
       selectedIndex: _selectedIndex,
       onTabSelected: (i) => setState(() => _selectedIndex = i),
       tabs: const [
@@ -135,28 +175,77 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ================= 简化版底栏（纯图标胶囊） =================
-  Widget _buildCompactBar({Key? key}) {
-    return Padding(
-      key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 6),
-      child: GlassContainer(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+  // ★ 简化版：纯图标玻璃 Tab 栏
+  Widget _buildCompactBar() {
+    return GlassTabBar.bottom(
+      key: const ValueKey('compact'),
+      selectedIndex: _selectedIndex,
+      onTabSelected: (i) => setState(() => _selectedIndex = i),
+      tabs: const [
+        GlassTab(icon: Icon(Icons.home)),
+        GlassTab(icon: Icon(Icons.search)),
+        GlassTab(icon: Icon(Icons.subscriptions_outlined)),
+        GlassTab(icon: Icon(Icons.settings)),
+      ],
+    );
+  }
+}
+
+// ================= "正在观看"玻璃迷你条 =================
+class _NowWatchingBar extends StatelessWidget {
+  final NowRoom room;
+  const _NowWatchingBar({required this.room});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => goLive(
+        room.roomId,
+        nickname: room.nickname,
+        avatarUrl: room.avatarUrl,
+      ),
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
-          children: List.generate(
-            _tabIcons.length,
-            (i) => Expanded(
-              child: GlassIconButton(
-                icon: Icon(
-                  _tabIcons[i],
-                  color: i == _selectedIndex
-                      ? const Color(0xFF00D2FF)
-                      : Colors.white54,
-                ),
-                onPressed: () => setState(() => _selectedIndex = i),
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white10,
+              backgroundImage: room.avatarUrl.isNotEmpty
+                  ? NetworkImage(room.avatarUrl)
+                  : null,
+              child: room.avatarUrl.isEmpty
+                  ? const Icon(Icons.live_tv, size: 16, color: Colors.white70)
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    room.nickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const Text(
+                    '正在观看 · 点击回到直播',
+                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
               ),
             ),
-          ),
+            const Icon(Icons.play_arrow, color: Color(0xFF00D2FF)),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => NowWatching.notifier.value = null,
+              child: const Icon(Icons.close, size: 18, color: Colors.white38),
+            ),
+          ],
         ),
       ),
     );
@@ -366,14 +455,13 @@ class _FollowsViewState extends State<_FollowsView> {
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: GestureDetector(
-            onTap: () => goLive(f.roomId),
+            onTap: () => goLive(f.roomId, nickname: f.name, avatarUrl: f.avatar),
             onLongPress: () async {
               await FollowStore.remove(f.roomId);
               _load();
             },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFF16161E),
                 borderRadius: BorderRadius.circular(18),
