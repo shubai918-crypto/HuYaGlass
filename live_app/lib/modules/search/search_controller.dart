@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:live_core/src/huya/huya_search.dart';
 
 /// 搜索页控制器：关键词 / 加载 / 错误 / 结果 状态管理
-class SearchController extends ChangeNotifier {
+class HuyaSearchController extends ChangeNotifier { // ★ 改名
   String _keyword = '';
   bool _loading = false;
   bool _searched = false;
@@ -28,7 +28,6 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 提交搜索：纯数字走房间号直查，否则走关键词搜索
   Future<void> submit() async {
     final q = _keyword.trim();
     if (q.isEmpty || _loading) return;
@@ -39,7 +38,6 @@ class SearchController extends ChangeNotifier {
 
     try {
       if (RegExp(r'^\d{3,12}$').hasMatch(q)) {
-        // 直输房间号
         final room = await HuyaSearchApi.getRoom(q);
         _items = room != null
             ? [room]
@@ -56,7 +54,6 @@ class SearchController extends ChangeNotifier {
     }
   }
 
-  /// 热度格式化：>=1万 显示 x.x万
   String wan(int n) =>
       n >= 10000 ? '${(n / 10000).toStringAsFixed(1)}万' : '$n';
 }
