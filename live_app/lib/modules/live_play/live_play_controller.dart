@@ -6,7 +6,7 @@ import 'package:live_core/live_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../home/follow_store.dart';
-import 'background_play.dart'; // ★ 新增：后台播放存储
+import 'background_play.dart';
 
 class LivePlayController extends GetxController with WidgetsBindingObserver {
   final roomId = _readRoomId();
@@ -94,19 +94,19 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   @override
   void onInit() {
     super.onInit();
-    WidgetsBinding.instance.addObserver(this); // ★ 新增：注册生命周期观察
+    WidgetsBinding.instance.addObserver(this); // ★ 生命周期观察
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _loadSettings();
     _loadStream();
   }
 
-  // ★ 新增：后台播放守卫
+  // ★ 后台播放守卫：退后台按开关决定 继续出声(加唤醒锁) / 暂停
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       if (BackgroundPlayStore.enabled.value) {
-        BackgroundPlayStore.acquireWakeLock(); // 退后台保持 CPU 唤醒，继续出声
+        BackgroundPlayStore.acquireWakeLock();
       } else {
         _controller?.pause();
       }
@@ -117,6 +117,10 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       }
     }
   }
+
+  /// ★ 供设置页调用：弹出系统"允许后台运行"对话框
+  static Future<void> requestBackgroundPermission() =>
+      BackgroundPlayStore.requestBatteryWhitelist();
 
   // ================= 设置持久化 =================
   Future<void> _loadSettings() async {
@@ -570,7 +574,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
-  // ★ 新增：后台播放开关
+  // ★ 后台播放开关（控制栏耳机按钮）
   void _toggleBackgroundPlay() {
     final next = !BackgroundPlayStore.enabled.value;
     BackgroundPlayStore.set(next);
@@ -775,7 +779,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
               _scheduleHide(4);
             }),
             const SizedBox(width: 6),
-            // ★ 新增：后台播放开关（耳机按钮，点亮=开启）
+            // ★ 后台播放开关（耳机按钮，点亮=开启）
             ValueListenableBuilder<bool>(
               valueListenable: BackgroundPlayStore.enabled,
               builder: (context, on, _) => _controlBtn(
@@ -792,8 +796,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
             const Spacer(),
             Obx(() => Text(
                   fitNames[fitMode.value],
-                  style:
-                      TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
+                  style: TextStyle(
+                      color: Colors.white.withOpacity(0.7), fontSize: 11),
                 )),
             const SizedBox(width: 8),
             _controlBtn(
@@ -860,7 +864,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
 
   @override
   void onClose() {
-    WidgetsBinding.instance.removeObserver(this); // ★ 新增：移除观察
+    WidgetsBinding.instance.removeObserver(this);
+    BackgroundPlayStore.stopService(); // ★ 退出直播页停掉前台服务
+    BackgroundPlayStore.releaseWakeLock();
     _hideTimer?.cancel();
     _stallTimer?.cancel();
     _durationTimer?.cancel();
