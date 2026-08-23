@@ -4,8 +4,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import '../live_play/live_play_page.dart';
-import '../settings/huya_login_page.dart';
 import '../search/search_page.dart';
+import '../settings/huya_login_page.dart';
 import 'follow_store.dart';
 
 /// 进入直播间（arguments 传参，不依赖路由表）
@@ -25,53 +25,67 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassScaffold(
-      // ★ 玻璃折射背景（iOS 26 深色模式标准渐变）
-      background: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0A0A2E),
-              Color(0xFF1A0A3E),
-              Color(0xFF0D1B2A),
+    final topPad = MediaQuery.of(context).padding.top;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    return Material(
+      // ★ 关键：提供 Material/DefaultTextStyle 上下文，消除黄下划线+巨大字体
+      type: MaterialType.transparency,
+      child: GlassScaffold(
+        // 玻璃折射背景（iOS 26 深色渐变）
+        background: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF0A0A2E),
+                Color(0xFF1A0A3E),
+                Color(0xFF0D1B2A),
+              ],
+            ),
+          ),
+        ),
+        statusBarStyle: GlassStatusBarStyle.light,
+        appBar: GlassAppBar(
+          title: const Text('HuyaLive'),
+          actions: [
+            GlassIconButton(
+              icon: const Icon(Icons.account_circle),
+              onPressed: () => Get.to(() => const HuyaLoginPage()),
+            ),
+          ],
+        ),
+        bottomBar: GlassTabBar.bottom(
+          selectedIndex: _selectedIndex,
+          onTabSelected: (i) => setState(() => _selectedIndex = i),
+          tabs: const [
+            GlassTab(icon: Icon(Icons.home), label: '首页'),
+            GlassTab(icon: Icon(Icons.search), label: '搜索'),
+            GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+            GlassTab(icon: Icon(Icons.settings), label: '设置'),
+          ],
+        ),
+        // ★ GlassScaffold 的栏是悬浮层，body 需手动留出上下空间
+        body: Padding(
+          padding: EdgeInsets.only(
+            top: topPad + 64,
+            bottom: bottomPad + 88,
+          ),
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              _HomeView(
+                onOpenFollows: () => setState(() => _selectedIndex = 2),
+              ),
+              // dtv 风格搜索页，复用 goLive 进房
+              SearchPage(
+                onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId),
+              ),
+              const _FollowsView(),
+              const _SettingsView(),
             ],
           ),
         ),
-      ),
-      appBar: GlassAppBar(
-        title: const Text('HuyaLive'),
-        actions: [
-          GlassIconButton(
-            icon: const Icon(Icons.account_circle),
-            onPressed: () => Get.to(() => const HuyaLoginPage()),
-          ),
-        ],
-      ),
-      bottomBar: GlassTabBar.bottom(
-        selectedIndex: _selectedIndex,
-        onTabSelected: (i) => setState(() => _selectedIndex = i),
-        tabs: const [
-          GlassTab(icon: Icon(Icons.home), label: '首页'),
-          GlassTab(icon: Icon(Icons.search), label: '搜索'),
-          GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-          GlassTab(icon: Icon(Icons.settings), label: '设置'),
-        ],
-      ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          _HomeView(
-            onOpenFollows: () => setState(() => _selectedIndex = 2),
-          ),
-          // ★ 接入独立的 dtv 风格搜索页
-          SearchPage(
-            onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId),
-          ),
-          const _FollowsView(),
-          const _SettingsView(),
-        ],
       ),
     );
   }
@@ -87,8 +101,9 @@ class _HomeView extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E).withOpacity(0.85),
-        title: const Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 16)),
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('进入直播间',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -108,7 +123,8 @@ class _HomeView extends StatelessWidget {
               Get.back();
               goLive(ctrl.text.trim());
             },
-            child: const Text('进入', style: TextStyle(color: Color(0xFF00D2FF))),
+            child:
+                const Text('进入', style: TextStyle(color: Color(0xFF00D2FF))),
           ),
         ],
       ),
@@ -117,52 +133,54 @@ class _HomeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          GlassCard(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                const Icon(Icons.live_tv, size: 56, color: Colors.white),
-                const SizedBox(height: 12),
-                const Text(
-                  '虎牙直播 · 液态玻璃',
-                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '看直播 · 弹幕 · 订阅 · 真实发送',
-                  style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13),
-                ),
-                const SizedBox(height: 18),
-                GlassButton(
-                  icon: const Icon(Icons.play_arrow),
-                  label: '进入直播间',
-                  onTap: () => _openEnterRoom(context),
-                ),
-              ],
-            ),
+      children: [
+        GlassCard(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Icon(Icons.live_tv, size: 56, color: Colors.white),
+              const SizedBox(height: 12),
+              const Text(
+                '虎牙直播 · 液态玻璃',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '看直播 · 弹幕 · 订阅 · 真实发送',
+                style: TextStyle(
+                    color: Colors.white.withOpacity(0.85), fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              GlassButton(
+                icon: const Icon(Icons.play_arrow),
+                label: '进入直播间',
+                onTap: () => _openEnterRoom(context),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          _GlassContentCard(
-            icon: Icons.subscriptions_outlined,
-            color: const Color(0xFFFF6B6B),
-            label: '我的订阅',
-            sub: '点击查看已收藏的主播',
-            onTap: onOpenFollows,
-          ),
-          const SizedBox(height: 12),
-          _GlassContentCard(
-            icon: Icons.account_circle,
-            color: const Color(0xFF7C6BFF),
-            label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
-            sub: '登录后可发真实弹幕 / 看真实订阅数',
-            onTap: () => Get.to(() => const HuyaLoginPage()),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        _GlassContentCard(
+          icon: Icons.subscriptions_outlined,
+          color: const Color(0xFFFF6B6B),
+          label: '我的订阅',
+          sub: '点击查看已收藏的主播',
+          onTap: onOpenFollows,
+        ),
+        const SizedBox(height: 12),
+        _GlassContentCard(
+          icon: Icons.account_circle,
+          color: const Color(0xFF7C6BFF),
+          label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
+          sub: '登录后可发真实弹幕 / 看真实订阅数',
+          onTap: () => Get.to(() => const HuyaLoginPage()),
+        ),
+      ],
     );
   }
 }
@@ -205,9 +223,15 @@ class _GlassContentCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                  Text(label,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
-                  Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                  Text(sub,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.6), fontSize: 12)),
                 ],
               ),
             ),
@@ -244,11 +268,9 @@ class _FollowsViewState extends State<_FollowsView> {
   Widget build(BuildContext context) {
     if (_list.isEmpty) {
       return const Center(
-        child: Text(
-          '暂无订阅主播\n在直播间点「订阅」即可收藏',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white38),
-        ),
+        child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white38)),
       );
     }
     return ListView.builder(
@@ -271,17 +293,25 @@ class _FollowsViewState extends State<_FollowsView> {
                   CircleAvatar(
                     radius: 22,
                     backgroundColor: Colors.white10,
-                    backgroundImage: f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
-                    child: f.avatar.isEmpty ? const Icon(Icons.person, color: Colors.white54) : null,
+                    backgroundImage:
+                        f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
+                    child: f.avatar.isEmpty
+                        ? const Icon(Icons.person, color: Colors.white54)
+                        : null,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(f.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                        Text(f.name,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600)),
                         const SizedBox(height: 2),
-                        Text('房间 ${f.roomId}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        Text('房间 ${f.roomId}',
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -302,27 +332,25 @@ class _SettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _GlassContentCard(
-            icon: Icons.account_circle,
-            color: const Color(0xFF00D2FF),
-            label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
-            sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
-            onTap: () => Get.to(() => const HuyaLoginPage()),
-          ),
-          const SizedBox(height: 12),
-          _GlassContentCard(
-            icon: Icons.info_outline,
-            color: const Color(0xFF7C6BFF),
-            label: '关于',
-            sub: 'HuyaLive · 液态玻璃版 · 参考 pure_live / dtv',
-            onTap: () {},
-          ),
-        ],
-      ),
+      children: [
+        _GlassContentCard(
+          icon: Icons.account_circle,
+          color: const Color(0xFF00D2FF),
+          label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
+          sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
+          onTap: () => Get.to(() => const HuyaLoginPage()),
+        ),
+        const SizedBox(height: 12),
+        _GlassContentCard(
+          icon: Icons.info_outline,
+          color: const Color(0xFF7C6BFF),
+          label: '关于',
+          sub: 'HuyaLive · 液态玻璃版 · 参考 pure_live / dtv',
+          onTap: () {},
+        ),
+      ],
     );
   }
 }
