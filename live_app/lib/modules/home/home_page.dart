@@ -1,11 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import '../live_play/live_play_page.dart';
 import '../settings/huya_login_page.dart';
+import '../search/search_page.dart'; // ★ 引入独立的 dtv 风格搜索页
 import 'follow_store.dart';
 
 /// 进入直播间（arguments 传参，不依赖路由表）
@@ -72,7 +71,10 @@ class _HomePageState extends State<HomePage> {
               _HomeView(
                 onOpenFollows: () => setState(() => _selectedIndex = 2),
               ),
-              const _SearchView(),
+              // ★ 替换为 dtv 风格的独立搜索页，复用 goLive 进房
+              SearchPage(
+                onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId),
+              ),
               const _FollowsView(),
               const _SettingsView(),
             ],
@@ -229,125 +231,6 @@ class _ContentCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ================= 搜索 Tab =================
-class _SearchView extends StatefulWidget {
-  const _SearchView();
-  @override
-  State<_SearchView> createState() => _SearchViewState();
-}
-
-class _SearchViewState extends State<_SearchView> {
-  String _kw = '';
-  bool _busy = false;
-  List<Map<String, String>> _results = [];
-
-  Future<void> _search() async {
-    final k = _kw.trim();
-    if (k.isEmpty) return;
-    if (RegExp(r'^\d+$').hasMatch(k)) {
-      goLive(k);
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      final res = await http
-          .get(Uri.parse(
-            'https://search.cdn.huya.com/websearch?platform=b2&src=huya&keyword=${Uri.encodeComponent(k)}&page=1&rows=20',
-          ))
-          .timeout(const Duration(seconds: 6));
-      final j = jsonDecode(res.body);
-      final docs = (j['response']?['1']?['docs'] as List?) ??
-          (j['data']?['docs'] as List?) ??
-          const [];
-      setState(() {
-        _results = docs
-            .map((e) {
-              final m = e as Map<String, dynamic>;
-              return {
-                'name': '${m['game_nick'] ?? m['nick'] ?? ''}',
-                'roomId': '${m['room_id'] ?? m['roomId'] ?? ''}',
-                'game': '${m['game_short_name'] ?? m['gameName'] ?? ''}',
-              };
-            })
-            .where((e) => e['roomId']!.isNotEmpty)
-            .toList();
-      });
-    } catch (_) {
-      setState(() => _results = []);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
-                  ),
-                  child: TextField(
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      hintText: '搜索主播 / 输入房间号',
-                      hintStyle: TextStyle(color: Colors.white38),
-                      prefixIcon: Icon(Icons.search, color: Color(0xFF00D2FF)),
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (v) => _kw = v,
-                    onSubmitted: (_) => _search(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward, color: Color(0xFF00D2FF)),
-                onPressed: _search,
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _busy
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFF00D2FF)))
-              : _results.isEmpty
-                  ? const Center(
-                      child: Text('搜索主播，或直接输入房间号进入',
-                          style: TextStyle(color: Colors.white24)))
-                  : ListView.builder(
-                      itemCount: _results.length,
-                      itemBuilder: (c, i) {
-                        final r = _results[i];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: const Color(0xFF2D2D44),
-                            child: Text(
-                              r['name']!.isNotEmpty ? r['name']![0] : '?',
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          title: Text(r['name']!, style: const TextStyle(color: Colors.white)),
-                          subtitle: Text('${r['game']} · 房间 ${r['roomId']}',
-                              style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                          onTap: () => goLive(r['roomId']!),
-                        );
-                      },
-                    ),
-        ),
-      ],
     );
   }
 }
