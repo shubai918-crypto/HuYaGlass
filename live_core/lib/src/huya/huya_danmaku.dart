@@ -17,18 +17,18 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（最终版：接收 cmd16/22 + 发送 cmd33 授权 + cmd3 WUP）
+/// 虎牙弹幕客户端（最终版：DNS 优选 + cmd16 接收 + cmd33 授权 + cmd3 WUP 发送）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
-  static const _endpoints = [
-    'wss://ded35397-ws.va.huya.com',
-    'wss://65cecb22-ws.va.huya.com',
-    'wss://ws.va.huya.com',
-    'wss://wsapi.huya.com',
-    'wss://cdnws.api.huya.com',
+  /// 候选 WS 节点（已移除无效的 ws.va.huya.com）
+  static const _wsHosts = [
+    'ded35397-ws.va.huya.com',
+    '65cecb22-ws.va.huya.com',
+    'wsapi.huya.com',
+    'cdnws.api.huya.com',
   ];
 
   /// 房间 660118 的 cmd33 发送授权帧（topSid=1541541294）
@@ -45,7 +45,6 @@ class HuyaDanmakuClient {
   bool _closed = false;
   int _recvCount = 0;
   int _lastType = -1;
-  int _endpointIndex = 0;
   int _topSid = 0;
   int _subSid = 0;
   int _ayyuid = 0;
@@ -90,6 +89,30 @@ class HuyaDanmakuClient {
     return out;
   }
 
+  // ================= DNS 优选 =================
+
+  /// 并发解析候选节点，按解析耗时升序（失败排最后），每次连接/重连自适应
+  Future<List<String>> _preferredHosts() async {
+    final cost = <String, int>{};
+    await Future.wait(_wsHosts.map((h) async {
+      final sw = Stopwatch()..start();
+      try {
+        final addrs =
+            await InternetAddress.lookup(h).timeout(const Duration(seconds: 2));
+        sw.stop();
+        cost[h] = addrs.isNotEmpty ? sw.elapsedMilliseconds : -1;
+      } catch (_) {
+        cost[h] = -1;
+      }
+    }));
+
+    final ok = _wsHosts.where((h) => (cost[h] ?? -1) >= 0).toList()
+      ..sort((a, b) => cost[a]! - cost[b]!);
+    final bad = _wsHosts.where((h) => (cost[h] ?? -1) < 0);
+    final ordered = [...ok, ...bad];
+    return ordered.isEmpty ? _wsHosts.toList() : ordered;
+  }
+
   // ================= 连接 =================
   Future<void> connect({
     required int topSid,
@@ -118,16 +141,18 @@ class HuyaDanmakuClient {
 
     onStatus?.call('弹幕连接中…');
     final baseinfo = _buildBaseinfo();
+
+    // ★ DNS 优选：优先连解析最快的节点
+    final hosts = await _preferredHosts();
     final urls = [
-      for (final ep in _endpoints)
-        '$ep/?baseinfo=${Uri.encodeComponent(baseinfo)}'
+      for (final h in hosts)
+        'wss://$h/?baseinfo=${Uri.encodeComponent(baseinfo)}'
     ];
 
     WebSocket? ws;
     String connectedHost = '';
-    for (var i = 0; i < urls.length; i++) {
+    for (final ep in urls) {
       if (_closed) return;
-      final ep = urls[(_endpointIndex + i) % urls.length];
       try {
         ws = await WebSocket.connect(
           ep,
@@ -138,7 +163,6 @@ class HuyaDanmakuClient {
           },
           compression: CompressionOptions.compressionDefault,
         ).timeout(const Duration(seconds: 6));
-        _endpointIndex = (_endpointIndex + i) % urls.length;
         connectedHost = Uri.parse(ep).host;
         break;
       } catch (_) {}
@@ -261,7 +285,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
 
-      // 发送前补发 cmd33 授权帧（按房间）
+      // 发送前补发 cmd33 授权帧（按房间，可多房间扩展）
       if (_roomIdStr == '660118') {
         _send(_hexToBytes(_frameRegister660118));
       } else if (_roomIdStr == '691346') {
@@ -389,7 +413,7 @@ class HuyaDanmakuClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 5), () {
       if (!_closed) {
-        _endpointIndex = (_endpointIndex + 1) % _endpoints.length;
+        // 重连时重新 DNS 优选
         connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: _roomIdStr);
       }
     });
