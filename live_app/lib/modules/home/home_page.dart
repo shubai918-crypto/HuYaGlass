@@ -23,15 +23,23 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
+  // ★ 上拉时底栏切换为简化版
+  bool _compact = false;
+
+  static const _tabIcons = [
+    Icons.home,
+    Icons.search,
+    Icons.subscriptions_outlined,
+    Icons.settings,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).padding.bottom;
     return Material(
-      // ★ 关键：提供 Material/DefaultTextStyle 上下文，消除黄下划线+巨大字体
       type: MaterialType.transparency,
       child: GlassScaffold(
-        // 玻璃折射背景（iOS 26 深色渐变）
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -49,41 +57,105 @@ class _HomePageState extends State<HomePage> {
         appBar: GlassAppBar(
           title: const Text('HuyaLive'),
           actions: [
+            // ★ 右上角改为设置图标，点击跳到设置 Tab
             GlassIconButton(
-              icon: const Icon(Icons.account_circle),
-              onPressed: () => Get.to(() => const HuyaLoginPage()),
+              icon: const Icon(Icons.settings),
+              onPressed: () => setState(() => _selectedIndex = 3),
             ),
           ],
         ),
-        bottomBar: GlassTabBar.bottom(
-          selectedIndex: _selectedIndex,
-          onTabSelected: (i) => setState(() => _selectedIndex = i),
-          tabs: const [
-            GlassTab(icon: Icon(Icons.home), label: '首页'),
-            GlassTab(icon: Icon(Icons.search), label: '搜索'),
-            GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-            GlassTab(icon: Icon(Icons.settings), label: '设置'),
-          ],
+        // ★ 底栏：完整 / 简化 之间动画切换
+        bottomBar: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _compact ? _buildCompactBar(key: const ValueKey('c')) : _buildFullBar(key: const ValueKey('f')),
         ),
-        // ★ GlassScaffold 的栏是悬浮层，body 需手动留出上下空间
-        body: Padding(
-          padding: EdgeInsets.only(
-            top: topPad + 64,
-            bottom: bottomPad + 88,
+        body: NotificationListener<ScrollNotification>(
+          onNotification: _onScroll,
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: topPad + 64,
+              bottom: bottomPad + (_compact ? 64 : 88),
+            ),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _HomeView(
+                  onOpenFollows: () => setState(() => _selectedIndex = 2),
+                ),
+                SearchPage(
+                  onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId),
+                  isFollowed: (roomId) => FollowStore.contains(roomId),
+                  onToggleFollow: (roomId, follow, nickname, avatar) async {
+                    if (follow) {
+                      await FollowStore.add(FollowItem(
+                          roomId: roomId, name: nickname, avatar: avatar));
+                    } else {
+                      await FollowStore.remove(roomId);
+                    }
+                  },
+                ),
+                const _FollowsView(),
+                const _SettingsView(),
+              ],
+            ),
           ),
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: [
-              _HomeView(
-                onOpenFollows: () => setState(() => _selectedIndex = 2),
+        ),
+      ),
+    );
+  }
+
+  // ================= 滚动监听：上拉简化 / 下拉恢复 =================
+  bool _onScroll(ScrollNotification n) {
+    if (n is ScrollUpdateNotification) {
+      final delta = n.scrollDelta ?? 0;
+      final pixels = n.metrics.pixels;
+      if (delta > 0 && pixels > 80 && !_compact) {
+        // 上拉（向下滑动列表）→ 简化版
+        setState(() => _compact = true);
+      } else if ((delta < 0 || pixels <= 0) && _compact) {
+        // 下拉 / 回到顶部 → 完整版
+        setState(() => _compact = false);
+      }
+    }
+    return false;
+  }
+
+  // ================= 完整版底栏（图标+文字） =================
+  Widget _buildFullBar({Key? key}) {
+    return GlassTabBar.bottom(
+      key: key,
+      selectedIndex: _selectedIndex,
+      onTabSelected: (i) => setState(() => _selectedIndex = i),
+      tabs: const [
+        GlassTab(icon: Icon(Icons.home), label: '首页'),
+        GlassTab(icon: Icon(Icons.search), label: '搜索'),
+        GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+        GlassTab(icon: Icon(Icons.settings), label: '设置'),
+      ],
+    );
+  }
+
+  // ================= 简化版底栏（纯图标胶囊） =================
+  Widget _buildCompactBar({Key? key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 6),
+      child: GlassContainer(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          children: List.generate(
+            _tabIcons.length,
+            (i) => Expanded(
+              child: GlassIconButton(
+                icon: Icon(
+                  _tabIcons[i],
+                  color: i == _selectedIndex
+                      ? const Color(0xFF00D2FF)
+                      : Colors.white54,
+                ),
+                onPressed: () => setState(() => _selectedIndex = i),
               ),
-              // dtv 风格搜索页，复用 goLive 进房
-              SearchPage(
-                onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId),
-              ),
-              const _FollowsView(),
-              const _SettingsView(),
-            ],
+            ),
           ),
         ),
       ),
@@ -136,8 +208,16 @@ class _HomeView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        GlassCard(
+        Container(
           padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF00D2FF), Color(0xFF7C6BFF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+          ),
           child: Column(
             children: [
               const Icon(Icons.live_tv, size: 56, color: Colors.white),
@@ -165,7 +245,7 @@ class _HomeView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _GlassContentCard(
+        _OpaqueContentCard(
           icon: Icons.subscriptions_outlined,
           color: const Color(0xFFFF6B6B),
           label: '我的订阅',
@@ -173,7 +253,7 @@ class _HomeView extends StatelessWidget {
           onTap: onOpenFollows,
         ),
         const SizedBox(height: 12),
-        _GlassContentCard(
+        _OpaqueContentCard(
           icon: Icons.account_circle,
           color: const Color(0xFF7C6BFF),
           label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
@@ -185,15 +265,15 @@ class _HomeView extends StatelessWidget {
   }
 }
 
-// ================= 通用玻璃列表卡片 =================
-class _GlassContentCard extends StatelessWidget {
+// ================= 不透明列表卡片 =================
+class _OpaqueContentCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String label;
   final String sub;
   final VoidCallback onTap;
 
-  const _GlassContentCard({
+  const _OpaqueContentCard({
     required this.icon,
     required this.color,
     required this.label,
@@ -205,8 +285,13 @@ class _GlassContentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: GlassCard(
+      child: Container(
         padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF16161E),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.06)),
+        ),
         child: Row(
           children: [
             Container(
@@ -231,7 +316,7 @@ class _GlassContentCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(sub,
                       style: TextStyle(
-                          color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                          color: Colors.white.withOpacity(0.55), fontSize: 12)),
                 ],
               ),
             ),
@@ -286,8 +371,14 @@ class _FollowsViewState extends State<_FollowsView> {
               await FollowStore.remove(f.roomId);
               _load();
             },
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16161E),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
               child: Row(
                 children: [
                   CircleAvatar(
@@ -335,7 +426,7 @@ class _SettingsView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _GlassContentCard(
+        _OpaqueContentCard(
           icon: Icons.account_circle,
           color: const Color(0xFF00D2FF),
           label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
@@ -343,7 +434,7 @@ class _SettingsView extends StatelessWidget {
           onTap: () => Get.to(() => const HuyaLoginPage()),
         ),
         const SizedBox(height: 12),
-        _GlassContentCard(
+        _OpaqueContentCard(
           icon: Icons.info_outline,
           color: const Color(0xFF7C6BFF),
           label: '关于',
