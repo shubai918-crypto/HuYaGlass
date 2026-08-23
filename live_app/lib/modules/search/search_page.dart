@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'search_controller.dart';
 
-/// 搜索页（液态玻璃深色风格）
 class SearchPage extends StatefulWidget {
-  /// 点击结果进房回调（与订阅列表同一入口）
   final void Function(String roomId, String nickname, String avatarUrl)
       onOpenRoom;
+  final Future<void> Function(String roomId, bool follow)? onToggleFollow;
+  final Future<bool> Function(String roomId)? isFollowed;
 
-  const SearchPage({super.key, required this.onOpenRoom});
+  const SearchPage({
+    super.key,
+    required this.onOpenRoom,
+    this.onToggleFollow,
+    this.isFollowed,
+  });
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -16,7 +21,6 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final SearchController _ctrl = SearchController();
   final TextEditingController _text = TextEditingController();
-  final FocusNode _focus = FocusNode();
 
   @override
   void initState() {
@@ -33,7 +37,6 @@ class _SearchPageState extends State<SearchPage> {
     _ctrl.removeListener(_onCtrl);
     _ctrl.dispose();
     _text.dispose();
-    _focus.dispose();
     super.dispose();
   }
 
@@ -45,73 +48,53 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Column(
         children: [
           _buildBar(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Expanded(child: _buildBody()),
         ],
       ),
     );
   }
 
-  // ================= 顶部搜索栏 =================
   Widget _buildBar() {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(26),
-              border: Border.all(color: Colors.white.withOpacity(0.10)),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 16),
-                const Icon(Icons.search, color: Color(0xFF29C5F6), size: 22),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _text,
-                    focusNode: _focus,
-                    style: const TextStyle(color: Colors.white, fontSize: 15),
-                    onSubmitted: (_) => _submit(),
-                    textInputAction: TextInputAction.search,
-                    onChanged: _ctrl.setKeyword,
-                    decoration: const InputDecoration(
-                      hintText: '搜索主播 / 输入房间号',
-                      hintStyle:
-                          TextStyle(color: Colors.white38, fontSize: 15),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-              ],
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.10)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 14),
+          const Icon(Icons.search, color: Color(0xFF29C5F6), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _text,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              onSubmitted: (_) => _submit(),
+              textInputAction: TextInputAction.search,
+              onChanged: _ctrl.setKeyword,
+              decoration: const InputDecoration(
+                hintText: '搜索虎牙主播/房间...',
+                hintStyle: TextStyle(color: Colors.white38, fontSize: 15),
+                border: InputBorder.none,
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        GestureDetector(
-          onTap: _submit,
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.arrow_forward,
-                color: Color(0xFF29C5F6)),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward, color: Color(0xFF29C5F6)),
+            onPressed: _submit,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  // ================= 结果区域 =================
   Widget _buildBody() {
     if (_ctrl.loading) {
       return const Center(
@@ -122,109 +105,174 @@ class _SearchPageState extends State<SearchPage> {
     final err = _ctrl.error;
     if (err != null) {
       return Center(
-        child: Text(err, style: const TextStyle(color: Colors.white38)),
-      );
+          child: Text(err, style: const TextStyle(color: Colors.white38)));
     }
     if (!_ctrl.searched) {
-      return const Center(
-        child: Text('搜索主播，或直接输入房间号进入',
-            style: TextStyle(color: Colors.white24)),
-      );
+      return const SizedBox.shrink();
     }
     if (_ctrl.items.isEmpty) {
       return const Center(
-        child: Text('未找到相关主播',
-            style: TextStyle(color: Colors.white38)),
-      );
+          child: Text('未找到相关主播',
+              style: TextStyle(color: Colors.white38)));
     }
     return ListView.separated(
       itemCount: _ctrl.items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (_, i) => _buildCard(_ctrl.items[i]),
+      itemBuilder: (_, i) => _card(_ctrl.items[i]),
     );
   }
 
-  Widget _buildCard(HuyaSearchItem it) {
+  // ============ dtv 风格卡片：封面+角标 / 标题+副标题 / 心形 ============
+  Widget _card(HuyaSearchItem it) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: () =>
             widget.onOpenRoom(it.roomId, it.nickname, it.avatarUrl),
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.04),
-            borderRadius: BorderRadius.circular(18),
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: Colors.white10,
-                backgroundImage: it.avatarUrl.isNotEmpty
-                    ? NetworkImage(it.avatarUrl)
-                    : null,
-                child: it.avatarUrl.isEmpty
-                    ? Text(it.nickname.isNotEmpty ? it.nickname[0] : '?')
-                    : null,
+              // 封面 + 角标
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: it.avatarUrl.isNotEmpty
+                        ? Image.network(
+                            it.avatarUrl,
+                            width: 96,
+                            height: 72,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _coverPlaceholder(),
+                          )
+                        : _coverPlaceholder(),
+                  ),
+                  Positioned(
+                    left: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        it.isLive ? '直播中' : '未开播',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: it.isLive
+                              ? const Color(0xFF29C5F6)
+                              : Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 12),
+              // 标题 + 副标题
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
+                      it.title.isNotEmpty ? it.title : it.nickname,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
                       it.nickname,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: it.isLive
-                                ? Colors.redAccent.withOpacity(0.2)
-                                : Colors.white.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            it.isLive ? '直播中' : '未开播',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: it.isLive
-                                    ? Colors.redAccent
-                                    : Colors.white38),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text('房间 ${it.roomId}',
-                            style: const TextStyle(
-                                color: Colors.white30, fontSize: 12)),
-                        if (it.totalCount > 0) ...[
-                          const SizedBox(width: 8),
-                          Text('${_ctrl.wan(it.totalCount)}热度',
-                              style: const TextStyle(
-                                  color: Colors.white30, fontSize: 12)),
-                        ],
-                      ],
+                          color: Colors.white54, fontSize: 13),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.white24),
+              const SizedBox(width: 8),
+              // 收藏心形
+              _HeartButton(
+                roomId: it.roomId,
+                onToggle: widget.onToggleFollow,
+                isFollowed: widget.isFollowed,
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _coverPlaceholder() => Container(
+        width: 96,
+        height: 72,
+        color: Colors.white10,
+        alignment: Alignment.center,
+        child: const Icon(Icons.live_tv, color: Colors.white30),
+      );
+}
+
+/// 右侧收藏心形按钮
+class _HeartButton extends StatefulWidget {
+  final String roomId;
+  final Future<void> Function(String roomId, bool follow)? onToggle;
+  final Future<bool> Function(String roomId)? isFollowed;
+
+  const _HeartButton({
+    required this.roomId,
+    this.onToggle,
+    this.isFollowed,
+  });
+
+  @override
+  State<_HeartButton> createState() => _HeartButtonState();
+}
+
+class _HeartButtonState extends State<_HeartButton> {
+  bool? _followed;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.isFollowed == null) return;
+    final v = await widget.isFollowed!(widget.roomId);
+    if (mounted) setState(() => _followed = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final followed = _followed ?? false;
+    return IconButton(
+      icon: Icon(
+        followed ? Icons.favorite : Icons.favorite_border,
+        color: followed ? const Color(0xFFE5484D) : Colors.white38,
+      ),
+      onPressed: widget.onToggle == null
+          ? null
+          : () async {
+              await widget.onToggle!(widget.roomId, !followed);
+              if (mounted) setState(() => _followed = !followed);
+            },
     );
   }
 }
