@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
-
+import '../live_play/background_play.dart';
 import '../live_play/live_play_page.dart';
 import '../search/search_page.dart';
 import '../settings/huya_login_page.dart';
@@ -479,6 +479,13 @@ class _SettingsView extends StatelessWidget {
           sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
           onTap: () => Get.to(() => const HuyaLoginPage()),
         ),
+        _OpaqueContentCard(
+  icon: Icons.battery_charging_full,
+  color: const Color(0xFF7ED97E),
+  label: '允许应用后台运行',
+  sub: '弹出系统授权对话框（ColorOS/MIUI 后台播放必开）',
+  onTap: () => BackgroundPlayStore.requestBatteryWhitelist(),
+),
         const SizedBox(height: 12),
         _OpaqueContentCard(
           icon: Icons.info_outline,
