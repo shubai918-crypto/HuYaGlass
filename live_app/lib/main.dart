@@ -40,7 +40,7 @@ class HuyaLiveApp extends StatelessWidget {
         brightness: Brightness.dark,
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFF0A0A0F),
-        colorScheme: const ColorScheme.dark(primary: Color(0xFF00D2FF)),
+        colorScheme: const ColorScheme.dark(primary: Color(0xFFFF8800)),
       ),
       home: const HomePage(),
     );
