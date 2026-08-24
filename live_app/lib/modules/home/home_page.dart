@@ -4,7 +4,6 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import '../live_play/live_play_page.dart';
-import '../live_play/background_play.dart';
 import '../search/search_page.dart';
 import '../settings/huya_login_page.dart';
 import 'follow_store.dart';
@@ -41,28 +40,34 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  bool _compact = false;
 
   @override
   Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Material(
       type: MaterialType.transparency,
       child: GlassScaffold(
-        // ★ 5. 内容感知亮度：底栏/顶栏图标文字随内容明暗自动变化（Apple Music 同款）
+        // ★ 启用内容感知亮度：底栏图标/文字会随滚动内容自动明暗变化（Apple Music 同款）
         contentAwareBrightness: true,
-        // ★ 4. 深 navy 渐变背景
-        background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF1C1C3A), Color(0xFF12122A), Color(0xFF08080F)],
+        statusBarStyle: GlassStatusBarStyle.light,
+        
+        // ★ 4. 强制撑满的深紫->黑径向渐变背景（确保玻璃折射生效）
+        background: SizedBox.expand(
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment(-0.3, -0.8), // 光晕偏左上
+                radius: 1.6,
+                colors: [
+                  Color(0xFF2D1B4E), // 深紫
+                  Color(0xFF12121A), // 深灰蓝
+                  Color(0xFF050508), // 近黑
+                ],
+                stops: [0.0, 0.6, 1.0],
+              ),
             ),
           ),
         ),
-        statusBarStyle: GlassStatusBarStyle.light,
+        
         appBar: GlassAppBar(
           title: GlassContainer(
             shape: const LiquidRoundedSuperellipse(borderRadius: 999),
@@ -71,8 +76,7 @@ class _HomePageState extends State<HomePage> {
             settings: LiquidGlassSettings(blur: 8, thickness: 20),
             child: const Text(
               'HuyaLive',
-              style: TextStyle(
-                  color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
             ),
           ),
           actions: [
@@ -83,171 +87,126 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-        bottomBar: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _compact ? _buildCompactBar() : _buildFullBar(),
-        ),
-        body: Padding(
-          padding: EdgeInsets.only(
-            top: topPad + 64,
-            bottom: bottomPad + (_compact ? 64 : 88),
+        
+        // ★ 5/6. 纯正 Apple Music 风格底栏 + 虎牙橙配色 + Mini Player
+        bottomBar: GlassTabBar.bottom(
+          adaptiveBrightness: true, // 随内容变色
+          selectedIndex: _selectedIndex,
+          onTabSelected: (i) => setState(() => _selectedIndex = i),
+          
+          // 虎牙橙配色
+          selectedIconColor: kHuyaAccent,
+          selectedLabelColor: kHuyaAccent,
+          unselectedIconColor: Colors.white.withOpacity(0.5),
+          unselectedLabelColor: Colors.white.withOpacity(0.5),
+          indicatorColor: kHuyaAccent.withOpacity(0.15), // 橙色半透明指示器
+          
+          // 深色磨砂玻璃质感
+          settings: LiquidGlassSettings(
+            blur: 24,
+            thickness: 30,
+            glassColor: Colors.black.withOpacity(0.35),
+            lightIntensity: 0.6,
           ),
-          child: Stack(
+          
+          // ★ Apple Music 同款 Mini Player (正在播放)
+          bottomAccessory: _buildMiniBar(),
+          bottomAccessoryHeight: 64, // 预估高度，防止滚动区域被遮挡
+          bottomAccessorySpacing: 8.0,
+          
+          tabs: const [
+            GlassTab(icon: Icon(Icons.home), label: '首页'),
+            GlassTab(icon: Icon(Icons.search), label: '搜索'),
+            GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+            GlassTab(icon: Icon(Icons.settings), label: '设置'),
+          ],
+        ),
+        
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: [
+            _HomeView(onOpenFollows: () => setState(() => _selectedIndex = 2)),
+            SearchPage(
+              onOpenRoom: (roomId, nickname, avatarUrl) =>
+                  goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+              isFollowed: (roomId) => FollowStore.contains(roomId),
+              onToggleFollow: (roomId, follow, nickname, avatar) async {
+                if (follow) {
+                  await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
+                } else {
+                  await FollowStore.remove(roomId);
+                }
+              },
+            ),
+            const _FollowsView(),
+            const _SettingsView(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= Apple Music 同款 Mini Player (正在播放) =================
+  Widget _buildMiniBar() {
+    return ValueListenableBuilder<NowRoom?>(
+      valueListenable: NowWatching.notifier,
+      builder: (context, room, _) {
+        if (room == null) return const SizedBox.shrink();
+        return GlassContainer(
+          shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          useOwnLayer: true,
+          settings: LiquidGlassSettings(
+            blur: 20,
+            thickness: 25,
+            glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
+          ),
+          child: Row(
             children: [
-              NotificationListener<ScrollNotification>(
-                onNotification: _onScroll,
-                child: IndexedStack(
-                  index: _selectedIndex,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: room.avatarUrl.isNotEmpty
+                    ? Image.network(room.avatarUrl,
+                        width: 40, height: 40, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _artPlaceholder())
+                    : _artPlaceholder(),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _HomeView(
-                      onOpenFollows: () => setState(() => _selectedIndex = 2),
-                    ),
-                    SearchPage(
-                      onOpenRoom: (roomId, nickname, avatarUrl) => goLive(
-                        roomId,
-                        nickname: nickname,
-                        avatarUrl: avatarUrl,
-                      ),
-                      isFollowed: (roomId) => FollowStore.contains(roomId),
-                      onToggleFollow: (roomId, follow, nickname, avatar) async {
-                        if (follow) {
-                          await FollowStore.add(FollowItem(
-                              roomId: roomId, name: nickname, avatar: avatar));
-                        } else {
-                          await FollowStore.remove(roomId);
-                        }
-                      },
-                    ),
-                    const _FollowsView(),
-                    const _SettingsView(),
+                    Text(room.nickname,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    const Text('正在播放 · 虎牙直播',
+                        maxLines: 1,
+                        style: TextStyle(color: Colors.white54, fontSize: 11)),
                   ],
                 ),
               ),
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 8,
-                child: ValueListenableBuilder<NowRoom?>(
-                  valueListenable: NowWatching.notifier,
-                  builder: (context, room, _) =>
-                      room == null ? const SizedBox.shrink() : _MiniBar(room: room),
-                ),
+              GlassIconButton(
+                icon: const Icon(Icons.play_arrow, color: kHuyaAccent),
+                size: 36,
+                onPressed: () => goLive(room.roomId,
+                    nickname: room.nickname, avatarUrl: room.avatarUrl),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  bool _onScroll(ScrollNotification n) {
-    if (n is ScrollUpdateNotification) {
-      final delta = n.scrollDelta ?? 0;
-      final pixels = n.metrics.pixels;
-      if (delta > 0 && pixels > 80 && !_compact) {
-        setState(() => _compact = true);
-      } else if ((delta < 0 || pixels <= 0) && _compact) {
-        setState(() => _compact = false);
-      }
-    }
-    return false;
-  }
-
-  Widget _buildFullBar() {
-    return GlassTabBar.bottom(
-      key: const ValueKey('full'),
-      // ★ 5. 自适应亮度
-      adaptiveBrightness: true,
-      selectedIndex: _selectedIndex,
-      onTabSelected: (i) => setState(() => _selectedIndex = i),
-      tabs: const [
-        GlassTab(icon: Icon(Icons.home), label: '首页'),
-        GlassTab(icon: Icon(Icons.search), label: '搜索'),
-        GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-        GlassTab(icon: Icon(Icons.settings), label: '设置'),
-      ],
-    );
-  }
-
-  Widget _buildCompactBar() {
-    return GlassTabBar.bottom(
-      key: const ValueKey('compact'),
-      adaptiveBrightness: true,
-      selectedIndex: _selectedIndex,
-      onTabSelected: (i) => setState(() => _selectedIndex = i),
-      tabs: const [
-        GlassTab(icon: Icon(Icons.home)),
-        GlassTab(icon: Icon(Icons.search)),
-        GlassTab(icon: Icon(Icons.subscriptions_outlined)),
-        GlassTab(icon: Icon(Icons.settings)),
-      ],
-    );
-  }
-}
-
-// ================= Apple Music 同款迷你播放条（橙色点缀） =================
-class _MiniBar extends StatelessWidget {
-  final NowRoom room;
-  const _MiniBar({required this.room});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 22),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      useOwnLayer: true,
-      settings: LiquidGlassSettings(blur: 10, thickness: 30),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: room.avatarUrl.isNotEmpty
-                ? Image.network(room.avatarUrl,
-                    width: 44, height: 44, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _artPlaceholder())
-                : _artPlaceholder(),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(room.nickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-                const Text('正在观看 · 点击回到直播',
-                    style: TextStyle(color: Colors.white54, fontSize: 11)),
-              ],
-            ),
-          ),
-          GlassIconButton(
-            icon: const Icon(Icons.play_arrow, color: kHuyaAccent),
-            size: 40,
-            onPressed: () => goLive(room.roomId,
-                nickname: room.nickname, avatarUrl: room.avatarUrl),
-          ),
-          const SizedBox(width: 4),
-          GlassIconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-            size: 36,
-            onPressed: () => NowWatching.notifier.value = null,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _artPlaceholder() => Container(
-        width: 44,
-        height: 44,
+        width: 40,
+        height: 40,
         decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [kHuyaAccent, Color(0xFFFFB25E)]),
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+          gradient: LinearGradient(colors: [kHuyaAccent, Color(0xFFFF5A00)]),
+          borderRadius: BorderRadius.all(Radius.circular(10)),
         ),
         child: const Icon(Icons.live_tv, size: 20, color: Colors.white),
       );
@@ -264,8 +223,7 @@ class _HomeView extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('进入直播间',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 16)),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -276,14 +234,10 @@ class _HomeView extends StatelessWidget {
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Get.back(),
+          TextButton(onPressed: () => Get.back(),
               child: const Text('取消', style: TextStyle(color: Colors.white54))),
           TextButton(
-            onPressed: () {
-              Get.back();
-              goLive(ctrl.text.trim());
-            },
+            onPressed: () { Get.back(); goLive(ctrl.text.trim()); },
             child: const Text('进入', style: TextStyle(color: kHuyaAccent)),
           ),
         ],
@@ -296,14 +250,12 @@ class _HomeView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // ★ 3. 虎牙橙渐变 Hero 卡
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [kHuyaAccent, Color(0xFFFF5A00)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(24),
           ),
@@ -312,14 +264,10 @@ class _HomeView extends StatelessWidget {
               const Icon(Icons.live_tv, size: 56, color: Colors.white),
               const SizedBox(height: 12),
               const Text('虎牙直播 · 液态玻璃',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Text('看直播 · 弹幕 · 订阅 · 真实发送',
-                  style:
-                      TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
+                  style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
               const SizedBox(height: 18),
               GlassButton(
                 icon: const Icon(Icons.play_arrow),
@@ -331,16 +279,12 @@ class _HomeView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _OpaqueContentCard(
-          icon: Icons.subscriptions_outlined,
-          color: kHuyaAccent,
-          label: '我的订阅',
-          sub: '点击查看已收藏的主播',
-          onTap: onOpenFollows,
+          icon: Icons.subscriptions_outlined, color: kHuyaAccent,
+          label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows,
         ),
         const SizedBox(height: 12),
         _OpaqueContentCard(
-          icon: Icons.account_circle,
-          color: const Color(0xFFFFB25E),
+          icon: Icons.account_circle, color: const Color(0xFFFFB25E),
           label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
           sub: '登录后可发真实弹幕 / 看真实订阅数',
           onTap: () => Get.to(() => const HuyaLoginPage()),
@@ -351,18 +295,8 @@ class _HomeView extends StatelessWidget {
 }
 
 class _OpaqueContentCard extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String label;
-  final String sub;
-  final VoidCallback onTap;
-  const _OpaqueContentCard({
-    required this.icon,
-    required this.color,
-    required this.label,
-    required this.sub,
-    required this.onTap,
-  });
+  final IconData icon; final Color color; final String label; final String sub; final VoidCallback onTap;
+  const _OpaqueContentCard({required this.icon, required this.color, required this.label, required this.sub, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -378,11 +312,9 @@ class _OpaqueContentCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 44, height: 44,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(14),
+                color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: color, size: 24),
             ),
@@ -391,15 +323,9 @@ class _OpaqueContentCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600)),
+                  Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
-                  Text(sub,
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.55), fontSize: 12)),
+                  Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12)),
                 ],
               ),
             ),
@@ -414,78 +340,46 @@ class _OpaqueContentCard extends StatelessWidget {
 // ================= 订阅 Tab =================
 class _FollowsView extends StatefulWidget {
   const _FollowsView();
-  @override
-  State<_FollowsView> createState() => _FollowsViewState();
+  @override State<_FollowsView> createState() => _FollowsViewState();
 }
-
 class _FollowsViewState extends State<_FollowsView> {
   List<FollowItem> _list = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
+  @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
     final list = await FollowStore.all();
     if (mounted) setState(() => _list = list);
   }
-
-  @override
-  Widget build(BuildContext context) {
+  @override Widget build(BuildContext context) {
     if (_list.isEmpty) {
-      return const Center(
-        child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
-            textAlign: TextAlign.center, style: TextStyle(color: Colors.white38)),
-      );
+      return const Center(child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
+          textAlign: TextAlign.center, style: TextStyle(color: Colors.white38)));
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: _list.length,
+      padding: const EdgeInsets.all(12), itemCount: _list.length,
       itemBuilder: (c, i) {
         final f = _list[i];
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: GestureDetector(
             onTap: () => goLive(f.roomId, nickname: f.name, avatarUrl: f.avatar),
-            onLongPress: () async {
-              await FollowStore.remove(f.roomId);
-              _load();
-            },
+            onLongPress: () async { await FollowStore.remove(f.roomId); _load(); },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF16161E),
-                borderRadius: BorderRadius.circular(18),
+                color: const Color(0xFF16161E), borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: Colors.white.withOpacity(0.06)),
               ),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: Colors.white10,
-                    backgroundImage:
-                        f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
-                    child: f.avatar.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white54)
-                        : null,
-                  ),
+                  CircleAvatar(radius: 22, backgroundColor: Colors.white10,
+                      backgroundImage: f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
+                      child: f.avatar.isEmpty ? const Icon(Icons.person, color: Colors.white54) : null),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(f.name,
-                            style: const TextStyle(
-                                color: Colors.white, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text('房间 ${f.roomId}',
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 12)),
-                      ],
-                    ),
-                  ),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(f.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text('房间 ${f.roomId}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  ])),
                   const Icon(Icons.chevron_right, color: Colors.white24),
                 ],
               ),
@@ -500,35 +394,22 @@ class _FollowsViewState extends State<_FollowsView> {
 // ================= 设置 Tab =================
 class _SettingsView extends StatelessWidget {
   const _SettingsView();
-
-  @override
-  Widget build(BuildContext context) {
+  @override Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _OpaqueContentCard(
-          icon: Icons.account_circle,
-          color: kHuyaAccent,
-          label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
-          sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
-          onTap: () => Get.to(() => const HuyaLoginPage()),
-        ),
+        _OpaqueContentCard(icon: Icons.account_circle, color: kHuyaAccent,
+            label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
+            sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
+            onTap: () => Get.to(() => const HuyaLoginPage())),
         const SizedBox(height: 12),
-        _OpaqueContentCard(
-          icon: Icons.battery_charging_full,
-          color: const Color(0xFF7ED97E),
-          label: '允许应用后台运行',
-          sub: '弹出系统授权对话框（后台播放必开）',
-          onTap: () => BackgroundPlayStore.requestBatteryWhitelist(),
-        ),
+        _OpaqueContentCard(icon: Icons.battery_charging_full, color: const Color(0xFF7ED97E),
+            label: '允许应用后台运行', sub: '弹出系统授权对话框（后台播放必开）',
+            onTap: () => BackgroundPlayStore.requestBatteryWhitelist()),
         const SizedBox(height: 12),
-        _OpaqueContentCard(
-          icon: Icons.info_outline,
-          color: Colors.white70,
-          label: '关于',
-          sub: 'HuyaLive · 液态玻璃版 · 参考 pure_live / dtv',
-          onTap: () {},
-        ),
+        _OpaqueContentCard(icon: Icons.info_outline, color: Colors.white70,
+            label: '关于', sub: 'HuyaLive · 液态玻璃版 · 参考 pure_live / dtv',
+            onTap: () {}),
       ],
     );
   }
