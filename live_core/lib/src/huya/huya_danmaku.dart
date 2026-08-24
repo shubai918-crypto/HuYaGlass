@@ -78,7 +78,6 @@ class HuyaDanmakuClient {
 
   // ================= DNS 优选 =================
   Future<List<String>> _preferredHosts() async {
-    // ★ 优先使用动态获取的节点，兜底使用内置节点
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
     final cost = <String, int>{};
 
@@ -461,7 +460,7 @@ class HuyaDanmakuClient {
           break;
         case 22:
         case 7:
-          // ★ 统一处理两种推送布局（chat:分组批量包 / 直推包）
+          // ★ 统一处理实时/历史批量推送包
           _handleMsgPushUnified(payload);
           break;
         default:
@@ -482,7 +481,6 @@ class HuyaDanmakuClient {
     return _TarsReader(Uint8List.fromList(bytes.sublist(start))).readFields();
   }
 
-  /// ★ 解析 WupRsp，提取 launch 响应中的动态节点
   void _handleWupRsp(List<int> bytes) {
     try {
       final f = _readWupFields(bytes);
@@ -516,7 +514,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 从 launch 响应中提取最新的 WS 域名和 IP
   void _parseLaunchRsp(Map<int, Object?> rsp) {
     final newHosts = <String>[];
     for (final entry in rsp.entries) {
@@ -542,67 +539,100 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 统一推送解析：兼容你抓到的 {0:"chat:xxx", 1:[{0:uri,1:msg}]} 批量包
-  /// 以及旧版 {1:uri, 2:msg} 直推包，甚至整包就是 danmaku struct 的情况
+  /// ★ 统一推送解析：完美适配 cmd=22 的 chat:xxx 批量包（包含历史弹幕）
   void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
 
-      // 布局A：items 列表（可能在 tag1 / tag0 / tag2）
+      // 布局A：批量推送 {0: "chat:xxx", 1: [{0: uri, 1: msg_bytes}]}
       for (final key in const [1, 0, 2]) {
         final v = f[key];
-        if (v is List && v.isNotEmpty && v.first is Map<int, Object?>) {
+        if (v is List && v.isNotEmpty) {
+          bool isItemList = false;
           for (final item in v) {
-            if (item is! Map<int, Object?>) continue;
-            final uri = item[0] is int ? item[0] as int : 1400;
-            final raw = item[1];
-            if (raw is List) {
-              _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+            if (item is Map<int, Object?>) {
+              isItemList = true;
+              final uri = item[0] is int ? item[0] as int : 1400;
+              final raw = item[1];
+              if (raw is List) {
+                _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+              } else if (raw is Uint8List) {
+                _routePush(uri, raw);
+              }
             }
           }
-          return;
+          if (isItemList) return;
         }
       }
 
-      // 布局B：{1:uri, 2:msg}
+      // 布局B：直推单条 {1: uri, 2: msg_bytes}
       final uri = f[1] is int ? f[1] as int : 1400;
       final raw = f[2];
       if (raw is List) {
         _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
         return;
+      } else if (raw is Uint8List) {
+        _routePush(uri, raw);
+        return;
       }
 
       // 布局C：整包直接是 danmaku struct（兜底直解）
-      if (f[3] is String || f[0] is Map<int, Object?>) {
+      if (f[6] is String || f[5] is String || f[3] is String || f[0] is Map<int, Object?>) {
         _decodeDanmaku(payload);
       }
-    } catch (_) {}
+    } catch (e) {
+      _dbgPush('Push解析异常: $e');
+    }
   }
 
   void _routePush(int uri, List<int> payload) {
-    if (uri == 1400) {
-      _decodeDanmaku(payload);
-    } else if (uri == 8006) {
+    if (uri == 8006) {
       try {
         final f = _TarsReader(Uint8List.fromList(payload)).readFields();
         final v = f[0] is int ? f[0] as int : 0;
         if (v > 0) onPopularity?.call(v);
       } catch (_) {}
+    } else {
+      // ★ 1400(实时), 6501(历史), 或未知，统一尝试弹幕解码（不漏掉任何历史弹幕）
+      _decodeDanmaku(payload);
     }
   }
 
-  /// ★ 宽容版弹幕解码：content 优先 tag3，nick 取 sender[2]→sender[1]
+  /// ★ 精准解码：基于真实抓包，tag 5 是昵称，tag 6 是正文
   void _decodeDanmaku(List<int> payload) {
     try {
       final reader = _TarsReader(Uint8List.fromList(payload));
       final fields = reader.readFields();
 
-      // 正文：优先 tag3，兜底取第一个非空字符串(tag>=3)
+      // 1. 提取昵称 (优先 tag 5，兜底 tag 2 / sender)
+      String nick = '';
+      if (fields[5] is String) {
+        nick = fields[5] as String;
+      } else if (fields[2] is String) {
+        nick = fields[2] as String;
+      } else {
+        final sender = fields[0];
+        if (sender is Map<int, Object?>) {
+          nick = '${sender[2] ?? sender[1] ?? ''}';
+        }
+      }
+      // 清理粉丝牌，如 "东星耀扬【单枪匹马】" -> "东星耀扬"
+      nick = nick.replaceAll(RegExp(r'【.*?】'), '').trim();
+
+      // 2. 提取正文 (优先 tag 6，兜底 tag 3 / tag 5)
       String content = '';
-      if (fields[3] is String) content = fields[3] as String;
+      if (fields[6] is String) {
+        content = fields[6] as String;
+      } else if (fields[3] is String) {
+        content = fields[3] as String;
+      } else if (fields[5] is String && nick != fields[5]) {
+        content = fields[5] as String;
+      }
+      
+      // 兜底：找第一个非空字符串
       if (content.isEmpty) {
         for (final e in fields.entries) {
-          if (e.key >= 3 && e.value is String && (e.value as String).isNotEmpty) {
+          if (e.value is String && (e.value as String).isNotEmpty) {
             content = e.value as String;
             break;
           }
@@ -610,28 +640,29 @@ class HuyaDanmakuClient {
       }
       if (content.isEmpty) return;
 
-      // 昵称：sender[2] → sender[1] → 空
-      String nick = '';
-      final sender = fields[0];
-      if (sender is Map<int, Object?>) {
-        nick = '${sender[2] ?? sender[1] ?? ''}';
-      }
-
-      // 颜色：tag6 struct[0]
+      // 3. 提取颜色 (通常在 tag 8~15 的 struct 里)
       int color = 0;
-      final bf = fields[6];
-      if (bf is Map<int, Object?> && bf[0] is int) color = bf[0] as int;
+      for (var i = 8; i <= 15; i++) {
+        final cf = fields[i];
+        if (cf is Map<int, Object?> && cf[0] is int) {
+          color = cf[0] as int;
+          break;
+        }
+      }
 
       _controller.add(DanmakuMessage(
         nickname: nick,
         content: content,
         fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
       ));
+      
       if (_pendingDanmaku != null && content == _pendingDanmaku) {
         _pendingDanmaku = null;
         _dbgPush('回显确认 ✔');
       }
-    } catch (_) {}
+    } catch (e) {
+      _dbgPush('Danmaku解码异常: $e');
+    }
   }
 }
 
@@ -662,7 +693,6 @@ class _TarsWriter {
     }
   }
 
-  /// ★ 无 tag 整数（list/map size）：0 必须写单字节 0x0C
   void _intValue(int v) {
     final t = _intType(v);
     if (t == 12) {
