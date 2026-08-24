@@ -261,7 +261,7 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  // ================= 发送弹幕（任意房间，无需 cmd33） =================
+  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -331,8 +331,9 @@ class HuyaDanmakuClient {
 
     final req = _TarsWriter();
     req.writeStruct(0, user);
-    req.writeInt(1, _topSid);
-    req.writeInt(2, _topSid);
+    req.writeInt(1, _topSid); // lTid
+    // ★ 修复 -99：lSid 必须使用 subSid (subChId)
+    req.writeInt(2, _subSid > 0 ? _subSid : _topSid); 
     req.writeString(3, text.replaceAll('\n', ' '));
     req.writeInt(4, 0);
     req.writeStruct(5, cf);
