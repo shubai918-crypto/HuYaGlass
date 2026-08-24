@@ -6,6 +6,7 @@ import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 import 'huya_login.dart';
 
+/// 虎牙直播流解析：网页(dtv 签名) + 官方 API 双源，HLS 优先 / FLV 兜底
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -60,6 +61,15 @@ class HuyaStreamResolver {
     return i >= 0 ? key.substring(i + 1) : key;
   }
 
+  String _trimSlash(String u) {
+    var s = u.trim();
+    while (s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
+  // ================= dtv 同款签名 =================
   String generateWebAntiCode(String streamName, String antiCode) {
     try {
       final sanitized = antiCode.replaceAll('&amp;', '&');
@@ -113,14 +123,6 @@ class HuyaStreamResolver {
     var s = url.replaceAll('&ctype=tars_mp', '&ctype=huya_webh5');
     s = s.replaceAll('&fs=bhct', '&fs=bgct');
     return enforceHttp(s);
-  }
-
-  String _trimSlash(String u) {
-    var s = u.trim();
-    while (s.endsWith('/')) {
-      s = s.substring(0, s.length - 1);
-    }
-    return s;
   }
 
   Future<String> _fetchHtml(String roomId, bool mobile) async {
@@ -207,7 +209,7 @@ class HuyaStreamResolver {
     return rates ?? [];
   }
 
-  // ================= 主播信息：HNF + 全页正则多源兜底 =================
+  // ============ 主播信息：HNF + 全页正则多源兜底 ============
   Map<String, dynamic> _parseMeta(String body) {
     final out = <String, dynamic>{
       'nickname': '',
@@ -256,7 +258,7 @@ class HuyaStreamResolver {
       }
     } catch (_) {}
 
-    // ★ 兜底①：昵称
+    // 兜底①：昵称
     if (_s(out['nickname']).isEmpty) {
       for (final re in [
         RegExp(r'"sNick"\s*:\s*"([^"]+)"'),
@@ -270,7 +272,7 @@ class HuyaStreamResolver {
         }
       }
     }
-    // ★ 兜底②：头像
+    // 兜底②：头像
     if (_s(out['avatar']).isEmpty) {
       for (final re in [
         RegExp(r'"sAvatar180"\s*:\s*"([^"]+)"'),
@@ -284,12 +286,21 @@ class HuyaStreamResolver {
         }
       }
     }
-    // ★ 兜底③：热度
+    // 兜底③：热度
     if (_i(out['heat']) == 0) {
       final m = RegExp(r'"totalCount"\s*:\s*([1-9]\d*)').firstMatch(body);
       if (m != null) out['heat'] = int.parse(m.group(1)!);
     }
-    // ★ 兜底④：粉丝
+    // ★ 兜底④-a：网页可见文本「粉丝 19.0万」
+    if (_i(out['fans']) == 0) {
+      final m = RegExp(r'粉丝\s*(?:<[^>]*>\s*)*([\d.]+)\s*(万)?').firstMatch(body);
+      if (m != null) {
+        var v = double.tryParse(m.group(1)!) ?? 0;
+        if (m.group(2) == '万') v *= 10000;
+        if (v > 0) out['fans'] = v.round();
+      }
+    }
+    // 兜底④-b：JSON key
     if (_i(out['fans']) == 0) {
       final matches = RegExp(
         r'"(?:lSubscribeCount|iSubscribeCount|lFansCount|iFansCount|fansCount)"\s*:\s*(\d+)',
@@ -301,12 +312,12 @@ class HuyaStreamResolver {
       }
       if (maxFans > 0) out['fans'] = maxFans;
     }
-    // ★ 兜底⑤：标题
+    // 兜底⑤：标题
     if (_s(out['title']).isEmpty) {
       final m = RegExp(r'"sIntroduction"\s*:\s*"([^"]+)"').firstMatch(body);
       if (m != null) out['title'] = m.group(1)!;
     }
-    // ★ 兜底⑥：uid / topSid / subSid
+    // 兜底⑥：uid / topSid / subSid
     if (_i(out['uid']) == 0) {
       for (final key in ['lPresenterUid', 'lUid', 'yyid']) {
         final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
@@ -324,7 +335,7 @@ class HuyaStreamResolver {
       final m = RegExp(r'"lSubChannelId"\s*:\s*(\d+)').firstMatch(body);
       if (m != null) out['subSid'] = int.parse(m.group(1)!);
     }
-    // ★ 兜底⑦：开播时间
+    // 兜底⑦：开播时间
     if (_i(out['startTime']) == 0) {
       for (final key in ['iStartTime', 'lStartTime', 'startTime']) {
         final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
@@ -337,7 +348,7 @@ class HuyaStreamResolver {
         }
       }
     }
-    // ★ 兜底⑧：有流即视为在播
+    // 兜底⑧：有流即视为在播
     if (out['isLive'] != true) {
       if (RegExp(r'"sStreamName"\s*:\s*"[^"]+"').firstMatch(body) != null) {
         out['isLive'] = true;
@@ -432,7 +443,7 @@ class HuyaStreamResolver {
     }
   }
 
-  // ============ 官方 API（兜底，字段修正：liveData.nick 等） ============
+  // ============ 官方 API（兜底，字段 liveData.nick 等） ============
   Future<HuyaStreamResult?> _resolveByApi(String roomId) async {
     try {
       final loginCookie = HuyaLoginManager().cookie;
@@ -451,7 +462,6 @@ class HuyaStreamResolver {
       final data = root['data'] as Map<String, dynamic>?;
       if (data == null) return null;
 
-      // ★ 正确字段源：liveData（昵称/头像/热度），liveStatus（开播状态）
       final liveData = (data['liveData'] as Map<String, dynamic>?) ?? {};
       final profile = (data['profileInfo'] as Map<String, dynamic>?) ?? {};
       final liveInfo = (data['liveInfo'] as Map<String, dynamic>?) ?? {};
@@ -517,9 +527,7 @@ class HuyaStreamResolver {
                 ? 'm3u8'
                 : _s(bm['sHlsUrlSuffix']);
             final hlsAnti = _s(bm['sHlsAntiCode']);
-            if (hlsUrl.isNotEmpty &&
-                streamName.isNotEmpty &&
-                hlsAnti.isNotEmpty) {
+            if (hlsUrl.isNotEmpty && streamName.isNotEmpty && hlsAnti.isNotEmpty) {
               final p = generateWebAntiCode(streamName, hlsAnti);
               if (p.isNotEmpty) {
                 urls.add(
@@ -536,9 +544,7 @@ class HuyaStreamResolver {
                 ? 'flv'
                 : _s(bm['sFlvUrlSuffix']);
             final flvAnti = _s(bm['sFlvAntiCode']);
-            if (flvUrl.isNotEmpty &&
-                streamName.isNotEmpty &&
-                flvAnti.isNotEmpty) {
+            if (flvUrl.isNotEmpty && streamName.isNotEmpty && flvAnti.isNotEmpty) {
               final p = generateWebAntiCode(streamName, flvAnti);
               if (p.isNotEmpty) {
                 urls.add(
@@ -572,7 +578,8 @@ class HuyaStreamResolver {
           profile['uid'],
         ]),
         streamerInfo: StreamerInfo(
-          uid: _firstNonZero([liveData['yyid'], profile['yyid'], profile['lUid']]),
+          uid:
+              _firstNonZero([liveData['yyid'], profile['yyid'], profile['lUid']]),
           nickname: _s(liveData['nick']).isNotEmpty
               ? _s(liveData['nick'])
               : _s(profile['sNick'] ?? profile['sPresenterNick']),
