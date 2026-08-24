@@ -2,15 +2,32 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 后台播放：持久化开关 + 电池白名单 + 唤醒锁 + 前台服务
+/// 后台播放：媒体前台服务（PiliPlus 同款，无需任何权限弹窗）
 class BackgroundPlayStore {
   static const _key = 'huya_background_play';
   static final ValueNotifier<bool> enabled = ValueNotifier<bool>(false);
   static const _channel = MethodChannel('com.huyalive/background');
 
+  /// 通知栏媒体按钮回调（控制器注册）
+  static void Function(String action)? onMediaAction;
+
   static Future<void> init() async {
     final sp = await SharedPreferences.getInstance();
     enabled.value = sp.getBool(_key) ?? false;
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'pause':
+          onMediaAction?.call('pause');
+          return true;
+        case 'play':
+          onMediaAction?.call('play');
+          return true;
+        case 'stop':
+          onMediaAction?.call('stop');
+          return true;
+      }
+      return false;
+    });
   }
 
   static Future<void> set(bool v) async {
@@ -18,20 +35,40 @@ class BackgroundPlayStore {
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_key, v);
     if (v) {
-      await requestBatteryWhitelist();
-      await startService(); // ★ 开启即挂前台服务，ColorOS 不敢杀
+      await startService();
     } else {
       await stopService();
-      await releaseWakeLock();
     }
   }
 
+  /// 同步通知栏播放/暂停状态
+  static Future<void> setPlaying(bool playing) async {
+    try {
+      await _channel.invokeMethod('setPlaying', playing);
+    } catch (_) {}
+  }
+
+  static Future<bool> startService() async {
+    try {
+      await _channel.invokeMethod('startForegroundService');
+      return true;
+    } catch (e) {
+      debugPrint('[BG] startService 失败: $e');
+      return false;
+    }
+  }
+
+  static Future<void> stopService() async {
+    try {
+      await _channel.invokeMethod('stopForegroundService');
+    } catch (_) {}
+  }
+
+  /// 手动入口（仅设置页按钮调用，不再自动弹）
   static Future<void> requestBatteryWhitelist() async {
     try {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
-    } catch (e) {
-      debugPrint('battery whitelist: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<void> acquireWakeLock() async {
@@ -43,18 +80,6 @@ class BackgroundPlayStore {
   static Future<void> releaseWakeLock() async {
     try {
       await _channel.invokeMethod('releaseWakeLock');
-    } catch (_) {}
-  }
-
-  static Future<void> startService() async {
-    try {
-      await _channel.invokeMethod('startForegroundService');
-    } catch (_) {}
-  }
-
-  static Future<void> stopService() async {
-    try {
-      await _channel.invokeMethod('stopForegroundService');
     } catch (_) {}
   }
 }
