@@ -126,7 +126,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       }
     };
 
-    // ★ 修复：冷启动恢复后台播放状态时，立即拉起前台服务（通知栏立刻出现）
+    // ★ 冷启动恢复后台播放状态时，立即拉起前台服务（通知栏立刻出现）
     if (BackgroundPlayStore.enabled.value) {
       BackgroundPlayStore.startService();
       BackgroundPlayStore.setPlaying(true);
@@ -407,7 +407,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _ayyuid = info.ayyuid;
       _topSid = info.topSid != 0 ? info.topSid : info.presenterUid;
       _subSid = info.subSid;
-      if (isLive.value && _danmakuClient == null) _connectDanmaku();
+      // ★ 未开播也连弹幕（与网页行为一致，尝试接收历史/缓存弹幕）
+      if (_danmakuClient == null) _connectDanmaku();
       loading.value = false;
       _updateDebug();
     } catch (e) {
