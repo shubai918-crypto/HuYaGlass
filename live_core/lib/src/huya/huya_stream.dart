@@ -7,8 +7,9 @@ import '../model/streamer_info.dart';
 import 'huya_login.dart';
 
 /// 虎牙直播流解析：
-/// 信息 = 官方 API（activityCount 粉丝等）
+/// 信息 = 官方 API（activityCount 粉丝 / liveStatus / startTime / screenshot）
 /// 线路 = dtv 同款网页 FLV 优先（al→hs→tx），API FLV 兜底，HLS 最后
+/// 弹幕 = yyid 作为频道 ID（= 网页 lChannelId / lSubChannelId）
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -149,9 +150,8 @@ class HuyaStreamResolver {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Referer': 'https://m.huya.com/',
               'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.6,en;q=0.4',
-              'Cookie': loginCookie.isNotEmpty
-                  ? loginCookie
-                  : _huyaWebh5Cookie,
+              'Cookie':
+                  loginCookie.isNotEmpty ? loginCookie : _huyaWebh5Cookie,
             }
           : {
               'User-Agent': _desktopUa,
@@ -159,9 +159,8 @@ class HuyaStreamResolver {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
               'Referer': 'https://www.huya.com/',
               'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.6,en;q=0.4',
-              'Cookie': loginCookie.isNotEmpty
-                  ? loginCookie
-                  : _huyaWebh5Cookie,
+              'Cookie':
+                  loginCookie.isNotEmpty ? loginCookie : _huyaWebh5Cookie,
             },
     );
     return res.statusCode == 200 ? res.body : '';
@@ -273,6 +272,8 @@ class HuyaStreamResolver {
       final avatar = _s(liveData['avatar180']).isNotEmpty
           ? _s(liveData['avatar180'])
           : _s(profile['avatar180']);
+
+      // ★ 粉丝数：精准读取 activityCount
       final fansCount =
           _firstNonZero([profile['activityCount'], liveData['activityCount']]);
       final heat =
@@ -280,11 +281,17 @@ class HuyaStreamResolver {
       final title = _s(liveData['introduction']);
       final startTime = _i(liveData['startTime']);
       final cover = _s(liveData['screenshot']);
-      final topSid = _firstNonZero(
-          [data['chTopId'], liveData['liveChannel'], profile['yyid']]);
-      final subSid = _firstNonZero([data['subChId'], liveData['shortChannel']]);
-      final uid =
-          _firstNonZero([profile['yyid'], profile['uid'], liveData['yyid']]);
+
+      // ★ 弹幕系统只认 yyid 作为频道ID（= 网页 lChannelId / lSubChannelId）
+      final yyid = _firstNonZero([profile['yyid'], liveData['yyid']]);
+      final uidVal = _firstNonZero([profile['uid'], liveData['uid']]);
+      final topSid = yyid != 0
+          ? yyid
+          : _firstNonZero([data['chTopId'], liveData['liveChannel']]);
+      final subSid = yyid != 0
+          ? yyid
+          : _firstNonZero([data['subChId'], liveData['shortChannel']]);
+      final uid = uidVal != 0 ? uidVal : yyid;
 
       // ★ 线路：网页 FLV（dtv 同源）→ API FLV → API HLS
       final webFlv = await _fetchWebFlvCandidates(roomId);
