@@ -11,38 +11,63 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    
+    private var wakeLock: PowerManager.WakeLock? = null
+
     companion object {
-        var engine: FlutterEngine? = null   // ★ 新增：给 Service 反向调 Dart 用
+        var engine: FlutterEngine? = null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        engine = flutterEngine              // ★ 新增
+        super.configureFlutterEngine(flutterEngine)
+        engine = flutterEngine
+        
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.huyalive/background")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    // ★ 新增：Dart 同步播放状态到通知栏
                     "setPlaying" -> {
                         BackgroundPlayService.instance
                             ?.setPlayingFromDart(call.arguments as? Boolean ?: true)
                         result.success(null)
                     }
-                    "requestIgnoreBatteryOptimizations" -> { /* 原有逻辑保留 */ }
-                    "startForegroundService" -> { /* 原有逻辑保留 */ }
-                    "stopForegroundService" -> { /* 原有逻辑保留 */ }
-                    "acquireWakeLock" -> { /* 原有逻辑保留 */ }
-                    "releaseWakeLock" -> { /* 原有逻辑保留 */ }
+                    "requestIgnoreBatteryOptimizations" -> {
+                        val pm = this@MainActivity.getSystemService(POWER_SERVICE) as PowerManager
+                        if (!pm.isIgnoringBatteryOptimizations(this@MainActivity.packageName)) {
+                            @SuppressLint("BatteryLife")
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                .apply { data = Uri.parse("package:${this@MainActivity.packageName}") }
+                            runCatching { this@MainActivity.startActivity(intent) }
+                        }
+                        result.success(null)
+                    }
+                    "startForegroundService" -> {
+                        val i = Intent(this@MainActivity, BackgroundPlayService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            this@MainActivity.startForegroundService(i)
+                        } else {
+                            this@MainActivity.startService(i)
+                        }
+                        result.success(null)
+                    }
+                    "stopForegroundService" -> {
+                        this@MainActivity.stopService(Intent(this@MainActivity, BackgroundPlayService::class.java))
+                        result.success(null)
+                    }
+                    "acquireWakeLock" -> {
+                        val pm = this@MainActivity.getSystemService(POWER_SERVICE) as PowerManager
+                        if (wakeLock == null) {
+                            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "huyalive:bgplay")
+                        }
+                        wakeLock?.let { if (!it.isHeld) it.acquire(4 * 60 * 60 * 1000L) }
+                        result.success(null)
+                    }
+                    "releaseWakeLock" -> {
+                        wakeLock?.let { if (it.isHeld) it.release() }
+                        wakeLock = null
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
-    }
-}
-
-    private fun openAppDetails() {
-        runCatching {
-            startActivity(
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    .apply { data = Uri.parse("package:$packageName") }
-            )
-        }
     }
 }
