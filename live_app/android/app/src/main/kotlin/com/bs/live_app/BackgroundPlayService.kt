@@ -8,26 +8,63 @@ import android.app.Service
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
+import io.flutter.plugin.common.MethodChannel
 
-/** 后台播放保活：前台服务 + 媒体会话 + WakeLock + WiFiLock */
+/** 媒体前台服务：通知栏带 暂停/播放/关闭，系统视为音乐 App，无需电池白名单 */
 class BackgroundPlayService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var mediaSession: MediaSessionCompat? = null
+    private var playing = true
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PAUSE -> { invokeDart("pause"); playing = false; refreshUi() }
+            ACTION_PLAY -> { invokeDart("play"); playing = true; refreshUi() }
+            ACTION_STOP -> {
+                invokeDart("stop")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
         startForeground(NOTIFY_ID, buildNotification())
         acquireLocks()
-        startMediaSession()
+        ensureSession()
         return START_STICKY
+    }
+
+    /** Dart 侧同步播放状态 */
+    fun setPlayingFromDart(v: Boolean) {
+        playing = v
+        refreshUi()
+    }
+
+    private fun invokeDart(method: String) {
+        val engine = MainActivity.engine ?: return
+        mainHandler.post {
+            runCatching {
+                MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
+                    .invokeMethod(method, null)
+            }
+        }
     }
 
     private fun acquireLocks() {
@@ -44,41 +81,47 @@ class BackgroundPlayService : Service() {
         wifiLock?.let { if (!it.isHeld) it.acquire() }
     }
 
-    /** ★ 媒体会话：让系统认定我们是"正在播放的音乐应用"，不掐音频 */
-    private fun startMediaSession() {
+    private fun ensureSession() {
         if (mediaSession == null) {
-            mediaSession = MediaSessionCompat(this, "huyalive")
+            mediaSession = MediaSessionCompat(this, "huyalive").apply {
+                setCallback(object : MediaSessionCompat.Callback() {
+                    override fun onPause() { invokeDart("pause"); playing = false; refreshUi() }
+                    override fun onPlay() { invokeDart("play"); playing = true; refreshUi() }
+                    override fun onStop() { invokeDart("stop"); stopSelf() }
+                })
+            }
         }
         mediaSession?.setPlaybackState(
             PlaybackStateCompat.Builder()
-                .setState(PlaybackStateCompat.STATE_PLAYING, 0, 1f)
-                .setActions(PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_STOP)
+                .setState(
+                    if (playing) PlaybackStateCompat.STATE_PLAYING
+                    else PlaybackStateCompat.STATE_PAUSED, 0, 1f)
+                .setActions(PlaybackStateCompat.ACTION_PLAY or
+                        PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_STOP)
                 .build()
         )
         mediaSession?.setMetadata(
             MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "HuyaLive")
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "HuyaLive 直播")
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "正在后台播放直播声音")
                 .build()
         )
         mediaSession?.isActive = true
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        runCatching { startService(Intent(this, BackgroundPlayService::class.java)) }
-        super.onTaskRemoved(rootIntent)
+    private fun refreshUi() {
+        ensureSession()
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(NOTIFY_ID, buildNotification())
     }
 
-    override fun onDestroy() {
-        mediaSession?.isActive = false
-        mediaSession?.release()
-        mediaSession = null
-        wifiLock?.let { if (it.isHeld) it.release() }
-        wifiLock = null
-        wakeLock?.let { if (it.isHeld) it.release() }
-        wakeLock = null
-        super.onDestroy()
-    }
+    private fun servicePi(action: String, code: Int): PendingIntent =
+        PendingIntent.getService(
+            this, code,
+            Intent(this, BackgroundPlayService::class.java).setAction(action),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
     private fun buildNotification(): Notification {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -90,27 +133,64 @@ class BackgroundPlayService : Service() {
             }
         }
         val launch = packageManager.getLaunchIntentForPackage(packageName)
-        val pi = PendingIntent.getActivity(
+        val contentPi = PendingIntent.getActivity(
             this, 0, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-        return builder
+        val pausePi = servicePi(ACTION_PAUSE, 1)
+        val playPi = servicePi(ACTION_PLAY, 2)
+        val stopPi = servicePi(ACTION_STOP, 3)
+
+        val playAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_media_play, "播放", playPi).build()
+        val pauseAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_media_pause, "暂停", pausePi).build()
+        val stopAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_delete, "关闭", stopPi).build()
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HuyaLive")
             .setContentText("正在后台播放直播声音")
             .setSmallIcon(applicationInfo.icon)
-            .setContentIntent(pi)
+            .setContentIntent(contentPi)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .addAction(if (playing) pauseAction else playAction)
+            .addAction(stopAction)
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession?.sessionToken)
+                    .setShowActionsInCompactView(0, 1)
+            )
             .build()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        runCatching { startService(Intent(this, BackgroundPlayService::class.java)) }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onDestroy() {
+        instance = null
+        mediaSession?.isActive = false
+        mediaSession?.release()
+        mediaSession = null
+        wifiLock?.let { if (it.isHeld) it.release() }
+        wifiLock = null
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        super.onDestroy()
+    }
+
     companion object {
+        const val CHANNEL = "com.huyalive/background"
         private const val CHANNEL_ID = "huyalive_bg_play"
         private const val NOTIFY_ID = 10086
+        private const val ACTION_PAUSE = "huyalive.pause"
+        private const val ACTION_PLAY = "huyalive.play"
+        private const val ACTION_STOP = "huyalive.stop"
+        var instance: BackgroundPlayService? = null
+            private set
     }
 }
