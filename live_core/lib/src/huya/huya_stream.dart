@@ -9,7 +9,7 @@ import 'huya_login.dart';
 /// 虎牙直播流解析：
 /// 信息 = 官方 API（activityCount 粉丝 / liveStatus / startTime / screenshot）
 /// 线路 = dtv 同款网页 FLV 优先（al→hs→tx），API FLV 兜底，HLS 最后
-/// 弹幕 = yyid 作为频道 ID（= 网页 lChannelId / lSubChannelId）
+/// 弹幕 = topSid/subSid 使用 chTopId/subChId (lUid系)，保证发弹幕不报 -99
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -124,7 +124,7 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
-  // dtv 同款 CDN 优先级：al → hs → tx（避开 tx 的 _ 域名 SNI 崩溃）
+  // dtv 同款 CDN 优先级：al → hs → tx
   int _cdnRank(String cdn) {
     switch (cdn.toLowerCase()) {
       case 'al':
@@ -282,16 +282,14 @@ class HuyaStreamResolver {
       final startTime = _i(liveData['startTime']);
       final cover = _s(liveData['screenshot']);
 
-      // ★ 弹幕系统只认 yyid 作为频道ID（= 网页 lChannelId / lSubChannelId）
-      final yyid = _firstNonZero([profile['yyid'], liveData['yyid']]);
+      // ★ 修复发弹幕 -99：lTid/lSid 必须使用 chTopId/subChId (lUid 系)
       final uidVal = _firstNonZero([profile['uid'], liveData['uid']]);
-      final topSid = yyid != 0
-          ? yyid
-          : _firstNonZero([data['chTopId'], liveData['liveChannel']]);
-      final subSid = yyid != 0
-          ? yyid
-          : _firstNonZero([data['subChId'], liveData['shortChannel']]);
-      final uid = uidVal != 0 ? uidVal : yyid;
+      final yyid = _firstNonZero([profile['yyid'], liveData['yyid']]);
+      final topSid = _firstNonZero(
+          [data['chTopId'], liveData['liveChannel'], uidVal, yyid]);
+      final subSid =
+          _firstNonZero([data['subChId'], liveData['shortChannel'], topSid]);
+      final uid = uidVal != 0 ? uidVal : topSid;
 
       // ★ 线路：网页 FLV（dtv 同源）→ API FLV → API HLS
       final webFlv = await _fetchWebFlvCandidates(roomId);
