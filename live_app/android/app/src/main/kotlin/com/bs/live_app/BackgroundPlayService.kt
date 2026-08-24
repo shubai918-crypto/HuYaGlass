@@ -6,25 +6,23 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.support.v4.media.MediaMetadataCompat
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
-import androidx.core.app.NotificationCompat
-import androidx.media.app.NotificationCompat.MediaStyle
 import io.flutter.plugin.common.MethodChannel
 
-/** 媒体前台服务：通知栏带 暂停/播放/关闭，系统视为音乐 App，无需电池白名单 */
+/** 媒体前台服务：全部使用系统内置类，无需任何 androidx 依赖 */
 class BackgroundPlayService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
-    private var mediaSession: MediaSessionCompat? = null
+    private var mediaSession: MediaSession? = null
     private var playing = true
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -51,7 +49,6 @@ class BackgroundPlayService : Service() {
         return START_STICKY
     }
 
-    /** Dart 侧同步播放状态 */
     fun setPlayingFromDart(v: Boolean) {
         playing = v
         refreshUi()
@@ -83,8 +80,8 @@ class BackgroundPlayService : Service() {
 
     private fun ensureSession() {
         if (mediaSession == null) {
-            mediaSession = MediaSessionCompat(this, "huyalive").apply {
-                setCallback(object : MediaSessionCompat.Callback() {
+            mediaSession = MediaSession(this, "huyalive").apply {
+                setCallback(object : MediaSession.Callback() {
                     override fun onPause() { invokeDart("pause"); playing = false; refreshUi() }
                     override fun onPlay() { invokeDart("play"); playing = true; refreshUi() }
                     override fun onStop() { invokeDart("stop"); stopSelf() }
@@ -92,19 +89,17 @@ class BackgroundPlayService : Service() {
             }
         }
         mediaSession?.setPlaybackState(
-            PlaybackStateCompat.Builder()
+            PlaybackState.Builder()
                 .setState(
-                    if (playing) PlaybackStateCompat.STATE_PLAYING
-                    else PlaybackStateCompat.STATE_PAUSED, 0, 1f)
-                .setActions(PlaybackStateCompat.ACTION_PLAY or
-                        PlaybackStateCompat.ACTION_PAUSE or
-                        PlaybackStateCompat.ACTION_STOP)
+                    if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                    0, 1f)
+                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_STOP)
                 .build()
         )
         mediaSession?.setMetadata(
-            MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "HuyaLive 直播")
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "正在后台播放直播声音")
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "HuyaLive 直播")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, "正在后台播放直播声音")
                 .build()
         )
         mediaSession?.isActive = true
@@ -123,6 +118,7 @@ class BackgroundPlayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+    @Suppress("DEPRECATION")
     private fun buildNotification(): Notification {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -137,18 +133,20 @@ class BackgroundPlayService : Service() {
             this, 0, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val pausePi = servicePi(ACTION_PAUSE, 1)
-        val playPi = servicePi(ACTION_PLAY, 2)
-        val stopPi = servicePi(ACTION_STOP, 3)
 
-        val playAction = NotificationCompat.Action.Builder(
-            android.R.drawable.ic_media_play, "播放", playPi).build()
-        val pauseAction = NotificationCompat.Action.Builder(
-            android.R.drawable.ic_media_pause, "暂停", pausePi).build()
-        val stopAction = NotificationCompat.Action.Builder(
-            android.R.drawable.ic_delete, "关闭", stopPi).build()
+        val pauseAction = Notification.Action.Builder(
+            android.R.drawable.ic_media_pause, "暂停", servicePi(ACTION_PAUSE, 1)).build()
+        val playAction = Notification.Action.Builder(
+            android.R.drawable.ic_media_play, "播放", servicePi(ACTION_PLAY, 2)).build()
+        val stopAction = Notification.Action.Builder(
+            android.R.drawable.ic_delete, "关闭", servicePi(ACTION_STOP, 3)).build()
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            Notification.Builder(this)
+        }
+        return builder
             .setContentTitle("HuyaLive")
             .setContentText("正在后台播放直播声音")
             .setSmallIcon(applicationInfo.icon)
@@ -159,7 +157,7 @@ class BackgroundPlayService : Service() {
             .addAction(if (playing) pauseAction else playAction)
             .addAction(stopAction)
             .setStyle(
-                MediaStyle()
+                Notification.MediaStyle()
                     .setMediaSession(mediaSession?.sessionToken)
                     .setShowActionsInCompactView(0, 1)
             )
