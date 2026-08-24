@@ -41,7 +41,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final roomTitle = ''.obs;
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
-  final coverUrl = ''.obs; // ★ 直播间封面
+  final coverUrl = ''.obs;
   Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
@@ -77,7 +77,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   int _reconnectCount = 0;
   int _refreshCount = 0;
   bool _playing = false;
-  bool _backgrounded = false; // ★ 后台标志位
+  bool _backgrounded = false;
+  bool _userPaused = false; // ★ 区分"手动暂停"和"被系统偷暂停"
+  Timer? _bgWatchdog; // ★ 后台看门狗
   int _vw = 0;
   int _vh = 0;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -98,32 +100,55 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
+    // ★ 后台看门狗：后台被偷暂停时自动拉回播放
+    _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
 
-    // ★ 注册通知栏媒体按钮（暂停/播放/关闭）回调
+    // ★ 通知栏媒体按钮回调
     BackgroundPlayStore.onMediaAction = (action) {
       switch (action) {
         case 'pause':
+          _userPaused = true;
           _controller?.pause();
           isPaused.value = true;
           BackgroundPlayStore.setPlaying(false);
           break;
         case 'play':
+          _userPaused = false;
           _controller?.play();
           isPaused.value = false;
           BackgroundPlayStore.setPlaying(true);
           break;
         case 'stop':
+          _userPaused = true;
           _controller?.pause();
           BackgroundPlayStore.set(false);
           break;
       }
     };
 
+    // ★ 修复：冷启动恢复后台播放状态时，立即拉起前台服务（通知栏立刻出现）
+    if (BackgroundPlayStore.enabled.value) {
+      BackgroundPlayStore.startService();
+      BackgroundPlayStore.setPlaying(true);
+    }
+
     _loadSettings();
     _loadStream();
   }
 
-  // ★ 生命周期：后台冻结防误杀，前台恢复
+  // ★ 后台看门狗：系统/插件在后台偷暂停播放器时，自动恢复出声
+  void _bgKeepPlaying(Timer t) {
+    if (!_backgrounded || _userPaused) return;
+    if (!BackgroundPlayStore.enabled.value) return;
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || !_playing) return;
+    if (!c.value.isPlaying) {
+      c.play();
+      isPaused.value = false;
+      BackgroundPlayStore.setPlaying(true);
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
@@ -131,7 +156,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _backgrounded = true;
       if (BackgroundPlayStore.enabled.value) {
         BackgroundPlayStore.acquireWakeLock();
-        BackgroundPlayStore.setPlaying(!isPaused.value);
+        BackgroundPlayStore.setPlaying(!_userPaused);
       } else {
         _controller?.pause();
       }
@@ -139,9 +164,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _backgrounded = false;
       BackgroundPlayStore.releaseWakeLock();
       if (BackgroundPlayStore.enabled.value) {
-        BackgroundPlayStore.setPlaying(!isPaused.value);
+        BackgroundPlayStore.setPlaying(!_userPaused);
       }
-      if (_playing && !isPaused.value) _controller?.play();
+      if (_playing && !_userPaused) _controller?.play();
     }
   }
 
@@ -209,7 +234,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     liveDurationText.value = h > 0 ? '$h小时$m分钟' : '$m分钟';
   }
 
-  // ★ 未开播时显示：上次开播时间 + 相对时间
+  // ★ 未开播占位：上次开播时间
   String get lastLiveText {
     final st = liveStartTime.value;
     if (st <= 0) return '';
@@ -311,7 +336,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
 
   // ================= 卡顿检测（后台冻结） =================
   void _checkStall(Timer t) {
-    if (_backgrounded) return; // ★ 后台直接跳过，防止误换线
+    if (_backgrounded) return;
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
     if (c.value.isBuffering) {
@@ -361,13 +386,12 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       isLive.value = info.isLive;
       roomTitle.value = info.title;
       liveStartTime.value = info.startTime;
-      coverUrl.value = info.cover; // ★ 封面
+      coverUrl.value = info.cover;
       _startDurationTimer();
 
       isFollowed.value = await FollowStore.isFollowed(roomId);
       qualities.assignAll(info.qualities);
 
-      // ★ 只有"在播"才起播，未播不再对着死链重试
       if (info.isLive && qualities.isNotEmpty) {
         final keep = currentQuality.value;
         final q = qualities.firstWhere(
@@ -409,6 +433,17 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   void _tryNext(String reason) {
     if (_playing) return;
     if (_candidates.isEmpty) {
+      // ★ 当前清晰度全灭 → 自动降档
+      final idx = qualities.indexWhere((q) => q.name == currentQuality.value);
+      if (idx >= 0 && idx < qualities.length - 1) {
+        final next = qualities[idx + 1];
+        debugInfo.value =
+            '[$reason] ${currentQuality.value}全灭 → 自动降档 ${next.name}';
+        currentQuality.value = next.name;
+        _refreshCount = 0;
+        _playStream(next);
+        return;
+      }
       if (_refreshCount < 3) {
         _refreshCount++;
         debugInfo.value = '[$reason] 重新解析线路…';
@@ -425,7 +460,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
-  // ★ 加入 httpHeaders 防止 403 和 Source error
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -443,7 +477,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
         debugPrint('PLAYER ERROR: $_lastError');
-        if (_backgrounded) return; // ★ 后台忽略瞬时错误，不换线
+        if (_backgrounded) return;
         _advance('出错');
       }
     });
@@ -454,6 +488,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       await c.setVolume(isMuted.value ? 0 : 100);
       await c.play();
       _playing = true;
+      _userPaused = false;
       isPaused.value = false;
       _bufferingSince = null;
       _vw = c.value.size.width.toInt();
@@ -490,12 +525,13 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     final c = _controller;
     if (c == null) return;
     if (isPaused.value) {
+      _userPaused = false;
       c.play();
     } else {
+      _userPaused = true;
       c.pause();
     }
     isPaused.value = !isPaused.value;
-    // ★ 同步通知栏播放/暂停状态
     if (BackgroundPlayStore.enabled.value) {
       BackgroundPlayStore.setPlaying(!isPaused.value);
     }
@@ -566,9 +602,10 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
 
   void _toggleBackgroundPlay() {
     final next = !BackgroundPlayStore.enabled.value;
-    BackgroundPlayStore.set(next); // ★ 不弹权限框，直接起媒体前台服务
+    BackgroundPlayStore.set(next);
     if (next) {
-      BackgroundPlayStore.setPlaying(!isPaused.value);
+      _userPaused = false;
+      BackgroundPlayStore.setPlaying(true);
     }
     Get.snackbar('后台播放', next ? '已开启：退后台继续出声' : '已关闭',
         snackPosition: SnackPosition.BOTTOM);
@@ -601,7 +638,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     inputController.clear();
     final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
     if (!ok) {
-      Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('发送失败', '弹幕被拒绝或连接未就绪',
+          snackPosition: SnackPosition.BOTTOM);
     }
   }
 
@@ -760,7 +798,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                       _scheduleHide(4);
                     }),
                 const SizedBox(width: 6),
-                // ★ 后台播放开关（耳机按钮）
                 ValueListenableBuilder<bool>(
                     valueListenable: BackgroundPlayStore.enabled,
                     builder: (context, on, _) => _controlBtn(
@@ -801,7 +838,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                     if (coverUrl.value.isNotEmpty)
                       Opacity(
                         opacity: 0.3,
-                        child: Image.network(coverUrl.value, fit: BoxFit.cover,
+                        child: Image.network(coverUrl.value,
+                            fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) =>
                                 const SizedBox.shrink()),
                       ),
@@ -876,6 +914,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   void onClose() {
     WidgetsBinding.instance.removeObserver(this);
     BackgroundPlayStore.onMediaAction = null;
+    _bgWatchdog?.cancel();
     BackgroundPlayStore.stopService();
     BackgroundPlayStore.releaseWakeLock();
     _hideTimer?.cancel();
