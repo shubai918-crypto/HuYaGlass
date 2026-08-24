@@ -6,10 +6,15 @@ import '../model/stream_quality.dart';
 import '../model/streamer_info.dart';
 import 'huya_login.dart';
 
-/// 虎牙直播流解析：纯官方 API 解析（精准映射 activityCount 等字段）
+/// 虎牙直播流解析：
+/// 信息 = 官方 API（activityCount 粉丝等）
+/// 线路 = dtv 同款网页 FLV 优先（al→hs→tx），API FLV 兜底，HLS 最后
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+  static const _desktopUa =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+  static const _huyaWebh5Cookie = 'huya_ua=webh5&0.1.0&websocket';
   static const _sdkVersion = '2403051612';
 
   final Random _random = Random();
@@ -110,6 +115,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ================= dtv 同款 tx 修正 =================
   String _adjustTxStreamUrl(String url, String cdn) {
     if (cdn.toLowerCase() != 'tx') return enforceHttp(url);
     var s = url.replaceAll('&ctype=tars_mp', '&ctype=huya_webh5');
@@ -117,7 +123,103 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
-  // ================= 纯官方 API 解析 =================
+  // dtv 同款 CDN 优先级：al → hs → tx（避开 tx 的 _ 域名 SNI 崩溃）
+  int _cdnRank(String cdn) {
+    switch (cdn.toLowerCase()) {
+      case 'al':
+        return 0;
+      case 'hs':
+        return 1;
+      case 'tx':
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  // ================= dtv 同款网页抓取 =================
+  Future<String> _fetchHtml(String roomId, bool mobile) async {
+    final loginCookie = HuyaLoginManager().cookie;
+    final res = await http.get(
+      Uri.parse('https://www.huya.com/$roomId'),
+      headers: mobile
+          ? {
+              'User-Agent': _iosMobileUa,
+              'Accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Referer': 'https://m.huya.com/',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.6,en;q=0.4',
+              'Cookie': loginCookie.isNotEmpty
+                  ? loginCookie
+                  : _huyaWebh5Cookie,
+            }
+          : {
+              'User-Agent': _desktopUa,
+              'Accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+              'Referer': 'https://www.huya.com/',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.6,en;q=0.4',
+              'Cookie': loginCookie.isNotEmpty
+                  ? loginCookie
+                  : _huyaWebh5Cookie,
+            },
+    );
+    return res.statusCode == 200 ? res.body : '';
+  }
+
+  // ★ dtv 同款：只解析 FLV 候选
+  List<MapEntry<String, String>> _parseFlvCandidates(String html) {
+    final result = <MapEntry<String, String>>[];
+    if (html.isEmpty) return result;
+    try {
+      final re =
+          RegExp(r'stream:\s*(\{"data".*?),"iWebDefaultBitRate"', dotAll: true);
+      final m = re.firstMatch(html);
+      if (m == null) return result;
+      final block = jsonDecode('${m.group(1)}}') as Map<String, dynamic>;
+      final dataList = block['data'] as List<dynamic>?;
+      final first = (dataList != null && dataList.isNotEmpty)
+          ? dataList.first as Map<String, dynamic>
+          : null;
+      final list = first?['gameStreamInfoList'] as List<dynamic>?;
+      if (list == null) return result;
+      for (final item in list) {
+        final obj = item as Map<String, dynamic>;
+        final cdn = _s(obj['sCdnType']);
+        final flvUrl = _trimSlash(_s(obj['sFlvUrl']));
+        final streamName = _s(obj['sStreamName']);
+        final suffix = _s(obj['sFlvUrlSuffix']);
+        final anti = _s(obj['sFlvAntiCode']);
+        if (cdn.isEmpty ||
+            flvUrl.isEmpty ||
+            streamName.isEmpty ||
+            suffix.isEmpty ||
+            anti.isEmpty) {
+          continue;
+        }
+        final p = generateWebAntiCode(streamName, anti);
+        if (p.isEmpty) continue;
+        result.add(MapEntry(
+            cdn, _adjustTxStreamUrl('$flvUrl/$streamName.$suffix?$p', cdn)));
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  Future<List<MapEntry<String, String>>> _fetchWebFlvCandidates(
+      String roomId) async {
+    try {
+      var cands = _parseFlvCandidates(await _fetchHtml(roomId, false));
+      if (cands.isEmpty) {
+        cands = _parseFlvCandidates(await _fetchHtml(roomId, true));
+      }
+      return cands;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ================= 入口：官方 API 信息 + dtv 线路 =================
   Future<HuyaStreamResult?> resolveStream(String roomId,
       {int loginUid = 0}) async {
     try {
@@ -131,15 +233,35 @@ class HuyaStreamResolver {
           if (loginCookie.isNotEmpty) 'Cookie': loginCookie,
         },
       );
-      if (res.statusCode != 200) return null;
-      final root = jsonDecode(res.body) as Map<String, dynamic>;
-      if (_i(root['status']) != 200) return null;
-      final data = root['data'] as Map<String, dynamic>?;
-      if (data == null) return null;
 
-      // ★ 核心字段提取（严格对齐官方 JSON 结构）
-      final profile = (data['profileInfo'] as Map<String, dynamic>?) ?? {};
-      final liveData = (data['liveData'] as Map<String, dynamic>?) ?? {};
+      Map<String, dynamic> data = {};
+      Map<String, dynamic> profile = {};
+      Map<String, dynamic> liveData = {};
+      Map<String, dynamic> stream = {};
+      List<dynamic> baseList = [];
+      var rates = <dynamic>[];
+
+      if (res.statusCode == 200) {
+        final root = jsonDecode(res.body) as Map<String, dynamic>;
+        if (_i(root['status']) == 200) {
+          data = (root['data'] as Map<String, dynamic>?) ?? {};
+          profile = (data['profileInfo'] as Map<String, dynamic>?) ?? {};
+          liveData = (data['liveData'] as Map<String, dynamic>?) ?? {};
+          stream = (data['stream'] as Map<String, dynamic>?) ?? {};
+          baseList = (stream['baseSteamInfoList'] as List<dynamic>?) ??
+              (stream['gameStreamInfoList'] as List<dynamic>?) ??
+              [];
+          final bitRateInfo = liveData['bitRateInfo'];
+          if (bitRateInfo is String && bitRateInfo.isNotEmpty) {
+            try {
+              rates = jsonDecode(bitRateInfo) as List<dynamic>;
+            } catch (_) {}
+          }
+          if (rates.isEmpty) {
+            rates = (stream['vMultiStreamInfo'] as List<dynamic>?) ?? [];
+          }
+        }
+      }
 
       final liveStatus = _s(data['liveStatus']).toUpperCase();
       final realLiveStatus = _s(data['realLiveStatus']).toUpperCase();
@@ -151,47 +273,63 @@ class HuyaStreamResolver {
       final avatar = _s(liveData['avatar180']).isNotEmpty
           ? _s(liveData['avatar180'])
           : _s(profile['avatar180']);
-
-      // ★ 粉丝数：精准读取 activityCount
       final fansCount =
           _firstNonZero([profile['activityCount'], liveData['activityCount']]);
-
-      // 热度：totalCount / attendeeCount
       final heat =
           _firstNonZero([liveData['totalCount'], liveData['attendeeCount']]);
-
       final title = _s(liveData['introduction']);
       final startTime = _i(liveData['startTime']);
       final cover = _s(liveData['screenshot']);
-
       final topSid = _firstNonZero(
           [data['chTopId'], liveData['liveChannel'], profile['yyid']]);
       final subSid = _firstNonZero([data['subChId'], liveData['shortChannel']]);
       final uid =
           _firstNonZero([profile['yyid'], profile['uid'], liveData['yyid']]);
 
-      // 解析流地址（API 返回 stream 字段时）
-      final stream = (data['stream'] as Map<String, dynamic>?) ?? {};
-      final baseList = (stream['baseSteamInfoList'] as List<dynamic>?) ??
-          (stream['gameStreamInfoList'] as List<dynamic>?) ??
-          [];
+      // ★ 线路：网页 FLV（dtv 同源）→ API FLV → API HLS
+      final webFlv = await _fetchWebFlvCandidates(roomId);
 
-      var rates = <dynamic>[];
-      final bitRateInfo = liveData['bitRateInfo'];
-      if (bitRateInfo is String && bitRateInfo.isNotEmpty) {
-        try {
-          rates = jsonDecode(bitRateInfo) as List<dynamic>;
-        } catch (_) {}
+      final apiFlv = <MapEntry<String, String>>[];
+      final apiHls = <MapEntry<String, String>>[];
+      for (final b in baseList) {
+        final bm = b as Map<String, dynamic>;
+        final streamName = _s(bm['sStreamName']);
+        final cdn = _s(bm['sCdnType']);
+        if (streamName.isEmpty) continue;
+
+        final flvUrl = _trimSlash(_s(bm['sFlvUrl']));
+        final flvSuffix = _s(bm['sFlvUrlSuffix']);
+        final flvAnti = _s(bm['sFlvAntiCode']);
+        if (flvUrl.isNotEmpty && flvAnti.isNotEmpty) {
+          final p = generateWebAntiCode(streamName, flvAnti);
+          if (p.isNotEmpty) {
+            apiFlv.add(MapEntry(cdn,
+                _adjustTxStreamUrl('$flvUrl/$streamName.$flvSuffix?$p', cdn)));
+          }
+        }
+
+        final hlsUrl = _trimSlash(_s(bm['sHlsUrl']));
+        final hlsSuffix =
+            _s(bm['sHlsUrlSuffix']).isEmpty ? 'm3u8' : _s(bm['sHlsUrlSuffix']);
+        final hlsAnti = _s(bm['sHlsAntiCode']);
+        if (hlsUrl.isNotEmpty && hlsAnti.isNotEmpty) {
+          final p = generateWebAntiCode(streamName, hlsAnti);
+          if (p.isNotEmpty) {
+            apiHls.add(MapEntry(cdn,
+                _adjustTxStreamUrl('$hlsUrl/$streamName.$hlsSuffix?$p', cdn)));
+          }
+        }
       }
-      if (rates.isEmpty) {
-        rates = ((stream['flv'] as Map<String, dynamic>?)?['rateArray']
-                as List<dynamic>?) ??
-            (stream['vMultiStreamInfo'] as List<dynamic>?) ??
-            [];
-      }
+
+      final flvList = (webFlv.isNotEmpty ? webFlv : apiFlv)
+        ..sort((a, b) => _cdnRank(a.key).compareTo(_cdnRank(b.key)));
+      apiHls.sort((a, b) => _cdnRank(a.key).compareTo(_cdnRank(b.key)));
+
+      // ★ FLV 在前（dtv 稳定核心），HLS 仅兜底
+      final ordered = <MapEntry<String, String>>[...flvList, ...apiHls];
 
       final qualities = <StreamQuality>[];
-      if (baseList.isNotEmpty) {
+      if (ordered.isNotEmpty) {
         final rateList = rates.isNotEmpty
             ? rates
             : <dynamic>[
@@ -201,48 +339,7 @@ class HuyaStreamResolver {
           final rr = r as Map<String, dynamic>;
           final bitrate = _i(rr['iBitRate']);
           final ratio = bitrate > 0 ? '&ratio=$bitrate' : '';
-          final urls = <String>[];
-
-          // HLS 优先
-          for (final b in baseList) {
-            final bm = b as Map<String, dynamic>;
-            final streamName = _s(bm['sStreamName']);
-            final cdn = _s(bm['sCdnType']);
-            final hlsUrl = _trimSlash(_s(bm['sHlsUrl']));
-            final hlsSuffix = _s(bm['sHlsUrlSuffix']).isEmpty
-                ? 'm3u8'
-                : _s(bm['sHlsUrlSuffix']);
-            final hlsAnti = _s(bm['sHlsAntiCode']);
-            if (hlsUrl.isNotEmpty &&
-                streamName.isNotEmpty &&
-                hlsAnti.isNotEmpty) {
-              final p = generateWebAntiCode(streamName, hlsAnti);
-              if (p.isNotEmpty) {
-                urls.add(
-                    '${_adjustTxStreamUrl(enforceHttp('$hlsUrl/$streamName.$hlsSuffix?$p'), cdn)}$ratio');
-              }
-            }
-          }
-          // FLV 兜底
-          for (final b in baseList) {
-            final bm = b as Map<String, dynamic>;
-            final streamName = _s(bm['sStreamName']);
-            final cdn = _s(bm['sCdnType']);
-            final flvUrl = _trimSlash(_s(bm['sFlvUrl']));
-            final flvSuffix = _s(bm['sFlvUrlSuffix']).isEmpty
-                ? 'flv'
-                : _s(bm['sFlvUrlSuffix']);
-            final flvAnti = _s(bm['sFlvAntiCode']);
-            if (flvUrl.isNotEmpty &&
-                streamName.isNotEmpty &&
-                flvAnti.isNotEmpty) {
-              final p = generateWebAntiCode(streamName, flvAnti);
-              if (p.isNotEmpty) {
-                urls.add(
-                    '${_adjustTxStreamUrl(enforceHttp('$flvUrl/$streamName.$flvSuffix?$p'), cdn)}$ratio');
-              }
-            }
-          }
+          final urls = ordered.map((e) => '${e.value}$ratio').toList();
           if (urls.isEmpty) continue;
           final name = _s(rr['sDisplayName']).isEmpty
               ? (bitrate == 0 ? '原画' : '蓝光${bitrate ~/ 1000}M')
