@@ -7,6 +7,7 @@ import '../model/streamer_info.dart';
 import 'huya_login.dart';
 
 /// 虎牙直播流解析（dtv 同款签名 + 登录 Cookie 注入 + 订阅数/开播时间抓取）
+/// ★ 线路口径对齐 pure_live：每个 CDN 生成 FLV + HLS 双直链
 class HuyaStreamResolver {
   static const _iosMobileUa =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
@@ -60,6 +61,12 @@ class HuyaStreamResolver {
     } catch (_) {
       return s;
     }
+  }
+
+  /// key 形如 'flv:al' / 'hls:tx'，拆出 cdn
+  String _cdnOf(String key) {
+    final i = key.indexOf(':');
+    return i >= 0 ? key.substring(i + 1) : key;
   }
 
   // ================= dtv: generateWebAntiCode =================
@@ -119,6 +126,14 @@ class HuyaStreamResolver {
     return enforceHttp(s);
   }
 
+  String _trimSlash(String u) {
+    var s = u.trim();
+    while (s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
   // ================= 网页抓取（登录 Cookie 优先） =================
   Future<String> _fetchHtml(String roomId, bool mobile) async {
     final loginCookie = HuyaLoginManager().cookie;
@@ -150,6 +165,7 @@ class HuyaStreamResolver {
     }
   }
 
+  // ★ 每个 CDN 生成 FLV + HLS 两条候选（key='flv:cdn' / 'hls:cdn'）
   List<MapEntry<String, String>> _parseCandidates(Map<String, dynamic>? block) {
     final result = <MapEntry<String, String>>[];
     if (block == null) return result;
@@ -163,20 +179,37 @@ class HuyaStreamResolver {
       for (final item in streamInfoList) {
         final obj = item as Map<String, dynamic>;
         final cdn = _s(obj['sCdnType']);
-        var flvUrl = _s(obj['sFlvUrl']).trim();
-        while (flvUrl.endsWith('/')) {
-          flvUrl = flvUrl.substring(0, flvUrl.length - 1);
-        }
         final streamName = _s(obj['sStreamName']);
-        final suffix = _s(obj['sFlvUrlSuffix']);
-        final anti = _s(obj['sFlvAntiCode']);
-        if (flvUrl.isEmpty || streamName.isEmpty || suffix.isEmpty || anti.isEmpty) {
-          continue;
+        if (cdn.isEmpty || streamName.isEmpty) continue;
+
+        // ---- FLV 直链 ----
+        final flvUrl = _trimSlash(_s(obj['sFlvUrl']));
+        final flvSuffix =
+            _s(obj['sFlvUrlSuffix']).isEmpty ? 'flv' : _s(obj['sFlvUrlSuffix']);
+        final flvAnti = _s(obj['sFlvAntiCode']);
+        if (flvUrl.isNotEmpty && flvAnti.isNotEmpty) {
+          final antiParams = generateWebAntiCode(streamName, flvAnti);
+          if (antiParams.isNotEmpty) {
+            result.add(MapEntry(
+                'flv:$cdn',
+                enforceHttp('$flvUrl/$streamName.$flvSuffix?$antiParams')));
+          }
         }
-        final antiParams = generateWebAntiCode(streamName, anti);
-        if (antiParams.isEmpty) continue;
-        final base = enforceHttp('$flvUrl/$streamName.$suffix?$antiParams');
-        result.add(MapEntry(cdn, base));
+
+        // ---- HLS 直链 ----
+        final hlsUrl = _trimSlash(_s(obj['sHlsUrl']));
+        final hlsSuffix = _s(obj['sHlsUrlSuffix']).isEmpty
+            ? 'm3u8'
+            : _s(obj['sHlsUrlSuffix']);
+        final hlsAnti = _s(obj['sHlsAntiCode']);
+        if (hlsUrl.isNotEmpty && hlsAnti.isNotEmpty) {
+          final antiParams = generateWebAntiCode(streamName, hlsAnti);
+          if (antiParams.isNotEmpty) {
+            result.add(MapEntry(
+                'hls:$cdn',
+                enforceHttp('$hlsUrl/$streamName.$hlsSuffix?$antiParams')));
+          }
+        }
       }
     } catch (_) {}
     return result;
@@ -218,7 +251,8 @@ class HuyaStreamResolver {
         final json = jsonDecode('{${m.group(1)}}') as Map<String, dynamic>;
         final roomInfo = json['roomInfo'] as Map<String, dynamic>?;
         if (roomInfo != null) {
-          final profile = (roomInfo['tProfileInfo'] as Map<String, dynamic>?) ?? {};
+          final profile =
+              (roomInfo['tProfileInfo'] as Map<String, dynamic>?) ?? {};
           final liveInfo = (roomInfo['tLiveInfo'] as Map<String, dynamic>?) ?? {};
           out['nickname'] = _s(profile['sNick']);
           out['avatar'] = _s(profile['sAvatar180'] ?? profile['sAvatar']);
@@ -292,7 +326,8 @@ class HuyaStreamResolver {
 
     // 粉丝兜底①：HTML 里「关注」后隔若干标签的数字
     if (_i(out['fans']) == 0) {
-      final m = RegExp(r'关注(?:<[^>]*>|\s){0,6}([\d][\d.]*)(万)?').firstMatch(body);
+      final m =
+          RegExp(r'关注(?:<[^>]*>|\s){0,6}([\d][\d.]*)(万)?').firstMatch(body);
       if (m != null) {
         var v = double.tryParse(m.group(1)!) ?? 0;
         if (m.group(2) == '万') v *= 10000;
@@ -347,7 +382,7 @@ class HuyaStreamResolver {
     return 0;
   }
 
-  // ================= dtv: resolve =================
+  // ================= dtv: resolve（FLV+HLS 全线路） =================
   Future<HuyaStreamResult?> _resolveByDtv(String roomId) async {
     try {
       var html = await _fetchHtml(roomId, false);
@@ -383,8 +418,10 @@ class HuyaStreamResolver {
         }
       }
 
-      int cdnRank(String cdn) {
-        switch (cdn.toLowerCase()) {
+      // ★ 排序：FLV(al→hs→tx) 在前，HLS(al→hs→tx) 在后 —— 与 pure_live 线路顺序一致
+      int typeRank(String key) => key.startsWith('hls:') ? 1 : 0;
+      int cdnRank(String key) {
+        switch (_cdnOf(key).toLowerCase()) {
           case 'al':
             return 0;
           case 'hs':
@@ -396,11 +433,17 @@ class HuyaStreamResolver {
         }
       }
 
-      candidates.sort((a, b) => cdnRank(a.key).compareTo(cdnRank(b.key)));
+      candidates.sort((a, b) {
+        final t = typeRank(a.key).compareTo(typeRank(b.key));
+        if (t != 0) return t;
+        return cdnRank(a.key).compareTo(cdnRank(b.key));
+      });
 
       final rateList = rates.isNotEmpty
           ? rates
-          : <dynamic>[{'sDisplayName': '原画', 'iBitRate': 0}];
+          : <dynamic>[
+              {'sDisplayName': '原画', 'iBitRate': 0}
+            ];
 
       final qualities = <StreamQuality>[];
       for (final r in rateList) {
@@ -408,13 +451,15 @@ class HuyaStreamResolver {
         final bitrate = _i(rr['iBitRate']);
         final ratio = bitrate > 0 ? '&ratio=$bitrate' : '';
         final urls = candidates
-            .map((e) => '${_adjustTxStreamUrl(e.value, e.key)}$ratio')
+            .map((e) =>
+                '${_adjustTxStreamUrl(e.value, _cdnOf(e.key))}$ratio')
             .toList();
         if (urls.isEmpty) continue;
         final name = _s(rr['sDisplayName']).isEmpty
             ? (bitrate == 0 ? '原画' : '蓝光${bitrate ~/ 1000}M')
             : _s(rr['sDisplayName']);
-        qualities.add(StreamQuality(name: name, bitrate: bitrate, candidates: urls));
+        qualities.add(
+            StreamQuality(name: name, bitrate: bitrate, candidates: urls));
       }
       if (qualities.isEmpty) return null;
 
@@ -442,12 +487,13 @@ class HuyaStreamResolver {
     }
   }
 
-  // ================= 官方 API（登录 Cookie 注入） =================
+  // ================= 官方 API（登录 Cookie 注入，FLV+HLS 全线路） =================
   Future<HuyaStreamResult?> _resolveByApi(String roomId) async {
     try {
       final loginCookie = HuyaLoginManager().cookie;
       final res = await http.get(
-        Uri.parse('https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
+        Uri.parse(
+            'https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
         headers: {
           'User-Agent': _iosMobileUa,
           'Referer': 'https://www.huya.com/',
@@ -468,7 +514,8 @@ class HuyaStreamResolver {
       final liveData = (data['liveData'] as Map<String, dynamic>?) ?? {};
       final stream = (data['stream'] as Map<String, dynamic>?) ?? {};
 
-      final isLive = _s(data['liveStatus']) == 'ON' || _i(liveInfo['eLiveStatus']) == 2;
+      final isLive =
+          _s(data['liveStatus']) == 'ON' || _i(liveInfo['eLiveStatus']) == 2;
 
       final heat = _firstNonZero([
         liveData['totalCount'],
@@ -498,9 +545,10 @@ class HuyaStreamResolver {
         } catch (_) {}
       }
       if (rates.isEmpty) {
-        rates = ((stream['flv'] as Map<String, dynamic>?)?['rateArray'] as List<dynamic>?) ??
-            (stream['vMultiStreamInfo'] as List<dynamic>?) ??
-            [];
+        rates =
+            ((stream['flv'] as Map<String, dynamic>?)?['rateArray'] as List<dynamic>?) ??
+                (stream['vMultiStreamInfo'] as List<dynamic>?) ??
+                [];
       }
 
       var qualities = <StreamQuality>[];
@@ -508,31 +556,59 @@ class HuyaStreamResolver {
         if (baseList.isNotEmpty) {
           final rateList = rates.isNotEmpty
               ? rates
-              : <dynamic>[{'sDisplayName': '原画', 'iBitRate': 0}];
+              : <dynamic>[
+                  {'sDisplayName': '原画', 'iBitRate': 0}
+                ];
           for (final r in rateList) {
             final rr = r as Map<String, dynamic>;
             final bitrate = _i(rr['iBitRate']);
             final ratio = bitrate > 0 ? '&ratio=$bitrate' : '';
             final urls = <String>[];
+
+            // ★ 先 FLV 全 CDN
             for (final b in baseList) {
               final bm = b as Map<String, dynamic>;
-              var flvUrl = _s(bm['sFlvUrl']).trim();
-              while (flvUrl.endsWith('/')) {
-                flvUrl = flvUrl.substring(0, flvUrl.length - 1);
-              }
               final streamName = _s(bm['sStreamName']);
-              final suffix = _s(bm['sFlvUrlSuffix']).isEmpty ? 'flv' : _s(bm['sFlvUrlSuffix']);
-              final anti = _s(bm['sFlvAntiCode']);
-              if (flvUrl.isEmpty || streamName.isEmpty) continue;
-              final antiParams = generateWebAntiCode(streamName, anti);
+              final cdn = _s(bm['sCdnType']);
+              final flvUrl = _trimSlash(_s(bm['sFlvUrl']));
+              final flvSuffix = _s(bm['sFlvUrlSuffix']).isEmpty
+                  ? 'flv'
+                  : _s(bm['sFlvUrlSuffix']);
+              final flvAnti = _s(bm['sFlvAntiCode']);
+              if (flvUrl.isEmpty || streamName.isEmpty || flvAnti.isEmpty) {
+                continue;
+              }
+              final antiParams = generateWebAntiCode(streamName, flvAnti);
               if (antiParams.isEmpty) continue;
-              urls.add('${_adjustTxStreamUrl(enforceHttp('$flvUrl/$streamName.$suffix?$antiParams'), _s(bm['sCdnType']))}$ratio');
+              urls.add(
+                  '${_adjustTxStreamUrl(enforceHttp('$flvUrl/$streamName.$flvSuffix?$antiParams'), cdn)}$ratio');
             }
+
+            // ★ 再 HLS 全 CDN
+            for (final b in baseList) {
+              final bm = b as Map<String, dynamic>;
+              final streamName = _s(bm['sStreamName']);
+              final cdn = _s(bm['sCdnType']);
+              final hlsUrl = _trimSlash(_s(bm['sHlsUrl']));
+              final hlsSuffix = _s(bm['sHlsUrlSuffix']).isEmpty
+                  ? 'm3u8'
+                  : _s(bm['sHlsUrlSuffix']);
+              final hlsAnti = _s(bm['sHlsAntiCode']);
+              if (hlsUrl.isEmpty || streamName.isEmpty || hlsAnti.isEmpty) {
+                continue;
+              }
+              final antiParams = generateWebAntiCode(streamName, hlsAnti);
+              if (antiParams.isEmpty) continue;
+              urls.add(
+                  '${_adjustTxStreamUrl(enforceHttp('$hlsUrl/$streamName.$hlsSuffix?$antiParams'), cdn)}$ratio');
+            }
+
             if (urls.isEmpty) continue;
             final name = _s(rr['sDisplayName']).isEmpty
                 ? (bitrate == 0 ? '原画' : '蓝光${bitrate ~/ 1000}M')
                 : _s(rr['sDisplayName']);
-            qualities.add(StreamQuality(name: name, bitrate: bitrate, candidates: urls));
+            qualities.add(StreamQuality(
+                name: name, bitrate: bitrate, candidates: urls));
           }
         }
       } catch (_) {}
@@ -542,7 +618,8 @@ class HuyaStreamResolver {
         ayyuid: _i(profile['yyid'] ?? profile['lUid'] ?? profile['lPresenterUid']),
         topSid: topSid,
         subSid: subSid,
-        presenterUid: _i(profile['yyid'] ?? profile['lUid'] ?? profile['lPresenterUid']),
+        presenterUid:
+            _i(profile['yyid'] ?? profile['lUid'] ?? profile['lPresenterUid']),
         streamerInfo: StreamerInfo(
           uid: _i(profile['yyid'] ?? profile['lUid']),
           nickname: _s(profile['sNick'] ?? profile['sPresenterNick']),
@@ -582,7 +659,8 @@ class HuyaStreamResolver {
     for (final host in ['https://www.huya.com', 'https://mp.huya.com']) {
       try {
         final res = await http.get(
-          Uri.parse('$host/cache.php?m=Subscribe&do=getSubscribeCount&roomId=$roomId'),
+          Uri.parse(
+              '$host/cache.php?m=Subscribe&do=getSubscribeCount&roomId=$roomId'),
           headers: {
             'User-Agent': _desktopUa,
             'Referer': 'https://www.huya.com/',
@@ -593,7 +671,9 @@ class HuyaStreamResolver {
           final body = res.body.trim();
           final direct = int.tryParse(body);
           if (direct != null && direct > 0) return direct;
-          final m = RegExp(r'"(?:count|num|subscribeCount|lSubscribeCount)"\s*:\s*(\d+)').firstMatch(body);
+          final m = RegExp(
+                  r'"(?:count|num|subscribeCount|lSubscribeCount)"\s*:\s*(\d+)')
+              .firstMatch(body);
           if (m != null) return int.parse(m.group(1)!);
         }
       } catch (_) {}
@@ -602,7 +682,8 @@ class HuyaStreamResolver {
   }
 
   // ================= 入口 =================
-  Future<HuyaStreamResult?> resolveStream(String roomId, {int loginUid = 0}) async {
+  Future<HuyaStreamResult?> resolveStream(String roomId,
+      {int loginUid = 0}) async {
     final dtv = await _resolveByDtv(roomId);
     final api = await _resolveByApi(roomId);
     if (dtv == null) return api;
@@ -640,7 +721,8 @@ class HuyaStreamResolver {
     try {
       final loginCookie = HuyaLoginManager().cookie;
       final res = await http.get(
-        Uri.parse('https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
+        Uri.parse(
+            'https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId'),
         headers: {
           'User-Agent': _iosMobileUa,
           if (loginCookie.isNotEmpty) 'Cookie': loginCookie,
