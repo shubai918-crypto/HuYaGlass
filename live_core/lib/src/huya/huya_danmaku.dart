@@ -10,14 +10,22 @@ class DanmakuMessage {
   final String nickname;
   final String content;
   final int fontColor;
+  final String avatar; // ★ 头像
+  final int uid; // ★ 用户UID
+  final String fansName; // ★ 粉丝牌名
+  final int fansLevel; // ★ 粉丝牌等级
   DanmakuMessage({
     required this.nickname,
     required this.content,
     this.fontColor = 0xFFFFFFFF,
+    this.avatar = '',
+    this.uid = 0,
+    this.fansName = '',
+    this.fansLevel = 0,
   });
 }
 
-/// 虎牙弹幕客户端（动态节点调度 + 鲁棒解码）
+/// 虎牙弹幕客户端（精准字段解码 + 动态节点调度）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -441,8 +449,9 @@ class HuyaDanmakuClient {
           if (v == 0) _verified = true;
           break;
         case 17:
+        case 33:
           final f = _TarsReader(payload).readFields();
-          final v = f[0] is int ? f[0] as int : -1;
+          final v = f[0] is int ? f[0] as int : 0;
           _dbgPush('Register iResCode=$v');
           if (v == 0) _registered = true;
           break;
@@ -536,7 +545,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 统一推送解析：兼容 chat:xxx 批量包 / 直推包 / 整包直解
+  /// ★ 统一推送解析
   void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
@@ -594,43 +603,96 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 鲁棒解码：深度优先收集非URL字符串，第1个=昵称，第2个=正文
-  /// 彻底解决字段错位（昵称当正文 / 头像链接当正文）
+  /// ★ 精准解码（依据真实抓包）：
+  /// sender{0:uid, 2:昵称, 4:头像} / 外层3:正文 / 6[0]:颜色 / 粉丝牌{1:uid,3:牌名,4:等级}
   void _decodeDanmaku(List<int> payload) {
     try {
       final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
 
-      final strings = <String>[];
-      void collect(dynamic node) {
-        if (node is Map<int, Object?>) {
-          final keys = node.keys.toList()..sort();
-          for (final k in keys) {
-            collect(node[k]);
-          }
-        } else if (node is List) {
-          for (final e in node) {
-            collect(e);
-          }
-        } else if (node is String) {
-          final s = node.trim();
-          if (s.isNotEmpty &&
-              !s.startsWith('http') &&
-              !s.startsWith('//')) {
-            strings.add(s);
+      // ---- sender ----
+      String nick = '';
+      String avatar = '';
+      int uid = 0;
+      final sender = fields[0];
+      if (sender is Map<int, Object?>) {
+        if (sender[0] is int) uid = sender[0] as int;
+        if (sender[2] is String) nick = sender[2] as String;
+        for (final v in sender.values) {
+          if (v is String && v.startsWith('http')) {
+            avatar = v;
+            break;
           }
         }
       }
 
-      collect(fields);
-      if (strings.length < 2) return; // 只有昵称没有正文的包（进场等）直接跳过
+      // ---- 正文 / 颜色 ----
+      String content = fields[3] is String ? fields[3] as String : '';
+      int color = 0;
+      final bf = fields[6];
+      if (bf is Map<int, Object?> && bf[0] is int) color = bf[0] as int;
 
-      final nick = strings[0];
-      final content = strings[1];
+      // ---- 粉丝牌 {1:uid, 3:牌名, 4:等级} ----
+      String fansName = '';
+      int fansLevel = 0;
+      void findFans(dynamic node) {
+        if (fansName.isNotEmpty) return;
+        if (node is Map<int, Object?>) {
+          final n = node[3];
+          final l = node[4];
+          if (n is String &&
+              n.isNotEmpty &&
+              !n.startsWith('http') &&
+              l is int &&
+              l > 0 &&
+              l < 100 &&
+              node[1] is int) {
+            fansName = n;
+            fansLevel = l;
+            return;
+          }
+          node.values.forEach(findFans);
+        } else if (node is List) {
+          node.forEach(findFans);
+        }
+      }
+
+      findFans(fields);
+
+      // ---- 兜底：字符串收集器 ----
+      if (content.isEmpty || nick.isEmpty) {
+        final strings = <String>[];
+        void collect(dynamic node) {
+          if (node is Map<int, Object?>) {
+            final keys = node.keys.toList()..sort();
+            for (final k in keys) {
+              collect(node[k]);
+            }
+          } else if (node is List) {
+            for (final e in node) {
+              collect(e);
+            }
+          } else if (node is String) {
+            final s = node.trim();
+            if (s.isNotEmpty && !s.startsWith('http') && !s.startsWith('//')) {
+              strings.add(s);
+            }
+          }
+        }
+
+        collect(fields);
+        if (nick.isEmpty && strings.isNotEmpty) nick = strings[0];
+        if (content.isEmpty && strings.length > 1) content = strings[1];
+      }
+      if (content.isEmpty) return;
 
       _controller.add(DanmakuMessage(
         nickname: nick,
         content: content,
-        fontColor: 0xFFFFFFFF,
+        fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
+        avatar: avatar,
+        uid: uid,
+        fansName: fansName,
+        fansLevel: fansLevel,
       ));
 
       if (_pendingDanmaku != null && content == _pendingDanmaku) {
