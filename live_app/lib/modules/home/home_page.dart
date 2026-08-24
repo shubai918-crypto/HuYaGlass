@@ -4,6 +4,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import '../live_play/live_play_page.dart';
+import '../live_play/background_play.dart';
 import '../search/search_page.dart';
 import '../settings/huya_login_page.dart';
 import 'follow_store.dart';
