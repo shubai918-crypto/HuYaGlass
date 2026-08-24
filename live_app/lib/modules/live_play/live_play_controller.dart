@@ -41,6 +41,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final roomTitle = ''.obs;
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
+  final coverUrl = ''.obs; // ★ 直播间封面
   Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
@@ -208,6 +209,26 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     liveDurationText.value = h > 0 ? '$h小时$m分钟' : '$m分钟';
   }
 
+  // ★ 未开播时显示：上次开播时间 + 相对时间
+  String get lastLiveText {
+    final st = liveStartTime.value;
+    if (st <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(st * 1000);
+    final diff = DateTime.now().difference(dt);
+    String rel;
+    if (diff.inMinutes < 1) {
+      rel = '刚刚';
+    } else if (diff.inMinutes < 60) {
+      rel = '${diff.inMinutes}分钟前';
+    } else if (diff.inHours < 24) {
+      rel = '${diff.inHours}小时前';
+    } else {
+      rel = '${diff.inDays}天前';
+    }
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}（$rel）';
+  }
+
   // ================= 弹幕设置面板 =================
   void showDanmakuSettings() {
     Get.bottomSheet(
@@ -340,6 +361,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       isLive.value = info.isLive;
       roomTitle.value = info.title;
       liveStartTime.value = info.startTime;
+      coverUrl.value = info.cover; // ★ 封面
       _startDurationTimer();
 
       isFollowed.value = await FollowStore.isFollowed(roomId);
@@ -403,7 +425,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
-  // ★ 核心修复：加入 httpHeaders 防止 403 和 Source error
+  // ★ 加入 httpHeaders 防止 403 和 Source error
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -544,7 +566,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
 
   void _toggleBackgroundPlay() {
     final next = !BackgroundPlayStore.enabled.value;
-    BackgroundPlayStore.set(next); // ★ 不再弹权限框，直接起媒体前台服务
+    BackgroundPlayStore.set(next); // ★ 不弹权限框，直接起媒体前台服务
     if (next) {
       BackgroundPlayStore.setPlaying(!isPaused.value);
     }
@@ -772,6 +794,51 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         child: Container(
             color: Colors.black,
             child: Stack(children: [
+              // ★ 未开播占位：封面暗化 + 上次开播时间 + 直播预告
+              if (!isLive.value)
+                Positioned.fill(
+                  child: Stack(fit: StackFit.expand, children: [
+                    if (coverUrl.value.isNotEmpty)
+                      Opacity(
+                        opacity: 0.3,
+                        child: Image.network(coverUrl.value, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink()),
+                      ),
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.nightlight_round,
+                                color: Colors.white38, size: 44),
+                            const SizedBox(height: 10),
+                            const Text('主播未开播',
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600)),
+                            if (lastLiveText.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text('上次开播：$lastLiveText',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.white54, fontSize: 12)),
+                            ],
+                            if (roomTitle.value.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text('直播预告：${roomTitle.value}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Color(0xFFFF8800), fontSize: 13)),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
               if (c != null && c.value.isInitialized)
                 Positioned.fill(
                     child: KeyedSubtree(
