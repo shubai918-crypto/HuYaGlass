@@ -81,7 +81,7 @@ class HuyaDanmakuClient {
     // ★ 优先使用动态获取的节点，兜底使用内置节点
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
     final cost = <String, int>{};
-    
+
     await Future.wait(hosts.map((h) async {
       final sw = Stopwatch()..start();
       try {
@@ -331,9 +331,8 @@ class HuyaDanmakuClient {
 
     final req = _TarsWriter();
     req.writeStruct(0, user);
-    req.writeInt(1, _topSid); // lTid
-    // ★ 修复 -99：lSid 必须使用 subSid (subChId)
-    req.writeInt(2, _subSid > 0 ? _subSid : _topSid); 
+    req.writeInt(1, _topSid);
+    req.writeInt(2, _subSid > 0 ? _subSid : _topSid);
     req.writeString(3, text.replaceAll('\n', ' '));
     req.writeInt(4, 0);
     req.writeStruct(5, cf);
@@ -461,10 +460,9 @@ class HuyaDanmakuClient {
         case 21:
           break;
         case 22:
-          _handleMsgPush(payload);
-          break;
         case 7:
-          _handleMsgPushV1(payload);
+          // ★ 统一处理两种推送布局（chat:分组批量包 / 直推包）
+          _handleMsgPushUnified(payload);
           break;
         default:
           _dbgPush('未知cmd=$cmdType len=${payload.length}');
@@ -504,7 +502,7 @@ class HuyaDanmakuClient {
                   (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList());
               final rsp = _TarsReader(rspBytes).readFields();
               ret = rsp[0] is int ? rsp[0] as int : -99;
-              
+
               if (servant == 'launch' && ret == 0) {
                 _parseLaunchRsp(rsp);
               }
@@ -521,7 +519,6 @@ class HuyaDanmakuClient {
   /// ★ 从 launch 响应中提取最新的 WS 域名和 IP
   void _parseLaunchRsp(Map<int, Object?> rsp) {
     final newHosts = <String>[];
-    // 遍历所有字段，寻找 list<string> 类型的节点列表
     for (final entry in rsp.entries) {
       if (entry.value is List) {
         final list = entry.value as List;
@@ -538,36 +535,46 @@ class HuyaDanmakuClient {
         }
       }
     }
-    
+
     if (newHosts.isNotEmpty) {
-      _dynamicHosts = newHosts.toSet().toList(); // 去重
+      _dynamicHosts = newHosts.toSet().toList();
       _dbgPush('动态节点更新: ${_dynamicHosts.length}个');
     }
   }
 
-  void _handleMsgPush(Uint8List payload) {
+  /// ★ 统一推送解析：兼容你抓到的 {0:"chat:xxx", 1:[{0:uri,1:msg}]} 批量包
+  /// 以及旧版 {1:uri, 2:msg} 直推包，甚至整包就是 danmaku struct 的情况
+  void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
-      final items = f[1];
-      if (items is! List) return;
-      for (final item in items) {
-        if (item is! Map<int, Object?>) continue;
-        final uri = item[0] is int ? item[0] as int : 0;
-        final msg = item[1];
-        if (msg is List) {
-          _routePush(uri, msg.map((e) => (e as int) & 0xFF).toList());
+
+      // 布局A：items 列表（可能在 tag1 / tag0 / tag2）
+      for (final key in const [1, 0, 2]) {
+        final v = f[key];
+        if (v is List && v.isNotEmpty && v.first is Map<int, Object?>) {
+          for (final item in v) {
+            if (item is! Map<int, Object?>) continue;
+            final uri = item[0] is int ? item[0] as int : 1400;
+            final raw = item[1];
+            if (raw is List) {
+              _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+            }
+          }
+          return;
         }
       }
-    } catch (_) {}
-  }
 
-  void _handleMsgPushV1(Uint8List payload) {
-    try {
-      final f = _TarsReader(payload).readFields();
-      final uri = f[1] is int ? f[1] as int : 0;
-      final msg = f[2];
-      if (msg is List) {
-        _routePush(uri, msg.map((e) => (e as int) & 0xFF).toList());
+      // 布局B：{1:uri, 2:msg}
+      final uri = f[1] is int ? f[1] as int : 1400;
+      final raw = f[2];
+      if (raw is List) {
+        _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+        return;
+      }
+
+      // 布局C：整包直接是 danmaku struct（兜底直解）
+      if (f[3] is String || f[0] is Map<int, Object?>) {
+        _decodeDanmaku(payload);
       }
     } catch (_) {}
   }
@@ -584,27 +591,45 @@ class HuyaDanmakuClient {
     }
   }
 
+  /// ★ 宽容版弹幕解码：content 优先 tag3，nick 取 sender[2]→sender[1]
   void _decodeDanmaku(List<int> payload) {
     try {
       final reader = _TarsReader(Uint8List.fromList(payload));
       final fields = reader.readFields();
-      final content = fields[3];
-      if (content is String && content.isNotEmpty) {
-        final sender =
-            fields[0] is Map<int, Object?> ? fields[0] as Map<int, Object?> : null;
-        final nick = '${sender?[2] ?? ''}';
-        final bf =
-            fields[6] is Map<int, Object?> ? fields[6] as Map<int, Object?> : null;
-        final color = bf?[0] is int ? bf![0] as int : 0;
-        _controller.add(DanmakuMessage(
-          nickname: nick,
-          content: content,
-          fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
-        ));
-        if (_pendingDanmaku != null && content == _pendingDanmaku) {
-          _pendingDanmaku = null;
-          _dbgPush('回显确认 ✔');
+
+      // 正文：优先 tag3，兜底取第一个非空字符串(tag>=3)
+      String content = '';
+      if (fields[3] is String) content = fields[3] as String;
+      if (content.isEmpty) {
+        for (final e in fields.entries) {
+          if (e.key >= 3 && e.value is String && (e.value as String).isNotEmpty) {
+            content = e.value as String;
+            break;
+          }
         }
+      }
+      if (content.isEmpty) return;
+
+      // 昵称：sender[2] → sender[1] → 空
+      String nick = '';
+      final sender = fields[0];
+      if (sender is Map<int, Object?>) {
+        nick = '${sender[2] ?? sender[1] ?? ''}';
+      }
+
+      // 颜色：tag6 struct[0]
+      int color = 0;
+      final bf = fields[6];
+      if (bf is Map<int, Object?> && bf[0] is int) color = bf[0] as int;
+
+      _controller.add(DanmakuMessage(
+        nickname: nick,
+        content: content,
+        fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
+      ));
+      if (_pendingDanmaku != null && content == _pendingDanmaku) {
+        _pendingDanmaku = null;
+        _dbgPush('回显确认 ✔');
       }
     } catch (_) {}
   }
