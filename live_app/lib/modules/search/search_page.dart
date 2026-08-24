@@ -4,10 +4,13 @@ import 'package:live_core/src/huya/huya_search.dart';
 
 import 'search_controller.dart';
 
-/// 搜索页（官方 GlassSearchBar + dtv 风格卡片 + 心形收藏）
+const Color kHuyaAccent = Color(0xFFFF8800);
+
+/// 搜索页（Apple Messages 同款玻璃搜索条 + dtv 风格卡片）
 class SearchPage extends StatefulWidget {
   final void Function(String roomId, String nickname, String avatarUrl) onOpenRoom;
-  final Future<void> Function(String roomId, bool follow, String nickname, String avatarUrl)? onToggleFollow;
+  final Future<void> Function(
+      String roomId, bool follow, String nickname, String avatarUrl)? onToggleFollow;
   final Future<bool> Function(String roomId)? isFollowed;
 
   const SearchPage({
@@ -56,7 +59,28 @@ class _SearchPageState extends State<SearchPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Column(
         children: [
-          _buildBar(),
+          // ★ 1. Messages 同款：单个玻璃胶囊，放大镜在内，Cancel 滑入，无外部圆钮
+          GlassSearchBar(
+            controller: _text,
+            focusNode: _focus,
+            placeholder: '搜索虎牙主播/房间...',
+            onChanged: _ctrl.setKeyword,
+            onSubmitted: (_) => _submit(),
+            showsCancelButton: true,
+            onCancel: () {
+              _text.clear();
+              _ctrl.setKeyword('');
+              _focus.unfocus();
+            },
+            searchIconColor: kHuyaAccent,
+            clearIconColor: Colors.white54,
+            cancelButtonColor: kHuyaAccent,
+            textStyle: const TextStyle(color: Colors.white, fontSize: 15),
+            placeholderStyle: const TextStyle(color: Colors.white38, fontSize: 15),
+            height: 50,
+            useOwnLayer: true,
+            settings: LiquidGlassSettings(blur: 8, thickness: 30),
+          ),
           const SizedBox(height: 14),
           Expanded(child: _buildBody()),
         ],
@@ -64,52 +88,25 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ★ 使用官方纯正 iOS 26 GlassSearchBar
-  Widget _buildBar() {
-    return GlassSearchBar(
-      controller: _text,
-      focusNode: _focus,
-      placeholder: '搜索虎牙主播/房间...',
-      searchIconColor: const Color(0xFF29C5F6),
-      clearIconColor: Colors.white54,
-      cancelButtonColor: const Color(0xFF29C5F6),
-      textStyle: const TextStyle(color: Colors.white, fontSize: 15),
-      placeholderStyle: const TextStyle(color: Colors.white38, fontSize: 15),
-      height: 50,
-      showsCancelButton: true, // 开启 iOS 风格的 Cancel 滑入动画
-      useOwnLayer: true,       // 独立渲染玻璃层
-      settings: LiquidGlassSettings(
-        blur: 8,
-        thickness: 30,
-        glassColor: Colors.white.withOpacity(0.05),
-      ),
-      onChanged: _ctrl.setKeyword,
-      onSubmitted: (_) => _submit(), // 键盘回车搜索
-      onCancel: () {
-        // 点击 Cancel 清空并收起键盘
-        _text.clear();
-        _ctrl.setKeyword('');
-        _focus.unfocus();
-      },
-    );
-  }
-
   Widget _buildBody() {
     if (_ctrl.loading) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF29C5F6), strokeWidth: 2.5),
+        child: CircularProgressIndicator(color: kHuyaAccent, strokeWidth: 2.5),
       );
     }
     final err = _ctrl.error;
     if (err != null) {
-      return Center(child: Text(err, style: const TextStyle(color: Colors.white38)));
+      return Center(
+          child: Text(err, style: const TextStyle(color: Colors.white38)));
     }
     if (!_ctrl.searched) {
       return const Center(
-          child: Text('搜索主播，或直接输入房间号进入', style: TextStyle(color: Colors.white24)));
+          child: Text('搜索主播，或直接输入房间号进入',
+              style: TextStyle(color: Colors.white24)));
     }
     if (_ctrl.items.isEmpty) {
-      return const Center(child: Text('未找到相关主播', style: TextStyle(color: Colors.white38)));
+      return const Center(
+          child: Text('未找到相关主播', style: TextStyle(color: Colors.white38)));
     }
     return ListView.separated(
       itemCount: _ctrl.items.length,
@@ -127,7 +124,7 @@ class _SearchPageState extends State<SearchPage> {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF16161E), // 不透明内容区
+            color: const Color(0xFF16161E),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white.withOpacity(0.06)),
           ),
@@ -138,20 +135,17 @@ class _SearchPageState extends State<SearchPage> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: it.avatarUrl.isNotEmpty
-                        ? Image.network(
-                            it.avatarUrl,
-                            width: 96,
-                            height: 72,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _coverPlaceholder(),
-                          )
+                        ? Image.network(it.avatarUrl,
+                            width: 96, height: 72, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _coverPlaceholder())
                         : _coverPlaceholder(),
                   ),
                   Positioned(
                     left: 6,
                     top: 6,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.55),
                         borderRadius: BorderRadius.circular(6),
@@ -160,7 +154,8 @@ class _SearchPageState extends State<SearchPage> {
                         it.isLive ? '直播中' : '未开播',
                         style: TextStyle(
                           fontSize: 10,
-                          color: it.isLive ? const Color(0xFF29C5F6) : Colors.white70,
+                          // ★ 3. 直播中用虎牙橙
+                          color: it.isLive ? kHuyaAccent : Colors.white70,
                         ),
                       ),
                     ),
@@ -217,12 +212,12 @@ class _SearchPageState extends State<SearchPage> {
       );
 }
 
-/// 右侧收藏心形按钮
 class _HeartButton extends StatefulWidget {
   final String roomId;
   final String nickname;
   final String avatarUrl;
-  final Future<void> Function(String roomId, bool follow, String nickname, String avatarUrl)? onToggle;
+  final Future<void> Function(
+      String roomId, bool follow, String nickname, String avatarUrl)? onToggle;
   final Future<bool> Function(String roomId)? isFollowed;
 
   const _HeartButton({
@@ -263,7 +258,8 @@ class _HeartButtonState extends State<_HeartButton> {
       onPressed: widget.onToggle == null
           ? null
           : () async {
-              await widget.onToggle!(widget.roomId, !followed, widget.nickname, widget.avatarUrl);
+              await widget.onToggle!(
+                  widget.roomId, !followed, widget.nickname, widget.avatarUrl);
               if (mounted) setState(() => _followed = !followed);
             },
     );
