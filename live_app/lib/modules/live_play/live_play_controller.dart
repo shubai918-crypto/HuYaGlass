@@ -76,7 +76,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   int _reconnectCount = 0;
   int _refreshCount = 0;
   bool _playing = false;
-  bool _backgrounded = false;
+  bool _backgrounded = false; // ★ 后台标志位
   int _vw = 0;
   int _vh = 0;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -98,7 +98,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
 
-    // ★ 通知栏媒体按钮（暂停/播放/关闭）回调
+    // ★ 注册通知栏媒体按钮（暂停/播放/关闭）回调
     BackgroundPlayStore.onMediaAction = (action) {
       switch (action) {
         case 'pause':
@@ -122,7 +122,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _loadStream();
   }
 
-  // ★ 生命周期：后台不杀播放，前台恢复
+  // ★ 生命周期：后台冻结防误杀，前台恢复
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
@@ -290,7 +290,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
 
   // ================= 卡顿检测（后台冻结） =================
   void _checkStall(Timer t) {
-    if (_backgrounded) return;
+    if (_backgrounded) return; // ★ 后台直接跳过，防止误换线
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
     if (c.value.isBuffering) {
@@ -342,16 +342,10 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       liveStartTime.value = info.startTime;
       _startDurationTimer();
 
-      // ★ 粉丝兜底重试
-      if (fansCount.value == 0) {
-        _resolver.fetchFansCount(roomId).then((f) {
-          if (f > 0) fansCount.value = f;
-        });
-      }
-
       isFollowed.value = await FollowStore.isFollowed(roomId);
       qualities.assignAll(info.qualities);
 
+      // ★ 只有"在播"才起播，未播不再对着死链重试
       if (info.isLive && qualities.isNotEmpty) {
         final keep = currentQuality.value;
         final q = qualities.firstWhere(
@@ -409,6 +403,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
+  // ★ 核心修复：加入 httpHeaders 防止 403 和 Source error
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -426,7 +421,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
         debugPrint('PLAYER ERROR: $_lastError');
-        if (_backgrounded) return;
+        if (_backgrounded) return; // ★ 后台忽略瞬时错误，不换线
         _advance('出错');
       }
     });
@@ -478,6 +473,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       c.pause();
     }
     isPaused.value = !isPaused.value;
+    // ★ 同步通知栏播放/暂停状态
     if (BackgroundPlayStore.enabled.value) {
       BackgroundPlayStore.setPlaying(!isPaused.value);
     }
@@ -582,7 +578,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
     inputController.clear();
     final ok = await _danmakuClient?.sendDanmaku(text) ?? false;
-    if (!ok) Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
+    if (!ok) {
+      Get.snackbar('发送失败', '弹幕连接未就绪', snackPosition: SnackPosition.BOTTOM);
+    }
   }
 
   void toggleFollow() {
@@ -593,7 +591,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     isFollowed.value = !isFollowed.value;
     if (isFollowed.value) {
       FollowStore.add(FollowItem(
-          roomId: roomId, name: streamerName.value, avatar: streamerAvatar.value));
+          roomId: roomId,
+          name: streamerName.value,
+          avatar: streamerAvatar.value));
     } else {
       FollowStore.remove(roomId);
     }
@@ -628,7 +628,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   style: TextStyle(color: Color(0xFF00D2FF)))),
           TextButton(
               onPressed: () => Get.back(),
-              child: const Text('关闭', style: TextStyle(color: Colors.white54))),
+              child:
+                  const Text('关闭', style: TextStyle(color: Colors.white54))),
         ],
       ),
     );
@@ -650,7 +651,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         return LayoutBuilder(builder: (ctx, cons) {
           final cw = cons.maxWidth, ch = cons.maxHeight;
           if (cw <= 0 || ch <= 0) {
-            return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
+            return Center(
+                child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
           }
           final ca = cw / ch;
           double w, h;
@@ -666,7 +668,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   child: SizedBox(width: w, height: h, child: VideoPlayer(c))));
         });
       default:
-        return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
+        return Center(
+            child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
     }
   }
 
@@ -701,7 +704,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   const SizedBox(width: 10),
                   Expanded(
                       child: Text(streamerName.value,
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 14),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis))
                 ] else
@@ -734,6 +738,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                       _scheduleHide(4);
                     }),
                 const SizedBox(width: 6),
+                // ★ 后台播放开关（耳机按钮）
                 ValueListenableBuilder<bool>(
                     valueListenable: BackgroundPlayStore.enabled,
                     builder: (context, on, _) => _controlBtn(
@@ -741,7 +746,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                         selected: on)),
                 const SizedBox(width: 6),
                 _controlBtn(
-                    isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
+                    isMuted.value ? Icons.volume_off : Icons.volume_up,
+                    toggleMute),
                 const SizedBox(width: 6),
                 _controlBtn(Icons.aspect_ratio, cycleFit),
                 const Spacer(),
@@ -780,8 +786,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                 Positioned(
                     left: 12,
                     top: fullscreen ? 60 : 12,
-                    child:
-                        _controlBtn(Icons.lock, toggleLock, selected: true, size: 40)),
+                    child: _controlBtn(Icons.lock, toggleLock,
+                        selected: true, size: 40)),
               if (!fullscreen)
                 Positioned(
                     left: 8,
