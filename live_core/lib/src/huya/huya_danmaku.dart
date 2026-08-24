@@ -17,13 +17,12 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（动态节点调度版：自动解析 launch 响应更新 WS 节点池）
+/// 虎牙弹幕客户端（动态节点调度 + 鲁棒解码）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
 
-  /// 兜底 WS 节点（已移除无效域名，仅作首次连接使用）
   static const _wsHosts = [
     'ded35397-ws.va.huya.com',
     '65cecb22-ws.va.huya.com',
@@ -53,7 +52,6 @@ class HuyaDanmakuClient {
   String _token = '';
   String _cookie = '';
 
-  /// ★ 动态获取的 WS 节点池（由 launch 响应自动更新）
   List<String> _dynamicHosts = [];
 
   void Function(String)? onStatus;
@@ -460,7 +458,6 @@ class HuyaDanmakuClient {
           break;
         case 22:
         case 7:
-          // ★ 统一处理实时/历史批量推送包
           _handleMsgPushUnified(payload);
           break;
         default:
@@ -539,12 +536,12 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 统一推送解析：完美适配 cmd=22 的 chat:xxx 批量包（包含历史弹幕）
+  /// ★ 统一推送解析：兼容 chat:xxx 批量包 / 直推包 / 整包直解
   void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
 
-      // 布局A：批量推送 {0: "chat:xxx", 1: [{0: uri, 1: msg_bytes}]}
+      // 布局A：批量推送 {0:"chat:xxx", 1:[{0:uri,1:msg}]}
       for (final key in const [1, 0, 2]) {
         final v = f[key];
         if (v is List && v.isNotEmpty) {
@@ -565,7 +562,7 @@ class HuyaDanmakuClient {
         }
       }
 
-      // 布局B：直推单条 {1: uri, 2: msg_bytes}
+      // 布局B：直推 {1:uri, 2:msg}
       final uri = f[1] is int ? f[1] as int : 1400;
       final raw = f[2];
       if (raw is List) {
@@ -576,8 +573,8 @@ class HuyaDanmakuClient {
         return;
       }
 
-      // 布局C：整包直接是 danmaku struct（兜底直解）
-      if (f[6] is String || f[5] is String || f[3] is String || f[0] is Map<int, Object?>) {
+      // 布局C：整包直解
+      if (f[3] is String || f[0] is Map<int, Object?>) {
         _decodeDanmaku(payload);
       }
     } catch (e) {
@@ -593,76 +590,54 @@ class HuyaDanmakuClient {
         if (v > 0) onPopularity?.call(v);
       } catch (_) {}
     } else {
-      // ★ 1400(实时), 6501(历史), 或未知，统一尝试弹幕解码（不漏掉任何历史弹幕）
       _decodeDanmaku(payload);
     }
   }
 
-  /// ★ 精准解码：基于真实抓包，tag 5 是昵称，tag 6 是正文
+  /// ★ 鲁棒解码：深度优先收集非URL字符串，第1个=昵称，第2个=正文
+  /// 彻底解决字段错位（昵称当正文 / 头像链接当正文）
   void _decodeDanmaku(List<int> payload) {
     try {
-      final reader = _TarsReader(Uint8List.fromList(payload));
-      final fields = reader.readFields();
+      final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
 
-      // 1. 提取昵称 (优先 tag 5，兜底 tag 2 / sender)
-      String nick = '';
-      if (fields[5] is String) {
-        nick = fields[5] as String;
-      } else if (fields[2] is String) {
-        nick = fields[2] as String;
-      } else {
-        final sender = fields[0];
-        if (sender is Map<int, Object?>) {
-          nick = '${sender[2] ?? sender[1] ?? ''}';
-        }
-      }
-      // 清理粉丝牌，如 "东星耀扬【单枪匹马】" -> "东星耀扬"
-      nick = nick.replaceAll(RegExp(r'【.*?】'), '').trim();
-
-      // 2. 提取正文 (优先 tag 6，兜底 tag 3 / tag 5)
-      String content = '';
-      if (fields[6] is String) {
-        content = fields[6] as String;
-      } else if (fields[3] is String) {
-        content = fields[3] as String;
-      } else if (fields[5] is String && nick != fields[5]) {
-        content = fields[5] as String;
-      }
-      
-      // 兜底：找第一个非空字符串
-      if (content.isEmpty) {
-        for (final e in fields.entries) {
-          if (e.value is String && (e.value as String).isNotEmpty) {
-            content = e.value as String;
-            break;
+      final strings = <String>[];
+      void collect(dynamic node) {
+        if (node is Map<int, Object?>) {
+          final keys = node.keys.toList()..sort();
+          for (final k in keys) {
+            collect(node[k]);
+          }
+        } else if (node is List) {
+          for (final e in node) {
+            collect(e);
+          }
+        } else if (node is String) {
+          final s = node.trim();
+          if (s.isNotEmpty &&
+              !s.startsWith('http') &&
+              !s.startsWith('//')) {
+            strings.add(s);
           }
         }
       }
-      if (content.isEmpty) return;
 
-      // 3. 提取颜色 (通常在 tag 8~15 的 struct 里)
-      int color = 0;
-      for (var i = 8; i <= 15; i++) {
-        final cf = fields[i];
-        if (cf is Map<int, Object?> && cf[0] is int) {
-          color = cf[0] as int;
-          break;
-        }
-      }
+      collect(fields);
+      if (strings.length < 2) return; // 只有昵称没有正文的包（进场等）直接跳过
+
+      final nick = strings[0];
+      final content = strings[1];
 
       _controller.add(DanmakuMessage(
         nickname: nick,
         content: content,
-        fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
+        fontColor: 0xFFFFFFFF,
       ));
-      
+
       if (_pendingDanmaku != null && content == _pendingDanmaku) {
         _pendingDanmaku = null;
         _dbgPush('回显确认 ✔');
       }
-    } catch (e) {
-      _dbgPush('Danmaku解码异常: $e');
-    }
+    } catch (_) {}
   }
 }
 
