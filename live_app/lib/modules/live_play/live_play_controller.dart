@@ -78,8 +78,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   int _refreshCount = 0;
   bool _playing = false;
   bool _backgrounded = false;
-  bool _userPaused = false; // ★ 区分"手动暂停"和"被系统偷暂停"
-  Timer? _bgWatchdog; // ★ 后台看门狗
+  bool _userPaused = false;
+  Timer? _bgWatchdog;
   int _vw = 0;
   int _vh = 0;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -100,10 +100,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
-    // ★ 后台看门狗：后台被偷暂停时自动拉回播放
     _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
 
-    // ★ 通知栏媒体按钮回调
     BackgroundPlayStore.onMediaAction = (action) {
       switch (action) {
         case 'pause':
@@ -126,7 +124,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       }
     };
 
-    // ★ 冷启动恢复后台播放状态时，立即拉起前台服务（通知栏立刻出现）
     if (BackgroundPlayStore.enabled.value) {
       BackgroundPlayStore.startService();
       BackgroundPlayStore.setPlaying(true);
@@ -136,7 +133,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _loadStream();
   }
 
-  // ★ 后台看门狗：系统/插件在后台偷暂停播放器时，自动恢复出声
   void _bgKeepPlaying(Timer t) {
     if (!_backgrounded || _userPaused) return;
     if (!BackgroundPlayStore.enabled.value) return;
@@ -213,7 +209,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _saveSettings();
   }
 
-  // ================= 开播时长 =================
+  // ================= 开播时长 / 上次开播 =================
   void _startDurationTimer() {
     _durationTimer?.cancel();
     _updateDuration();
@@ -234,7 +230,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     liveDurationText.value = h > 0 ? '$h小时$m分钟' : '$m分钟';
   }
 
-  // ★ 未开播占位：上次开播时间
   String get lastLiveText {
     final st = liveStartTime.value;
     if (st <= 0) return '';
@@ -407,7 +402,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _ayyuid = info.ayyuid;
       _topSid = info.topSid != 0 ? info.topSid : info.presenterUid;
       _subSid = info.subSid;
-      // ★ 未开播也连弹幕（与网页行为一致，尝试接收历史/缓存弹幕）
+      // ★ 未开播也连弹幕（接收历史/缓存弹幕）
       if (_danmakuClient == null) _connectDanmaku();
       loading.value = false;
       _updateDebug();
@@ -434,7 +429,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   void _tryNext(String reason) {
     if (_playing) return;
     if (_candidates.isEmpty) {
-      // ★ 当前清晰度全灭 → 自动降档
       final idx = qualities.indexWhere((q) => q.name == currentQuality.value);
       if (idx >= 0 && idx < qualities.length - 1) {
         final next = qualities[idx + 1];
@@ -660,6 +654,94 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
   }
 
+  // ★ 点击弹幕昵称 → 用户信息小半屏
+  void showUserInfo(DanmakuMessage m) {
+    Get.bottomSheet(
+      Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF16161E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 16),
+              Row(children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.white10,
+                  backgroundImage:
+                      m.avatar.isNotEmpty ? NetworkImage(m.avatar) : null,
+                  child: m.avatar.isEmpty
+                      ? const Icon(Icons.person, color: Colors.white54)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(m.nickname.isEmpty ? '神秘用户' : m.nickname,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(m.uid > 0 ? 'UID: ${m.uid}' : 'UID: 未知',
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 12)),
+                      ]),
+                ),
+                if (m.fansName.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFFF8800).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Text('${m.fansLevel} ${m.fansName}',
+                        style: const TextStyle(
+                            color: Color(0xFFFF8800), fontSize: 11)),
+                  ),
+              ]),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12)),
+                child: Text('"${m.content}"',
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 13)),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextButton(
+                      onPressed: () => Get.back(),
+                      child: const Text('关闭',
+                          style: TextStyle(color: Colors.white70))),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+      isScrollControlled: true,
+    );
+  }
+
   void _showUrlDialog() {
     Get.dialog(
       AlertDialog(
@@ -832,7 +914,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         child: Container(
             color: Colors.black,
             child: Stack(children: [
-              // ★ 未开播占位：封面暗化 + 上次开播时间 + 直播预告
               if (!isLive.value)
                 Positioned.fill(
                   child: Stack(fit: StackFit.expand, children: [
