@@ -373,7 +373,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  // ================= 发送弹幕 =================
+ // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -383,7 +383,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
-      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req.toBytes())});
+      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)}); // ★ 已修复
       final framed = _withPrefix(body);
 
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
