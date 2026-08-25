@@ -718,39 +718,43 @@ class HuyaDanmakuClient {
   void _routePush(int uri, List<int> payload) {
     if (uri == 1400) {
       _decodeDanmaku(payload);
-    } else if (uri == 6500 || uri == 6501 || uri == 6502) {
-      _decodeHistoryDanmaku(payload); // ★ 历史/扩展推送
     } else if (uri == 8006) {
       try {
         final f = _TarsReader(Uint8List.fromList(payload)).readFields();
         final v = f[0] is int ? f[0] as int : 0;
         if (v > 0) onPopularity?.call(v);
       } catch (_) {}
+    } else {
+      // ★ 历史/扩展推送：先试聊天结构，失败再用历史结构；并记录 uri
+      if (!_decodeDanmaku(payload)) _decodeHistoryDanmaku(payload);
+      _dbgPush('push uri=$uri');
     }
   }
 
-  /// ★ 严格解码真人弹幕：sender{0:uid,2:昵称,4:头像} + tag3 正文 + tag6[0] 颜色
-  void _decodeDanmaku(List<int> payload) {
+  /// ★ 严格解码真人弹幕：遍历 sender 提取昵称/头像，兼容所有 tag 偏移
+  bool _decodeDanmaku(List<int> payload) {
     try {
       final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
 
       final sender = fields[0];
       final content = fields[3];
-      if (sender is! Map<int, Object?>) return;
-      if (content is! String || content.isEmpty) return;
-      if (sender[0] is! int) return;
+      if (sender is! Map<int, Object?>) return false;
+      if (content is! String || content.isEmpty) return false;
+      if (sender[0] is! int) return false;
 
-      final uid = sender[0] as int;
-      final nick = sender[2] is String ? sender[2] as String : '';
-      if (nick.isEmpty) return;
-
+      // 遍历 sender 提取昵称和头像（无视 tag 偏移变化）
+      String nick = '';
       String avatar = '';
       for (final v in sender.values) {
-        if (v is String && v.startsWith('http')) {
-          avatar = v;
-          break;
+        if (v is String) {
+          if (v.startsWith('http') && avatar.isEmpty) {
+            avatar = v;
+          } else if (!v.startsWith('http') && v.isNotEmpty && nick.isEmpty) {
+            nick = v;
+          }
         }
       }
+      if (nick.isEmpty) return false;
 
       // 颜色：bulletFormat(tag6)[0]，兜底扫 tag4~tag6 的 0xRRGGBB
       int color = 0;
@@ -817,7 +821,7 @@ class HuyaDanmakuClient {
         content: content,
         fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
         avatar: avatar,
-        uid: uid,
+        uid: sender[0] as int,
         fansName: fansName,
         fansLevel: fansLevel,
         managerType: managerType,
@@ -827,7 +831,10 @@ class HuyaDanmakuClient {
         _pendingDanmaku = null;
         _dbgPush('回显确认 ✔');
       }
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// ★ 历史条目：tag5=昵称 tag6=内容；进场/礼物（内容==昵称）自动过滤
