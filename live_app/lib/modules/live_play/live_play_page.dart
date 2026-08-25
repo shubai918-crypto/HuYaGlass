@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
@@ -30,7 +30,8 @@ class _LivePlayPageState extends State<LivePlayPage>
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() => c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
+    return Obx(() =>
+        c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
   }
 
   Widget _buildFullscreen() {
@@ -50,11 +51,11 @@ class _LivePlayPageState extends State<LivePlayPage>
         AspectRatio(aspectRatio: 16 / 9, child: c.videoHost(false)),
         _tabs(),
         Expanded(
-  child: TabBarView(controller: _tab, children: [
-    _DanmakuList(c: c),
-    _DetailTab(c: c),
-  ]),
-),
+          child: TabBarView(controller: _tab, children: [
+            _DanmakuList(c: c),
+            _DetailTab(c: c),
+          ]),
+        ),
         _bottomBar(),
       ]),
     );
@@ -116,8 +117,8 @@ class _LivePlayPageState extends State<LivePlayPage>
                 height: 36,
                 decoration: const BoxDecoration(
                     color: Colors.white10, shape: BoxShape.circle),
-                child: const Icon(Icons.close,
-                    color: Colors.white70, size: 20),
+                child:
+                    const Icon(Icons.close, color: Colors.white70, size: 20),
               ),
             ),
           ]),
@@ -303,33 +304,61 @@ class _DanmakuListState extends State<_DanmakuList> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (m.fansName.isNotEmpty)
-                Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFFF8800).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text('${m.fansLevel} ${m.fansName}',
-                        style: const TextStyle(
-                            color: Color(0xFFFF8800), fontSize: 10))),
-              Text.rich(TextSpan(children: [
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            // ★ 房管徽章（最左）
+            if (m.managerType > 0)
+              Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFE5484D).withOpacity(0.15),
+                    border: Border.all(
+                        color: const Color(0xFFE5484D).withOpacity(0.4)),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text(m.managerType == 2 ? '超管' : '房管',
+                    style: const TextStyle(
+                        color: Color(0xFFE5484D),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700)),
+              ),
+            // ★ 粉丝牌徽章（昵称左侧）
+            if (m.fansName.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [
+                      const Color(0xFFFF8800).withOpacity(0.25),
+                      const Color(0xFFFF8800).withOpacity(0.1),
+                    ]),
+                    border: Border.all(
+                        color: const Color(0xFFFF8800).withOpacity(0.4)),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text('${m.fansLevel} ${m.fansName}',
+                    style: const TextStyle(
+                        color: Color(0xFFFF8800),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700)),
+              ),
+            Text.rich(
+              TextSpan(children: [
                 TextSpan(
-                    text:
-                        '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
+                    text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
                     style: TextStyle(
                         color: Color(m.fontColor),
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
                 TextSpan(
                     text: m.content,
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 14)),
-              ])),
-            ]),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 14)),
+              ]),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -381,8 +410,8 @@ class _DetailTab extends StatelessWidget {
                       ]),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                       color: c.isLive.value
                           ? const Color(0x33E5484D)
@@ -419,7 +448,8 @@ class _DetailTab extends StatelessWidget {
                   const Icon(Icons.schedule, color: Color(0xFF7ED97E)),
                   const SizedBox(width: 10),
                   const Text('开播时长',
-                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      style:
+                          TextStyle(color: Colors.white70, fontSize: 14)),
                   const Spacer(),
                   Text(c.liveDurationText.value,
                       style: const TextStyle(
@@ -438,7 +468,8 @@ class _DetailTab extends StatelessWidget {
                   const Icon(Icons.history, color: Colors.white54),
                   const SizedBox(width: 10),
                   const Text('上次开播',
-                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      style:
+                          TextStyle(color: Colors.white70, fontSize: 14)),
                   const Spacer(),
                   Text(c.lastLiveText,
                       style: const TextStyle(
