@@ -28,6 +28,9 @@ class DanmakuMessage {
 }
 
 /// 虎牙弹幕客户端（动态节点 + 历史弹幕订阅 + 网页同款心跳）
+/// 字段映射与 pure_live TARS 结构一致：
+/// Sender{0:uid,2:nickName} / Message{0:sender,3:content,6:bulletFormat{0:fontColor}}
+/// PushV2{0:groupId,1:items[{0:uri,1:msg}]}
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -39,6 +42,10 @@ class HuyaDanmakuClient {
     'wsapi.huya.com',
     'cdnws.api.huya.com',
   ];
+
+  /// ★ 网页真实 cmd=33 订阅包体模板（含 8 个历史推送类型 ID）
+  static const _SUB33_BODY =
+      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a08000106126c6976653a31323739353231303533353731180008011893100101194f100101195110010119531001011bc31001011bc41001011bc51001011bca1001180c30010b780c8c2c36004c5c6600';
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -87,6 +94,28 @@ class HuyaDanmakuClient {
   String _randHex(int n) {
     const chars = '0123456789abcdef';
     return List.generate(n, (_) => chars[Random().nextInt(16)]).join();
+  }
+
+  List<int> _hexToBytes(String hex) {
+    final out = <int>[];
+    for (var i = 0; i + 1 < hex.length; i += 2) {
+      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return out;
+  }
+
+  int _indexOf(List<int> bytes, List<int> pattern) {
+    for (var i = 0; i + pattern.length <= bytes.length; i++) {
+      var ok = true;
+      for (var j = 0; j < pattern.length; j++) {
+        if (bytes[i + j] != pattern[j]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return i;
+    }
+    return -1;
   }
 
   // ================= DNS 优选 =================
@@ -298,41 +327,46 @@ class HuyaDanmakuClient {
       req.writeInt(10, 14);
       req.writeInt(11, 1);
 
-      final body = _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
+      final body =
+          _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
       _send(_wrapWsCmd(_withPrefix(body), 3));
     } catch (_) {}
   }
 
-  /// ★ 网页同款 cmd=33：订阅历史/扩展推送类型，触发历史弹幕下发
+  /// ★ 订阅历史弹幕：字节级复用网页真实包，仅替换 guid 与房间号
   void _sendSubscribeHistory() {
     try {
-      const ids = [6291, 6479, 6481, 6483, 7107, 7108, 7109, 7114];
+      if (_ayyuid <= 0) return;
+      var bytes = _hexToBytes(_SUB33_BODY);
 
-      final idMap = _TarsWriter();
-      idMap._head(1, 8); // tag1 map<int,int>
-      idMap._intValue(ids.length);
-      for (final id in ids) {
-        idMap.writeInt(0, id);
-        idMap.writeInt(1, 1);
+      // 1) 替换 guid（偏移16，32字节，等长）
+      if (_guid.length == 32) {
+        final g = utf8.encode(_guid);
+        for (var i = 0; i < 32; i++) {
+          bytes[16 + i] = g[i];
+        }
       }
 
-      final groupMap = _TarsWriter();
-      groupMap._head(6, 8); // tag6 map<string,struct>
-      groupMap._intValue(1);
-      groupMap.writeString(0, 'live:$_ayyuid');
-      groupMap._b.add(idMap.toBytes());
-      groupMap._b.addByte(0x0B); // struct 结束
-
-      final body = _TarsWriter();
-      body.writeString(0, 'HUYA&ZH&2052');
-      body.writeString(1, _guid);
-      body.writeInt(2, 0);
-      body.writeInt(3, 0);
-      body._b.add(groupMap.toBytes());
+      // 2) 替换 live:<房间号>（长度不同则修补长度字节）
+      const oldId = '1279521053571';
+      final newId = '$_ayyuid';
+      if (newId != oldId) {
+        final oldStr = utf8.encode('live:$oldId');
+        final idx = _indexOf(bytes, oldStr);
+        if (idx > 0) {
+          final newStr = utf8.encode('live:$newId');
+          bytes = <int>[
+            ...bytes.sublist(0, idx - 1),
+            newStr.length,
+            ...newStr,
+            ...bytes.sublist(idx + oldStr.length),
+          ];
+        }
+      }
 
       final cmd = _TarsWriter();
       cmd.writeInt(0, 33);
-      cmd.writeBytes(1, body.toBytes());
+      cmd.writeBytes(1, bytes);
       cmd.writeInt(2, ++_reqId);
       _send(cmd.toBytes());
       _dbgPush('订阅历史(33) 已发');
@@ -349,7 +383,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
-      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
+      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req.toBytes())});
       final framed = _withPrefix(body);
 
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
@@ -680,7 +714,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 严格解码真人弹幕：sender{0:uid,2:昵称,4:头像} + tag3 正文
+  /// ★ 严格解码真人弹幕：sender{0:uid,2:昵称,4:头像} + tag3 正文 + tag6[0] 颜色
   void _decodeDanmaku(List<int> payload) {
     try {
       final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
@@ -703,11 +737,15 @@ class HuyaDanmakuClient {
         }
       }
 
-      // 颜色：扫 tag4~tag6 struct 里的 0xRRGGBB 整数
+      // 颜色：bulletFormat(tag6)[0]，兜底扫 tag4~tag6 的 0xRRGGBB
       int color = 0;
       for (final k in const [6, 5, 4]) {
         final cf = fields[k];
         if (cf is Map<int, Object?>) {
+          if (cf[0] is int && (cf[0] as int) >= 0x10000 && (cf[0] as int) <= 0xFFFFFF) {
+            color = cf[0] as int;
+            break;
+          }
           for (final v in cf.values) {
             if (v is int && v >= 0x10000 && v <= 0xFFFFFF) {
               color = v;
