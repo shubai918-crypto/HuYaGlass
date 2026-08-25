@@ -27,10 +27,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（动态节点 + 历史弹幕订阅 + 网页同款心跳）
-/// 字段映射与 pure_live TARS 结构一致：
-/// Sender{0:uid,2:nickName} / Message{0:sender,3:content,6:bulletFormat{0:fontColor}}
-/// PushV2{0:groupId,1:items[{0:uri,1:msg}]}
+/// 虎牙弹幕客户端（网页同款握手：Launch原包 + 33订阅 + OnUserHeartBeat）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -42,6 +39,10 @@ class HuyaDanmakuClient {
     'wsapi.huya.com',
     'cdnws.api.huya.com',
   ];
+
+  /// ★ 网页真实 launch.wsTimeSync 请求原包（不含房间号，直接复用）
+  static const _LAUNCH_REQ =
+      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
 
   /// ★ 网页真实 cmd=33：live 组订阅（8 个扩展类型）
   static const _SUB33_LIVE =
@@ -209,18 +210,17 @@ class HuyaDanmakuClient {
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
     _send(_buildVerifyCookie());
+    // ★ Launch：网页真实 wsTimeSync 原包（字节级复用）
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
-      _send(_wrapWsCmd(
-          _withPrefix(
-              _wupBody('launch', 'wsTimeSync', {'tReq': _treq(_buildLaunchReq())})),
-          3));
+      _send(_hexToBytes(_LAUNCH_REQ));
+      _dbgPush('Launch(原包) 已发');
     });
     Timer(const Duration(milliseconds: 600), () {
       if (_closed) return;
       _sendRegister();
     });
-    // ★ 注册后订阅历史/扩展推送（网页同款 cmd=33：先 chat 后 live）
+    // ★ 订阅历史/扩展推送（先 chat 后 live）
     Timer(const Duration(milliseconds: 900), () {
       if (_closed) return;
       _sendSubscribeHistory();
@@ -229,7 +229,7 @@ class HuyaDanmakuClient {
     _heartTimer?.cancel();
     _heartTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _sendUserHeartBeat(); // ★ 网页同款（带Cookie）
-      _sendHeartbeat(); // 原有裸心跳兜底
+      _sendHeartbeat(); // 裸心跳兜底
     });
   }
 
@@ -269,13 +269,6 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
-  Uint8List _buildLaunchReq() {
-    final req = _TarsWriter();
-    req.writeString(0, '');
-    req.writeInt(1, 668);
-    return req.toBytes();
-  }
-
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
@@ -313,23 +306,33 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  /// ★ 网页同款心跳：onlineui.OnUserHeartBeat（带 Cookie，维持登录在线态）
+  /// ★ 网页同款心跳：onlineui.OnUserHeartBeat（tag 与抓包一致）
   void _sendUserHeartBeat() {
     try {
       final cookie = HuyaLoginManager().cookie;
+      final inner0 = _TarsWriter();
+      inner0.writeInt(0, 0);
+
       final uaInfo = _TarsWriter();
+      uaInfo.writeStruct(0, inner0);
       uaInfo.writeString(1, _guid);
+      uaInfo.writeInt(2, 0);
       uaInfo.writeString(3, _sendHuYaUA);
       uaInfo.writeString(4, cookie.isNotEmpty ? cookie : _cookie);
-      uaInfo.writeString(5, 'edg');
+      uaInfo.writeInt(5, 0);
+      uaInfo.writeString(6, 'edg');
+      uaInfo.writeString(7, '');
 
       final req = _TarsWriter();
       req.writeStruct(0, uaInfo);
-      req.writeInt(2, _ayyuid);
-      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
-      req.writeString(4, _randHex(31));
+      req.writeInt(1, 0);
+      req.writeInt(2, 0);
+      req.writeInt(4, _ayyuid);
+      req.writeInt(6, -1);
       req.writeInt(10, 14);
       req.writeInt(11, 1);
+      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
+      req.writeString(6, _randHex(31));
 
       final body =
           _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
@@ -337,7 +340,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 订阅历史弹幕：与网页顺序一致，先 chat 组（历史聊天），再 live 组（扩展推送）
+  /// ★ 订阅历史弹幕：先 chat 组（历史聊天），再 live 组（扩展推送）
   void _sendSubscribeHistory() {
     _sendSub33(_SUB33_CHAT);
     _sendSub33(_SUB33_LIVE);
@@ -773,32 +776,41 @@ class HuyaDanmakuClient {
       final mt = fields[7];
       if (mt is int && mt > 0 && mt <= 3) managerType = mt;
 
-      // 粉丝牌 {1:uid, 3:牌名, 4:等级}
+      // 粉丝牌：兼容 {3:牌名,4:等级} / {2:牌名,3:等级} 两种布局
       String fansName = '';
       int fansLevel = 0;
-      void findFans(dynamic node) {
-        if (fansName.isNotEmpty) return;
+      bool isName(dynamic s) =>
+          s is String &&
+          s.isNotEmpty &&
+          !s.startsWith('http') &&
+          s.length <= 12 &&
+          s != nick &&
+          s != content;
+      void findFans(dynamic node, int depth) {
+        if (fansName.isNotEmpty || depth > 6) return;
         if (node is Map<int, Object?>) {
-          final n = node[3];
-          final l = node[4];
-          if (n is String &&
-              n.isNotEmpty &&
-              !n.startsWith('http') &&
-              l is int &&
-              l > 0 &&
-              l < 100 &&
-              node[1] is int) {
-            fansName = n;
-            fansLevel = l;
+          if (isName(node[3]) && node[4] is int && node[4] as int >= 1 && node[4] as int <= 99) {
+            fansName = node[3] as String;
+            fansLevel = node[4] as int;
             return;
           }
-          node.values.forEach(findFans);
+          if (isName(node[2]) && node[3] is int && node[3] as int >= 1 && node[3] as int <= 99 && node[0] is int) {
+            fansName = node[2] as String;
+            fansLevel = node[3] as int;
+            return;
+          }
+          for (final e in node.entries) {
+            if (depth == 0 && e.key == 0) continue; // 跳过 sender
+            findFans(e.value, depth + 1);
+          }
         } else if (node is List) {
-          node.forEach(findFans);
+          for (final e in node) {
+            findFans(e, depth + 1);
+          }
         }
       }
 
-      findFans(fields);
+      findFans(fields, 0);
 
       _controller.add(DanmakuMessage(
         nickname: nick,
