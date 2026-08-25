@@ -43,9 +43,13 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  /// ★ 网页真实 cmd=33 订阅包体模板（含 8 个历史推送类型 ID）
-  static const _SUB33_BODY =
+  /// ★ 网页真实 cmd=33：live 组订阅（8 个扩展类型）
+  static const _SUB33_LIVE =
       '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a08000106126c6976653a31323739353231303533353731180008011893100101194f100101195110010119531001011bc31001011bc41001011bc51001011bca1001180c30010b780c8c2c36004c5c6600';
+
+  /// ★ 网页真实 cmd=33：chat 组订阅（6211 = 历史聊天推送开关）
+  static const _SUB33_CHAT =
+      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a0800010612636861743a313237393532313035333537311800010118431001180c30010b780c8c2c36004c5c6600';
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -216,7 +220,7 @@ class HuyaDanmakuClient {
       if (_closed) return;
       _sendRegister();
     });
-    // ★ 注册后订阅历史/扩展推送（网页同款 cmd=33）
+    // ★ 注册后订阅历史/扩展推送（网页同款 cmd=33：先 chat 后 live）
     Timer(const Duration(milliseconds: 900), () {
       if (_closed) return;
       _sendSubscribeHistory();
@@ -333,11 +337,17 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 订阅历史弹幕：字节级复用网页真实包，仅替换 guid 与房间号
+  /// ★ 订阅历史弹幕：与网页顺序一致，先 chat 组（历史聊天），再 live 组（扩展推送）
   void _sendSubscribeHistory() {
+    _sendSub33(_SUB33_CHAT);
+    _sendSub33(_SUB33_LIVE);
+  }
+
+  /// 字节级复用网页真实 cmd=33 包，仅替换 guid 与房间号
+  void _sendSub33(String template) {
     try {
       if (_ayyuid <= 0) return;
-      var bytes = _hexToBytes(_SUB33_BODY);
+      var bytes = _hexToBytes(template);
 
       // 1) 替换 guid（偏移16，32字节，等长）
       if (_guid.length == 32) {
@@ -347,20 +357,22 @@ class HuyaDanmakuClient {
         }
       }
 
-      // 2) 替换 live:<房间号>（长度不同则修补长度字节）
+      // 2) 替换 live:/chat: 后的房间号（长度不同则修补长度字节）
       const oldId = '1279521053571';
       final newId = '$_ayyuid';
       if (newId != oldId) {
-        final oldStr = utf8.encode('live:$oldId');
-        final idx = _indexOf(bytes, oldStr);
-        if (idx > 0) {
-          final newStr = utf8.encode('live:$newId');
-          bytes = <int>[
-            ...bytes.sublist(0, idx - 1),
-            newStr.length,
-            ...newStr,
-            ...bytes.sublist(idx + oldStr.length),
-          ];
+        for (final prefix in const ['live:', 'chat:']) {
+          final oldStr = utf8.encode('$prefix$oldId');
+          final idx = _indexOf(bytes, oldStr);
+          if (idx > 0) {
+            final newStr = utf8.encode('$prefix$newId');
+            bytes = <int>[
+              ...bytes.sublist(0, idx - 1),
+              newStr.length,
+              ...newStr,
+              ...bytes.sublist(idx + oldStr.length),
+            ];
+          }
         }
       }
 
@@ -369,11 +381,11 @@ class HuyaDanmakuClient {
       cmd.writeBytes(1, bytes);
       cmd.writeInt(2, ++_reqId);
       _send(cmd.toBytes());
-      _dbgPush('订阅历史(33) 已发');
+      _dbgPush('订阅33(${template == _SUB33_CHAT ? "chat" : "live"}) 已发');
     } catch (_) {}
   }
 
- // ================= 发送弹幕 =================
+  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -383,7 +395,7 @@ class HuyaDanmakuClient {
     try {
       _pendingDanmaku = text;
       final req = _buildSendReq(text);
-      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)}); // ★ 已修复
+      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
 
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
