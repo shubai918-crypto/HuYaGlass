@@ -298,7 +298,7 @@ class HuyaDanmakuClient {
       req.writeInt(10, 14);
       req.writeInt(11, 1);
 
-      final body = _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req)});
+      final body = _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
       _send(_wrapWsCmd(_withPrefix(body), 3));
     } catch (_) {}
   }
