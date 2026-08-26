@@ -36,7 +36,6 @@ class _LivePlayPageState extends State<LivePlayPage>
         c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
   }
 
-  // ★ 全屏：视频 + 飘屏弹幕
   Widget _buildFullscreen() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -60,7 +59,7 @@ class _LivePlayPageState extends State<LivePlayPage>
           aspectRatio: 16 / 9,
           child: Stack(children: [
             c.videoHost(false),
-            DanmakuOverlay(c: c), // ★ 飘屏弹幕层
+            DanmakuOverlay(c: c),
           ]),
         ),
         _tabs(),
@@ -262,7 +261,7 @@ class _LivePlayPageState extends State<LivePlayPage>
   }
 }
 
-// ================= ★ 飘屏弹幕层 =================
+// ================= ★ 飘屏弹幕层（时间槽分轨 + 排队，历史不飘屏） =================
 class _FloatItem {
   final String text;
   final Color color;
@@ -270,6 +269,12 @@ class _FloatItem {
   double x;
   final double y;
   _FloatItem(this.text, this.color, this.x, this.y, this.w);
+}
+
+class _PendingItem {
+  final DanmakuMessage m;
+  final int born;
+  _PendingItem(this.m, this.born);
 }
 
 class DanmakuOverlay extends StatefulWidget {
@@ -282,10 +287,11 @@ class DanmakuOverlay extends StatefulWidget {
 class _DanmakuOverlayState extends State<DanmakuOverlay>
     with SingleTickerProviderStateMixin {
   final List<_FloatItem> _items = [];
-  final List<_FloatItem?> _laneLast = [];
+  final List<_PendingItem> _queue = [];
+  final List<int> _laneFreeAt = [];
   Ticker? _ticker;
   StreamSubscription? _sub;
-  DateTime? _lastT;
+  int _lastNow = 0;
   double _w = 0;
   double _h = 0;
 
@@ -295,7 +301,8 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     _ticker = createTicker(_tick)..start();
     _sub = widget.c.danmakuList.listen((_) {
       if (widget.c.danmakuList.isNotEmpty) {
-        _spawn(widget.c.danmakuList.last);
+        final m = widget.c.danmakuList.last;
+        if (!m.isHistory) _enqueue(m); // ★ 历史弹幕不飘屏
       }
     });
   }
@@ -309,52 +316,69 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
 
   double _lineHeight() => widget.c.danmakuFontSize.value * 1.8;
 
-  void _spawn(DanmakuMessage m) {
+  void _syncLanes() {
+    final n = max(1, (_h * widget.c.danmakuArea.value / _lineHeight()).floor());
+    if (_laneFreeAt.length != n) {
+      _laneFreeAt.clear();
+      _laneFreeAt.addAll(List.filled(n, 0));
+    }
+  }
+
+  void _enqueue(DanmakuMessage m) {
     if (!widget.c.showDanmaku.value || _w <= 0 || _h <= 0) return;
-    final fs = widget.c.danmakuFontSize.value;
-    final text =
-        '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ${m.content}';
+    if (_queue.length > 40) _queue.removeAt(0);
+    _queue.add(_PendingItem(m, DateTime.now().millisecondsSinceEpoch));
+  }
+
+  double _measure(String text, double fs) {
     double w = 8;
     for (final r in text.runes) {
       w += r > 255 ? fs : fs * 0.62;
     }
-    final lanes =
-        max(1, (_h * widget.c.danmakuArea.value / _lineHeight()).floor());
-    if (_laneLast.length != lanes) {
-      _laneLast.clear();
-      _laneLast.addAll(List.filled(lanes, null));
+    return w;
+  }
+
+  void _flushQueue(int now) {
+    if (_queue.isEmpty) return;
+    _syncLanes();
+    final sp = max(40.0, widget.c.danmakuSpeed.value);
+    for (int i = _queue.length - 1; i >= 0; i--) {
+      if (now - _queue[i].born > 5000) _queue.removeAt(i);
     }
-    int lane = -1;
-    for (int i = 0; i < lanes; i++) {
-      final last = _laneLast[i];
-      if (last == null || last.x + last.w < _w - 24) {
-        lane = i;
-        break;
+    int qi = 0;
+    while (qi < _queue.length) {
+      final p = _queue[qi];
+      final fs = widget.c.danmakuFontSize.value;
+      final text =
+          '${p.m.nickname.isEmpty ? "神秘用户" : p.m.nickname}: ${p.m.content}';
+      final w = _measure(text, fs);
+      int lane = -1;
+      for (int l = 0; l < _laneFreeAt.length; l++) {
+        if (_laneFreeAt[l] <= now) {
+          lane = l;
+          break;
+        }
       }
+      if (lane < 0) break;
+      _laneFreeAt[lane] = now + ((w + 32) / sp * 1000).round();
+      _items.add(_FloatItem(
+          text, Color(p.m.fontColor), _w, lane * _lineHeight() + 4, w));
+      _queue.removeAt(qi);
     }
-    if (lane < 0) lane = Random().nextInt(lanes);
-    final it = _FloatItem(
-        text, Color(m.fontColor), _w, lane * _lineHeight() + 4, w);
-    _laneLast[lane] = it;
-    _items.add(it);
   }
 
   void _tick(Duration d) {
-    final now = DateTime.now();
-    final dt =
-        _lastT == null ? 0.016 : now.difference(_lastT!).inMicroseconds / 1e6;
-    _lastT = now;
-    if (_items.isEmpty || _w <= 0) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final dt = _lastNow == 0 ? 0.016 : (now - _lastNow) / 1000.0;
+    _lastNow = now;
+    if (_w <= 0) return;
+    _flushQueue(now);
+    if (_items.isEmpty) return;
     final sp = widget.c.danmakuSpeed.value;
     for (int i = _items.length - 1; i >= 0; i--) {
       final it = _items[i];
       it.x -= sp * dt;
-      if (it.x + it.w < 0) {
-        _items.removeAt(i);
-        for (int l = 0; l < _laneLast.length; l++) {
-          if (identical(_laneLast[l], it)) _laneLast[l] = null;
-        }
-      }
+      if (it.x + it.w < 0) _items.removeAt(i);
     }
     if (mounted) setState(() {});
   }
