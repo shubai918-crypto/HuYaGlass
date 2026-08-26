@@ -7,7 +7,8 @@ class FollowItem {
   final String name;
   final String avatar;
   final bool isLive;
-  const FollowItem({
+
+  FollowItem({
     required this.roomId,
     required this.name,
     this.avatar = '',
@@ -33,13 +34,13 @@ class FollowItem {
       );
 }
 
-/// ★ 响应式订阅仓库：add/remove 立即通知 UI，无需重启
+/// 响应式订阅仓库：add/remove/update 立即通知 UI，无需重启
 class FollowStore {
   FollowStore._();
   static final FollowStore _i = FollowStore._();
   static FollowStore get instance => _i;
 
-  static const _key = 'follow_list_v1';
+  static const _key = 'follow_list_v2';
 
   final RxList<FollowItem> items = <FollowItem>[].obs;
   final RxBool refreshing = false.obs;
@@ -62,20 +63,25 @@ class FollowStore {
         _key, jsonEncode(_i.items.map((e) => e.toJson()).toList()));
   }
 
-  static bool isFollowed(String roomId) =>
+  static bool contains(String roomId) =>
       _i.items.any((e) => e.roomId == roomId);
 
-  static void add(FollowItem item) {
-    if (isFollowed(item.roomId)) return;
+  static Future<bool> isFollowed(String roomId) async => contains(roomId);
+
+  static Future<void> add(FollowItem item) async {
+    if (contains(item.roomId)) return;
     _i.items.add(item);
-    _save();
+    await _save();
   }
 
-  static void remove(String roomId) {
+  static Future<void> remove(String roomId) async {
     _i.items.removeWhere((e) => e.roomId == roomId);
-    _save();
+    await _save();
   }
 
+  static Future<List<FollowItem>> all() async => _i.items.toList();
+
+  /// 更新开播状态（刷新时调用）
   static void updateLive(String roomId, bool isLive,
       {String? name, String? avatar}) {
     final idx = _i.items.indexWhere((e) => e.roomId == roomId);
@@ -85,5 +91,6 @@ class FollowStore {
       name: name,
       avatar: avatar,
     );
+    _save();
   }
 }
