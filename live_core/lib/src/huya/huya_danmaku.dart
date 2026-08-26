@@ -15,6 +15,7 @@ class DanmakuMessage {
   final String fansName;
   final int fansLevel;
   final int managerType; // 0=无 1=房管 2=超管
+  final bool isHistory; // ★ 历史弹幕只进列表，不飘屏
   DanmakuMessage({
     required this.nickname,
     required this.content,
@@ -24,6 +25,7 @@ class DanmakuMessage {
     this.fansName = '',
     this.fansLevel = 0,
     this.managerType = 0,
+    this.isHistory = false,
   });
 }
 
@@ -90,7 +92,7 @@ class HuyaDanmakuClient {
     return List.generate(n, (_) => chars[Random().nextInt(16)]).join();
   }
 
-  // ================= 自适应组包（替代硬编码模板） =================
+  // ================= 自适应组包 =================
 
   /// ★ launch.wsTimeSync 请求体（动态生成 token/md5）
   Uint8List _buildLaunchBody() {
@@ -109,13 +111,11 @@ class HuyaDanmakuClient {
     req.writeBytesMap(9, const {});
     req.writeBytesMap(10, const {});
 
-    // tReq 用裸结构字节，不包 _treq 外壳
     return _wupBody('launch', 'wsTimeSync', {'tReq': req.toBytes()});
   }
 
   /// ★ cmd=33 分组订阅请求体（guid/房间号动态填入）
   Uint8List _buildSub33Body(String group, List<int> ids) {
-    // map 值 struct：{1:{id:1...}, 1:{}, 3:1}
     final val = _TarsWriter();
     val._head(1, 8);
     val._intValue(ids.length);
@@ -248,11 +248,9 @@ class HuyaDanmakuClient {
       if (_closed) return;
       _sendSubscribeHistory();
     });
-    // ★ 1.5s 首次请求历史弹幕
     Timer(const Duration(milliseconds: 1500), () {
       if (!_closed) _sendRctTimedMessage();
     });
-    // ★ 4.5s 若未获取到历史弹幕，自动重试一次
     Timer(const Duration(milliseconds: 4500), () {
       if (!_closed && !_rctOk) _sendRctTimedMessage();
     });
@@ -371,7 +369,7 @@ class HuyaDanmakuClient {
     _dbgPush('订阅33(live) 已发');
   }
 
-  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（tReq 裸结构）
+  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（嵌套 tReq，裸结构字节）
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
@@ -655,7 +653,7 @@ class HuyaDanmakuClient {
                 (node[0] as Map<int, Object?>)[3] is String) {
               msgNode = node[0] as Map<int, Object?>;
             }
-            if (msgNode != null && _emitFromFields(msgNode)) {
+            if (msgNode != null && _emitFromFields(msgNode, history: true)) {
               n++;
               return;
             }
@@ -802,7 +800,7 @@ class HuyaDanmakuClient {
   }
 
   /// ★ 弹幕发射器：uid 可嵌套一层，昵称/头像在外层 sender 找
-  bool _emitFromFields(Map<int, Object?> fields) {
+  bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
     if (fields[3] is! String && fields[0] is Map<int, Object?>) {
       final inner = fields[0] as Map<int, Object?>;
@@ -907,6 +905,7 @@ class HuyaDanmakuClient {
       fansName: fansName,
       fansLevel: fansLevel,
       managerType: managerType,
+      isHistory: history,
     ));
 
     if (_pendingDanmaku != null && content == _pendingDanmaku) {
@@ -936,6 +935,7 @@ class HuyaDanmakuClient {
         nickname: nick,
         content: content,
         avatar: avatar,
+        isHistory: true,
       ));
     } catch (_) {}
   }
