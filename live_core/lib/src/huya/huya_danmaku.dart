@@ -206,12 +206,11 @@ class HuyaDanmakuClient {
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
     _send(_buildVerifyCookie());
+    // ★ Launch：网页真实 wsTimeSync 原包（字节级复用）
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
-      _send(_wrapWsCmd(
-          _withPrefix(
-              _wupBody('launch', 'wsTimeSync', {'tReq': _treq(_buildLaunchReq())})),
-          3));
+      _send(_hexToBytes(_LAUNCH_REQ));
+      _dbgPush('Launch(原包) 已发');
     });
     Timer(const Duration(milliseconds: 600), () {
       if (_closed) return;
@@ -233,6 +232,10 @@ class HuyaDanmakuClient {
       _sendHeartbeat();
     });
   }
+
+  /// ★ 网页真实 launch.wsTimeSync 请求原包（不含房间号，直接复用）
+  static const _LAUNCH_REQ =
+      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
 
   void _sendRegister() {
     _send(_buildRegisterGroup());
@@ -651,36 +654,37 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕响应：tRsp = {0:{0:[消息]}} 或 {0:[消息]}，两种嵌套都兼容
+      // ★ 历史弹幕响应：tRsp = {0:{0:[N条消息]}}，剥两层取列表
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         final sb = f[7];
         if (sb is List) {
-          final inner = _TarsReader(Uint8List.fromList(
-                  sb.map((e) => (e as int) & 0xFF).toList()))
-              .readFields();
-          final map = inner[0];
-          if (map is List) {
-            for (var i = 0; i + 1 < map.length; i += 2) {
-              if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
-                final rsp = _TarsReader(Uint8List.fromList((map[i + 1] as List)
-                        .map((e) => (e as int) & 0xFF).toList()))
-                    .readFields();
-                // ★ 关键修复：剥掉外层 struct 再取列表
-                dynamic node = rsp[0];
-                if (node is Map<int, Object?>) {
-                  node = node[0] ?? node[1];
-                }
-                if (node is List) {
-                  for (final item in node) {
-                    if (item is Map<int, Object?> && _emitFromFields(item)) {
-                      n++;
+          try {
+            final inner = _TarsReader(Uint8List.fromList(
+                    sb.map((e) => (e as int) & 0xFF).toList()))
+                .readFields();
+            final map = inner[0];
+            if (map is List) {
+              for (var i = 0; i + 1 < map.length; i += 2) {
+                if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
+                  final rsp = _TarsReader(Uint8List.fromList((map[i + 1] as List)
+                          .map((e) => (e as int) & 0xFF).toList()))
+                      .readFields();
+                  dynamic node = rsp[0];
+                  if (node is Map<int, Object?>) {
+                    node = node[0] ?? node[1]; // ★ 关键：剥第二层 struct
+                  }
+                  if (node is List) {
+                    for (final item in node) {
+                      if (item is Map<int, Object?> && _emitFromFields(item)) {
+                        n++;
+                      }
                     }
                   }
                 }
               }
             }
-          }
+          } catch (_) {}
         }
         _dbgPush('历史弹幕 $n 条');
         return;
