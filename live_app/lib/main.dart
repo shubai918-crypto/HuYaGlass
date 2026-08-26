@@ -5,6 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import 'modules/home/home_page.dart';
+import 'modules/home/follow_store.dart'; // ★ 引入响应式 Store
 import 'modules/live_play/background_play.dart';
 
 void main() async {
@@ -16,7 +17,8 @@ void main() async {
   ));
 
   await HuyaLoginManager.init();
-  await BackgroundPlayStore.init(); // ★ 后台播放开关初始化
+  await BackgroundPlayStore.init();
+  await FollowStore.init(); // ★ 预加载本地订阅列表
 
   await LiquidGlassWidgets.initialize(warmUpMode: GlassWarmUpMode.auto);
 
