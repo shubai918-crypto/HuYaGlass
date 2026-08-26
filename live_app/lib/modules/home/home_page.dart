@@ -50,10 +50,8 @@ class _HomePageState extends State<HomePage> {
     return Material(
       type: MaterialType.transparency,
       child: GlassScaffold(
-        // 内容感知亮度：底栏随内容自动明暗（Apple Music 同款）
         contentAwareBrightness: true,
         statusBarStyle: GlassStatusBarStyle.light,
-        // 顶部微紫径向光晕 → 底部近黑
         background: SizedBox.expand(
           child: Container(
             decoration: const BoxDecoration(
@@ -92,7 +90,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-        // Apple Music 同款底栏：深色磨砂 + 虎牙橙选中 + MiniPlayer
         bottomBar: GlassTabBar.bottom(
           adaptiveBrightness: true,
           selectedIndex: _selectedIndex,
@@ -117,7 +114,6 @@ class _HomePageState extends State<HomePage> {
             GlassTab(icon: Icon(Icons.settings), label: '设置'),
           ],
         ),
-        // ★ body 加回上下留白，随 MiniPlayer 出现/消失动态调整
         body: ValueListenableBuilder<NowRoom?>(
           valueListenable: NowWatching.notifier,
           builder: (context, room, _) => Padding(
@@ -153,7 +149,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ================= Apple Music 同款 Mini Player =================
   Widget _buildMiniBar() {
     return ValueListenableBuilder<NowRoom?>(
       valueListenable: NowWatching.notifier,
@@ -381,7 +376,7 @@ class _OpaqueContentCard extends StatelessWidget {
   }
 }
 
-// ================= 订阅 Tab =================
+// ================= 订阅 Tab (★ 响应式 + 分组 + 刷新) =================
 class _FollowsView extends StatefulWidget {
   const _FollowsView();
   @override
@@ -389,84 +384,156 @@ class _FollowsView extends StatefulWidget {
 }
 
 class _FollowsViewState extends State<_FollowsView> {
-  List<FollowItem> _list = [];
+  final HuyaStreamResolver _resolver = HuyaStreamResolver();
 
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
-  Future<void> _load() async {
-    final list = await FollowStore.all();
-    if (mounted) setState(() => _list = list);
+  Future<void> _refresh() async {
+    if (FollowStore.instance.refreshing.value) return;
+    FollowStore.instance.refreshing.value = true;
+    try {
+      for (final it in FollowStore.instance.items.toList()) {
+        try {
+          final info = await _resolver
+              .resolveStream(it.roomId)
+              .timeout(const Duration(seconds: 8));
+          if (info != null) {
+            FollowStore.updateLive(
+              it.roomId,
+              info.isLive,
+              name: info.streamerInfo.nickname.isNotEmpty
+                  ? info.streamerInfo.nickname
+                  : null,
+              avatar: info.streamerInfo.avatar.isNotEmpty
+                  ? info.streamerInfo.avatar
+                  : null,
+            );
+          }
+        } catch (_) {}
+      }
+    } finally {
+      FollowStore.instance.refreshing.value = false;
+    }
+  }
+
+  Widget _tile(FollowItem it) {
+    return GestureDetector(
+      onTap: () => goLive(it.roomId, nickname: it.name, avatarUrl: it.avatar),
+      onLongPress: () async {
+        await FollowStore.remove(it.roomId);
+      },
+      child: GlassListTile(
+        leading: CircleAvatar(
+          radius: 22,
+          backgroundColor: Colors.white10,
+          backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+          child: it.avatar.isEmpty
+              ? const Icon(Icons.person, color: Colors.white54, size: 22)
+              : null,
+        ),
+        title: Text(it.name,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600)),
+        subtitle: Text('房间 ${it.roomId}',
+            style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        trailing: it.isLive
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                    color: const Color(0x33E5484D),
+                    borderRadius: BorderRadius.circular(8)),
+                child: const Text('直播中',
+                    style: TextStyle(
+                        color: Color(0xFFE5484D),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              )
+            : GlassListTile.chevron,
+      ),
+    );
+  }
+
+  Widget _section(String title, List<FollowItem> list) {
+    return GlassGroupedSection(
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+        child: Row(children: [
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+          const Spacer(),
+          Obx(() => FollowStore.instance.refreshing.value
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: kHuyaAccent))
+              : const SizedBox.shrink()),
+        ]),
+      ),
+      margin: const EdgeInsets.only(bottom: 16),
+      children: list.isEmpty
+          ? [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(
+                    child: Text('暂无数据',
+                        style: TextStyle(color: Colors.white38))),
+              ),
+            ]
+          : list.map(_tile).toList(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_list.isEmpty) {
-      return const Center(
-        child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38)),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: _list.length,
-      itemBuilder: (c, i) {
-        final f = _list[i];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: GestureDetector(
-            onTap: () =>
-                goLive(f.roomId, nickname: f.name, avatarUrl: f.avatar),
-            onLongPress: () async {
-              await FollowStore.remove(f.roomId);
-              _load();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16161E),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: Colors.white10,
-                    backgroundImage:
-                        f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
-                    child: f.avatar.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white54)
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(f.name,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text('房间 ${f.roomId}',
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: Colors.white24),
-                ],
-              ),
-            ),
-          ),
+    return Obx(() {
+      final all = FollowStore.instance.items.toList();
+      final live = all.where((e) => e.isLive).toList();
+      final offline = all.where((e) => !e.isLive).toList();
+      
+      if (all.isEmpty && !FollowStore.instance.refreshing.value) {
+        return const Center(
+          child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white38)),
         );
-      },
-    );
+      }
+
+      return RefreshIndicator(
+        color: kHuyaAccent,
+        onRefresh: _refresh,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          children: [
+            Row(children: [
+              const Text('我的订阅',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800)),
+              const Spacer(),
+              GlassIconButton(
+                icon: const Icon(Icons.refresh, color: kHuyaAccent),
+                size: 40,
+                onPressed: _refresh,
+              ),
+            ]),
+            const SizedBox(height: 12),
+            _section('🔴 开播中 (${live.length})', live),
+            _section('⚪️ 未开播 (${offline.length})', offline),
+          ],
+        ),
+      );
+    });
   }
 }
 
