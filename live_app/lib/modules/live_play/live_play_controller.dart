@@ -402,7 +402,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _ayyuid = info.ayyuid;
       _topSid = info.topSid != 0 ? info.topSid : info.presenterUid;
       _subSid = info.subSid;
-      // ★ 未开播也连弹幕（接收历史/缓存弹幕）
       if (_danmakuClient == null) _connectDanmaku();
       loading.value = false;
       _updateDebug();
@@ -645,16 +644,17 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
     isFollowed.value = !isFollowed.value;
     if (isFollowed.value) {
+      // ★ 加入 isLive 状态，让订阅列表立即正确分组
       FollowStore.add(FollowItem(
           roomId: roomId,
           name: streamerName.value,
-          avatar: streamerAvatar.value));
+          avatar: streamerAvatar.value,
+          isLive: isLive.value));
     } else {
       FollowStore.remove(roomId);
     }
   }
 
-  // ★ 点击弹幕昵称 → 用户信息小半屏
   void showUserInfo(DanmakuMessage m) {
     Get.bottomSheet(
       Container(
