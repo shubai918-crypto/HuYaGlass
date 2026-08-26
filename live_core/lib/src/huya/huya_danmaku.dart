@@ -639,7 +639,7 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕：全树递归收集消息体（不依赖层级/键名）
+      // ★ 历史弹幕：全树递归收集（原始字节块先解析再递归）
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         int listLen = -1;
@@ -653,14 +653,21 @@ class HuyaDanmakuClient {
                 (node[0] as Map<int, Object?>)[3] is String) {
               msgNode = node[0] as Map<int, Object?>;
             }
-            if (msgNode != null) {
-              if (_emitFromFields(msgNode)) {
-                n++;
-                return;
-              }
+            if (msgNode != null && _emitFromFields(msgNode)) {
+              n++;
+              return;
             }
             node.values.forEach((v) => collect(v, depth + 1));
           } else if (node is List) {
+            if (node.isNotEmpty && node.first is int) {
+              // ★ 关键修复：原始 bytes 块 → 解析成 TARS 再递归
+              try {
+                final parsed = _TarsReader(Uint8List.fromList(node.cast<int>()))
+                    .readFields();
+                if (parsed.isNotEmpty) collect(parsed, depth + 1);
+              } catch (_) {}
+              return;
+            }
             if (listLen < 0 && node.isNotEmpty && node.first is Map<int, Object?>) {
               listLen = node.length;
             }
@@ -793,7 +800,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 弹幕发射器：实时/历史共用，自动兼容历史包多套的一层 struct
+  /// ★ 弹幕发射器：uid 可嵌套一层，昵称/头像在外层 sender 找
   bool _emitFromFields(Map<int, Object?> fields) {
     Map<int, Object?> msg = fields;
     if (fields[3] is! String && fields[0] is Map<int, Object?>) {
@@ -804,12 +811,13 @@ class HuyaDanmakuClient {
     final content = msg[3];
     if (content is! String || content.isEmpty) return false;
 
-    var sender = msg[0];
-    if (sender is! Map<int, Object?>) return false;
-    if (sender[0] is Map<int, Object?>) {
-      sender = sender[0] as Map<int, Object?>;
-    }
-    final uidVal = sender[0];
+    final senderRaw = msg[0];
+    if (senderRaw is! Map<int, Object?>) return false;
+    final sender = senderRaw;
+
+    // ★ uid 可能嵌套：sender[0] = {0:uid}
+    dynamic uidVal = sender[0];
+    if (uidVal is Map<int, Object?>) uidVal = uidVal[0];
     if (uidVal is! int) return false;
 
     String nick = '';
