@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
@@ -34,10 +36,16 @@ class _LivePlayPageState extends State<LivePlayPage>
         c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
   }
 
+  // ★ 全屏：视频 + 飘屏弹幕
   Widget _buildFullscreen() {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SizedBox.expand(child: c.videoHost(true)),
+      body: SizedBox.expand(
+        child: Stack(children: [
+          c.videoHost(true),
+          DanmakuOverlay(c: c),
+        ]),
+      ),
     );
   }
 
@@ -48,7 +56,13 @@ class _LivePlayPageState extends State<LivePlayPage>
       body: Column(children: [
         SizedBox(height: top),
         _header(),
-        AspectRatio(aspectRatio: 16 / 9, child: c.videoHost(false)),
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(children: [
+            c.videoHost(false),
+            DanmakuOverlay(c: c), // ★ 飘屏弹幕层
+          ]),
+        ),
         _tabs(),
         Expanded(
           child: TabBarView(controller: _tab, children: [
@@ -248,9 +262,149 @@ class _LivePlayPageState extends State<LivePlayPage>
   }
 }
 
+// ================= ★ 飘屏弹幕层 =================
+class _FloatItem {
+  final String text;
+  final Color color;
+  final double w;
+  double x;
+  final double y;
+  _FloatItem(this.text, this.color, this.x, this.y, this.w);
+}
+
+class DanmakuOverlay extends StatefulWidget {
+  final LivePlayController c;
+  const DanmakuOverlay({super.key, required this.c});
+  @override
+  State<DanmakuOverlay> createState() => _DanmakuOverlayState();
+}
+
+class _DanmakuOverlayState extends State<DanmakuOverlay>
+    with SingleTickerProviderStateMixin {
+  final List<_FloatItem> _items = [];
+  final List<_FloatItem?> _laneLast = [];
+  Ticker? _ticker;
+  StreamSubscription? _sub;
+  DateTime? _lastT;
+  double _w = 0;
+  double _h = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_tick)..start();
+    _sub = widget.c.danmakuList.listen((_) {
+      if (widget.c.danmakuList.isNotEmpty) {
+        _spawn(widget.c.danmakuList.last);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.dispose();
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  double _lineHeight() => widget.c.danmakuFontSize.value * 1.8;
+
+  void _spawn(DanmakuMessage m) {
+    if (!widget.c.showDanmaku.value || _w <= 0 || _h <= 0) return;
+    final fs = widget.c.danmakuFontSize.value;
+    final text =
+        '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ${m.content}';
+    double w = 8;
+    for (final r in text.runes) {
+      w += r > 255 ? fs : fs * 0.62;
+    }
+    final lanes =
+        max(1, (_h * widget.c.danmakuArea.value / _lineHeight()).floor());
+    if (_laneLast.length != lanes) {
+      _laneLast.clear();
+      _laneLast.addAll(List.filled(lanes, null));
+    }
+    int lane = -1;
+    for (int i = 0; i < lanes; i++) {
+      final last = _laneLast[i];
+      if (last == null || last.x + last.w < _w - 24) {
+        lane = i;
+        break;
+      }
+    }
+    if (lane < 0) lane = Random().nextInt(lanes);
+    final it = _FloatItem(
+        text, Color(m.fontColor), _w, lane * _lineHeight() + 4, w);
+    _laneLast[lane] = it;
+    _items.add(it);
+  }
+
+  void _tick(Duration d) {
+    final now = DateTime.now();
+    final dt =
+        _lastT == null ? 0.016 : now.difference(_lastT!).inMicroseconds / 1e6;
+    _lastT = now;
+    if (_items.isEmpty || _w <= 0) return;
+    final sp = widget.c.danmakuSpeed.value;
+    for (int i = _items.length - 1; i >= 0; i--) {
+      final it = _items[i];
+      it.x -= sp * dt;
+      if (it.x + it.w < 0) {
+        _items.removeAt(i);
+        for (int l = 0; l < _laneLast.length; l++) {
+          if (identical(_laneLast[l], it)) _laneLast[l] = null;
+        }
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (ctx, cons) {
+      _w = cons.maxWidth;
+      _h = cons.maxHeight;
+      return IgnorePointer(
+        child: Obx(() {
+          if (!widget.c.showDanmaku.value) return const SizedBox.expand();
+          final op = widget.c.danmakuOpacity.value;
+          final fs = widget.c.danmakuFontSize.value;
+          return SizedBox.expand(
+            child: Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                for (final it in _items)
+                  Positioned(
+                    left: it.x,
+                    top: it.y,
+                    child: Opacity(
+                      opacity: op,
+                      child: Text(
+                        it.text,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: it.color,
+                          fontSize: fs,
+                          fontWeight: FontWeight.w600,
+                          shadows: const [
+                            Shadow(color: Colors.black87, blurRadius: 3),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      );
+    });
+  }
+}
+
 // ================= 弹幕列表 =================
 class _DanmakuList extends StatefulWidget {
-  final LivePlayController? c;
+  final LivePlayController c;
   const _DanmakuList({required this.c});
   @override
   State<_DanmakuList> createState() => _DanmakuListState();
@@ -263,7 +417,7 @@ class _DanmakuListState extends State<_DanmakuList> {
   @override
   void initState() {
     super.initState();
-    _sub = widget.c!.danmakuList.listen((_) {
+    _sub = widget.c.danmakuList.listen((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_sc.hasClients && _sc.position.maxScrollExtent > 0) {
           _sc.jumpTo(_sc.position.maxScrollExtent);
@@ -281,7 +435,7 @@ class _DanmakuListState extends State<_DanmakuList> {
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.c!;
+    final c = widget.c;
     return Obx(() {
       if (c.danmakuList.isEmpty) {
         return Center(
@@ -304,61 +458,56 @@ class _DanmakuListState extends State<_DanmakuList> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            // ★ 房管徽章（最左）
-            if (m.managerType > 0)
-              Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                    color: const Color(0xFFE5484D).withOpacity(0.15),
-                    border: Border.all(
-                        color: const Color(0xFFE5484D).withOpacity(0.4)),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text(m.managerType == 2 ? '超管' : '房管',
-                    style: const TextStyle(
-                        color: Color(0xFFE5484D),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700)),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (m.managerType > 0)
+                Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFE5484D).withOpacity(0.15),
+                        border: Border.all(
+                            color: const Color(0xFFE5484D).withOpacity(0.4)),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Text(m.managerType == 2 ? '超管' : '房管',
+                        style: const TextStyle(
+                            color: Color(0xFFE5484D),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700))),
+              if (m.fansName.isNotEmpty)
+                Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [
+                          const Color(0xFFFF8800).withOpacity(0.25),
+                          const Color(0xFFFF8800).withOpacity(0.1),
+                        ]),
+                        border: Border.all(
+                            color: const Color(0xFFFF8800).withOpacity(0.4)),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Text('${m.fansLevel} ${m.fansName}',
+                        style: const TextStyle(
+                            color: Color(0xFFFF8800),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700))),
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                      text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
+                      style: TextStyle(
+                          color: Color(m.fontColor),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600)),
+                  TextSpan(
+                      text: m.content,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 14)),
+                ]),
               ),
-            // ★ 粉丝牌徽章（昵称左侧）
-            if (m.fansName.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [
-                      const Color(0xFFFF8800).withOpacity(0.25),
-                      const Color(0xFFFF8800).withOpacity(0.1),
-                    ]),
-                    border: Border.all(
-                        color: const Color(0xFFFF8800).withOpacity(0.4)),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text('${m.fansLevel} ${m.fansName}',
-                    style: const TextStyle(
-                        color: Color(0xFFFF8800),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700)),
-              ),
-            Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                    text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
-                    style: TextStyle(
-                        color: Color(m.fontColor),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600)),
-                TextSpan(
-                    text: m.content,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 14)),
-              ]),
-            ),
-          ],
-        ),
+            ]),
       ),
     );
   }
@@ -366,12 +515,11 @@ class _DanmakuListState extends State<_DanmakuList> {
 
 // ================= 主播详情 =================
 class _DetailTab extends StatelessWidget {
-  final LivePlayController? c;
+  final LivePlayController c;
   const _DetailTab({required this.c});
 
   @override
   Widget build(BuildContext context) {
-    final c = this.c!;
     return Obx(() => ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -448,8 +596,7 @@ class _DetailTab extends StatelessWidget {
                   const Icon(Icons.schedule, color: Color(0xFF7ED97E)),
                   const SizedBox(width: 10),
                   const Text('开播时长',
-                      style:
-                          TextStyle(color: Colors.white70, fontSize: 14)),
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
                   const Spacer(),
                   Text(c.liveDurationText.value,
                       style: const TextStyle(
@@ -468,8 +615,7 @@ class _DetailTab extends StatelessWidget {
                   const Icon(Icons.history, color: Colors.white54),
                   const SizedBox(width: 10),
                   const Text('上次开播',
-                      style:
-                          TextStyle(color: Colors.white70, fontSize: 14)),
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
                   const Spacer(),
                   Text(c.lastLiveText,
                       style: const TextStyle(
@@ -501,6 +647,12 @@ class _DetailTab extends StatelessWidget {
         ));
   }
 
+  String _fmt(int v) {
+    if (v >= 100000000) return '${(v / 100000000).toStringAsFixed(1)}亿';
+    if (v >= 10000) return '${(v / 10000).toStringAsFixed(1)}万';
+    return '$v';
+  }
+
   Widget _stat(String v, String label) {
     return Expanded(
       child: Column(children: [
@@ -524,10 +676,4 @@ class _DetailTab extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withOpacity(0.06)),
       );
-
-  String _fmt(int v) {
-    if (v >= 100000000) return '${(v / 100000000).toStringAsFixed(1)}亿';
-    if (v >= 10000) return '${(v / 10000).toStringAsFixed(1)}万';
-    return '$v';
-  }
 }
