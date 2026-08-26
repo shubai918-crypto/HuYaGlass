@@ -381,27 +381,41 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（与网页抓包 1:1 对齐）
+  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（与网页抓包 1:1 嵌套对齐）
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
       final cookie = HuyaLoginManager().cookie;
+      final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
 
+      // 用户信息结构 {0:uid,1:guid,2:"",3:ua,4:cookie,5:0,6:"edg",7:""}
       final uaInfo = _TarsWriter();
-      // ★ tag0 = 登录用户 yyuid（Cookie 里的），未登录才退回房间号
-      uaInfo.writeInt(0, _loginUid > 0 ? _loginUid : _ayyuid);
+      uaInfo.writeInt(0, myUid);
       uaInfo.writeString(1, _guid);
       uaInfo.writeString(2, '');
       uaInfo.writeString(3, _sendHuYaUA);
       uaInfo.writeString(4, cookie);
-      uaInfo.writeString(5, 'edg');
-      uaInfo.writeString(6, '');
+      uaInfo.writeInt(5, 0);
+      uaInfo.writeString(6, 'edg');
+      uaInfo.writeString(7, '');
+
+      // ★ 关键：uaInfo + 房间号 一起套进 tag0 struct
+      final info = _TarsWriter();
+      info.writeStruct(0, uaInfo);
+      info.writeInt(1, _ayyuid);
+      info.writeInt(2, 0);
+      info.writeInt(3, 0);
 
       final req = _TarsWriter();
-      req.writeStruct(0, uaInfo);
-      req.writeInt(1, _ayyuid); // tag1 = 房间 ayyuid
+      req.writeStruct(0, info);
       req.writeInt(2, 0);
-      req.writeInt(3, 0); // ★ tag3 必须是 int 0
+      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0'); // token
+      req.writeInt(4, 0);
+      req.writeInt(5, 0);
+      req.writeString(6, _randHex(32)); // md5
+      req.writeInt(8, 0);
+      req.writeBytesMap(9, const {});
+      req.writeBytesMap(10, const {});
 
       final body = _wupBody('mobileui', 'getRctTimedMessage',
           {'tReq': _treq(req.toBytes())});
@@ -660,7 +674,7 @@ class HuyaDanmakuClient {
             node.values.forEach((v) => collect(v, depth + 1));
           } else if (node is List) {
             if (node.isNotEmpty && node.first is int) {
-              // ★ 关键修复：原始 bytes 块 → 解析成 TARS 再递归
+              // ★ 关键：原始 bytes 块 → 解析成 TARS 再递归
               try {
                 final parsed = _TarsReader(Uint8List.fromList(node.cast<int>()))
                     .readFields();
