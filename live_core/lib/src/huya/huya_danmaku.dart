@@ -27,7 +27,7 @@ class DanmakuMessage {
   });
 }
 
-/// 虎牙弹幕客户端（网页同款握手 + 历史弹幕 getRctTimedMessage）
+/// 虎牙弹幕客户端（全自适应组包 + 历史弹幕 getRctTimedMessage）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -39,18 +39,6 @@ class HuyaDanmakuClient {
     'wsapi.huya.com',
     'cdnws.api.huya.com',
   ];
-
-  /// ★ 网页真实 cmd=33：live 组订阅（8 个扩展类型）
-  static const _SUB33_LIVE =
-      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a08000106126c6976653a31323739353231303533353731180008011893100101194f100101195110010119531001011bc31001011bc41001011bc51001011bca1001180c30010b780c8c2c36004c5c6600';
-
-  /// ★ 网页真实 cmd=33：chat 组订阅（6211 = 历史聊天推送开关）
-  static const _SUB33_CHAT =
-      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a0800010612636861743a313237393532313035333537311800010118431001180c30010b780c8c2c36004c5c6600';
-
-  /// ★ 网页真实 launch.wsTimeSync 请求原包
-  static const _LAUNCH_REQ =
-      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -102,26 +90,61 @@ class HuyaDanmakuClient {
     return List.generate(n, (_) => chars[Random().nextInt(16)]).join();
   }
 
-  List<int> _hexToBytes(String hex) {
-    final out = <int>[];
-    for (var i = 0; i + 1 < hex.length; i += 2) {
-      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
-    }
-    return out;
+  // ================= 自适应组包（替代硬编码模板） =================
+
+  /// ★ launch.wsTimeSync 请求体（动态生成 token/md5）
+  Uint8List _buildLaunchBody() {
+    final inner = _TarsWriter();
+    inner.writeString(0, '');
+    inner.writeInt(1, 1721);
+
+    final req = _TarsWriter();
+    req.writeStruct(0, inner);
+    req.writeInt(2, 0);
+    req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
+    req.writeInt(4, 0);
+    req.writeInt(5, 0);
+    req.writeString(6, _randHex(32));
+    req.writeInt(8, 0);
+    req.writeBytesMap(9, const {});
+    req.writeBytesMap(10, const {});
+
+    // tReq 用裸结构字节，不包 _treq 外壳
+    return _wupBody('launch', 'wsTimeSync', {'tReq': req.toBytes()});
   }
 
-  int _indexOf(List<int> bytes, List<int> pattern) {
-    for (var i = 0; i + pattern.length <= bytes.length; i++) {
-      var ok = true;
-      for (var j = 0; j < pattern.length; j++) {
-        if (bytes[i + j] != pattern[j]) {
-          ok = false;
-          break;
-        }
-      }
-      if (ok) return i;
+  /// ★ cmd=33 分组订阅请求体（guid/房间号动态填入）
+  Uint8List _buildSub33Body(String group, List<int> ids) {
+    // map 值 struct：{1:{id:1...}, 1:{}, 3:1}
+    final val = _TarsWriter();
+    val._head(1, 8);
+    val._intValue(ids.length);
+    for (final id in ids) {
+      val.writeInt(0, id);
+      val.writeInt(1, 1);
     }
-    return -1;
+    val._head(1, 8);
+    val._intValue(0);
+    val.writeInt(3, 1);
+
+    final body = _TarsWriter();
+    body.writeString(0, 'HUYA&ZH&2052');
+    body.writeString(1, _guid);
+    body.writeInt(2, 0);
+    body.writeInt(3, 0);
+    body._head(6, 8);
+    body._intValue(1);
+    body.writeString(0, '$group$_ayyuid');
+    body._b.add(val.toBytes());
+    body._b.addByte(0x0B);
+    body.writeInt(7, 0);
+    body.writeInt(8, 0);
+    body.writeInt(2, 0);
+    body.writeString(3, '');
+    body.writeInt(4, 0);
+    body.writeInt(5, 0);
+    body.writeString(6, '');
+    return body.toBytes();
   }
 
   // ================= DNS 优选 =================
@@ -214,8 +237,8 @@ class HuyaDanmakuClient {
     _send(_buildVerifyCookie());
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
-      _send(_hexToBytes(_LAUNCH_REQ));
-      _dbgPush('Launch(原包) 已发');
+      _send(_wrapWsCmd(_withPrefix(_buildLaunchBody()), 3));
+      _dbgPush('Launch(自适应) 已发');
     });
     Timer(const Duration(milliseconds: 600), () {
       if (_closed) return;
@@ -337,58 +360,24 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
+  /// ★ 订阅实时扩展推送：cmd=33（chat + live，全自适应）
   void _sendSubscribeHistory() {
-    _sendSub33(_SUB33_CHAT);
-    _sendSub33(_SUB33_LIVE);
+    _send(_wrapWsCmd(_buildSub33Body('chat:', const [6211]), 33));
+    _dbgPush('订阅33(chat) 已发');
+    _send(_wrapWsCmd(
+        _buildSub33Body(
+            'live:', const [6291, 6479, 6481, 6483, 7107, 7108, 7109, 7114]),
+        33));
+    _dbgPush('订阅33(live) 已发');
   }
 
-  void _sendSub33(String template) {
-    try {
-      if (_ayyuid <= 0) return;
-      var bytes = _hexToBytes(template);
-
-      if (_guid.length == 32) {
-        final g = utf8.encode(_guid);
-        for (var i = 0; i < 32; i++) {
-          bytes[16 + i] = g[i];
-        }
-      }
-
-      const oldId = '1279521053571';
-      final newId = '$_ayyuid';
-      if (newId != oldId) {
-        for (final prefix in const ['live:', 'chat:']) {
-          final oldStr = utf8.encode('$prefix$oldId');
-          final idx = _indexOf(bytes, oldStr);
-          if (idx > 0) {
-            final newStr = utf8.encode('$prefix$newId');
-            bytes = <int>[
-              ...bytes.sublist(0, idx - 1),
-              newStr.length,
-              ...newStr,
-              ...bytes.sublist(idx + oldStr.length),
-            ];
-          }
-        }
-      }
-
-      final cmd = _TarsWriter();
-      cmd.writeInt(0, 33);
-      cmd.writeBytes(1, bytes);
-      cmd.writeInt(2, ++_reqId);
-      _send(cmd.toBytes());
-      _dbgPush('订阅33(${template == _SUB33_CHAT ? "chat" : "live"}) 已发');
-    } catch (_) {}
-  }
-
-  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（与网页抓包 1:1 嵌套对齐）
+  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（tReq 裸结构）
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
       final cookie = HuyaLoginManager().cookie;
       final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
 
-      // 用户信息结构 {0:uid,1:guid,2:"",3:ua,4:cookie,5:0,6:"edg",7:""}
       final uaInfo = _TarsWriter();
       uaInfo.writeInt(0, myUid);
       uaInfo.writeString(1, _guid);
@@ -399,7 +388,6 @@ class HuyaDanmakuClient {
       uaInfo.writeString(6, 'edg');
       uaInfo.writeString(7, '');
 
-      // ★ 关键：uaInfo + 房间号 一起套进 tag0 struct
       final info = _TarsWriter();
       info.writeStruct(0, uaInfo);
       info.writeInt(1, _ayyuid);
@@ -409,15 +397,14 @@ class HuyaDanmakuClient {
       final req = _TarsWriter();
       req.writeStruct(0, info);
       req.writeInt(2, 0);
-      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0'); // token
+      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
       req.writeInt(4, 0);
       req.writeInt(5, 0);
-      req.writeString(6, _randHex(32)); // md5
+      req.writeString(6, _randHex(32));
       req.writeInt(8, 0);
       req.writeBytesMap(9, const {});
       req.writeBytesMap(10, const {});
 
-      // ★ 关键：tReq 直接用裸结构字节，不要再包 _treq 的 0a…0b 外壳
       final body = _wupBody('mobileui', 'getRctTimedMessage',
           {'tReq': req.toBytes()});
       _send(_wrapWsCmd(_withPrefix(body), 3));
@@ -675,7 +662,6 @@ class HuyaDanmakuClient {
             node.values.forEach((v) => collect(v, depth + 1));
           } else if (node is List) {
             if (node.isNotEmpty && node.first is int) {
-              // ★ 关键：原始 bytes 块 → 解析成 TARS 再递归
               try {
                 final parsed = _TarsReader(Uint8List.fromList(node.cast<int>()))
                     .readFields();
@@ -830,7 +816,6 @@ class HuyaDanmakuClient {
     if (senderRaw is! Map<int, Object?>) return false;
     final sender = senderRaw;
 
-    // ★ uid 可能嵌套：sender[0] = {0:uid}
     dynamic uidVal = sender[0];
     if (uidVal is Map<int, Object?>) uidVal = uidVal[0];
     if (uidVal is! int) return false;
