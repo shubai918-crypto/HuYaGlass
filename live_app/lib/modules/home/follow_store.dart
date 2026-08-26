@@ -1,72 +1,89 @@
 import 'dart:convert';
+import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 订阅主播条目
 class FollowItem {
   final String roomId;
   final String name;
   final String avatar;
-
+  final bool isLive;
   const FollowItem({
     required this.roomId,
     required this.name,
     this.avatar = '',
+    this.isLive = false,
   });
 
-  Map<String, dynamic> toJson() => {
-        'roomId': roomId,
-        'name': name,
-        'avatar': avatar,
-      };
+  FollowItem copyWith({String? name, String? avatar, bool? isLive}) =>
+      FollowItem(
+        roomId: roomId,
+        name: name ?? this.name,
+        avatar: avatar ?? this.avatar,
+        isLive: isLive ?? this.isLive,
+      );
+
+  Map<String, dynamic> toJson() =>
+      {'roomId': roomId, 'name': name, 'avatar': avatar, 'isLive': isLive};
 
   static FollowItem fromJson(Map<String, dynamic> j) => FollowItem(
         roomId: '${j['roomId'] ?? ''}',
         name: '${j['name'] ?? ''}',
         avatar: '${j['avatar'] ?? ''}',
+        isLive: j['isLive'] == true,
       );
 }
 
-/// 订阅数据持久化（SharedPreferences + JSON）
+/// ★ 响应式订阅仓库：add/remove 立即通知 UI，无需重启
 class FollowStore {
-  static const _key = 'huya_follows';
+  FollowStore._();
+  static final FollowStore _i = FollowStore._();
+  static FollowStore get instance => _i;
 
-  static Future<List<FollowItem>> all() async {
-    final sp = await SharedPreferences.getInstance();
-    final raw = sp.getString(_key);
-    if (raw == null || raw.isEmpty) return [];
+  static const _key = 'follow_list_v1';
+
+  final RxList<FollowItem> items = <FollowItem>[].obs;
+  final RxBool refreshing = false.obs;
+
+  static Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key) ?? '';
+    if (raw.isEmpty) return;
     try {
-      final list = jsonDecode(raw) as List;
-      return list
-          .map((e) => FollowItem.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (_) {
-      return [];
-    }
+      final arr = jsonDecode(raw) as List;
+      _i.items.assignAll(arr
+          .whereType<Map<String, dynamic>>()
+          .map((e) => FollowItem.fromJson(e)));
+    } catch (_) {}
   }
 
-  static Future<void> add(FollowItem item) async {
-    final list = await all();
-    list.removeWhere((e) => e.roomId == item.roomId);
-    list.insert(0, item);
-    await _save(list);
+  static Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _key, jsonEncode(_i.items.map((e) => e.toJson()).toList()));
   }
 
-  static Future<void> remove(String roomId) async {
-    final list = await all();
-    list.removeWhere((e) => e.roomId == roomId);
-    await _save(list);
+  static bool isFollowed(String roomId) =>
+      _i.items.any((e) => e.roomId == roomId);
+
+  static void add(FollowItem item) {
+    if (isFollowed(item.roomId)) return;
+    _i.items.add(item);
+    _save();
   }
 
-  static Future<bool> contains(String roomId) async {
-    final list = await all();
-    return list.any((e) => e.roomId == roomId);
+  static void remove(String roomId) {
+    _i.items.removeWhere((e) => e.roomId == roomId);
+    _save();
   }
 
-  // ★ 新增：兼容播放页控制器的调用
-  static Future<bool> isFollowed(String roomId) => contains(roomId);
-
-  static Future<void> _save(List<FollowItem> list) async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.setString(_key, jsonEncode(list.map((e) => e.toJson()).toList()));
+  static void updateLive(String roomId, bool isLive,
+      {String? name, String? avatar}) {
+    final idx = _i.items.indexWhere((e) => e.roomId == roomId);
+    if (idx < 0) return;
+    _i.items[idx] = _i.items[idx].copyWith(
+      isLive: isLive,
+      name: name,
+      avatar: avatar,
+    );
   }
 }
