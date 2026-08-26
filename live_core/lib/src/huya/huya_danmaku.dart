@@ -651,7 +651,7 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕响应：tRsp = [40 条 Message]，逐条入列表
+      // ★ 历史弹幕响应：tRsp = {0:{0:[消息]}} 或 {0:[消息]}，两种嵌套都兼容
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         final sb = f[7];
@@ -666,9 +666,13 @@ class HuyaDanmakuClient {
                 final rsp = _TarsReader(Uint8List.fromList((map[i + 1] as List)
                         .map((e) => (e as int) & 0xFF).toList()))
                     .readFields();
-                final list = rsp[0];
-                if (list is List) {
-                  for (final item in list) {
+                // ★ 关键修复：剥掉外层 struct 再取列表
+                dynamic node = rsp[0];
+                if (node is Map<int, Object?>) {
+                  node = node[0] ?? node[1];
+                }
+                if (node is List) {
+                  for (final item in node) {
                     if (item is Map<int, Object?> && _emitFromFields(item)) {
                       n++;
                     }
