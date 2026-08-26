@@ -417,8 +417,9 @@ class HuyaDanmakuClient {
       req.writeBytesMap(9, const {});
       req.writeBytesMap(10, const {});
 
+      // ★ 关键：tReq 直接用裸结构字节，不要再包 _treq 的 0a…0b 外壳
       final body = _wupBody('mobileui', 'getRctTimedMessage',
-          {'tReq': _treq(req.toBytes())});
+          {'tReq': req.toBytes()});
       _send(_wrapWsCmd(_withPrefix(body), 3));
       _dbgPush('请求历史弹幕 已发');
     } catch (_) {}
