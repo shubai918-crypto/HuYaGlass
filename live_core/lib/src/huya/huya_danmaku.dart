@@ -67,7 +67,7 @@ class HuyaDanmakuClient {
   String _roomIdStr = '';
   bool _verified = false;
   bool _registered = false;
-  bool _rctOk = false; // ★ 历史弹幕是否获取成功标志
+  bool _rctOk = false;
   String _traceId = '';
 
   int _loginUid = 0;
@@ -381,33 +381,27 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage
+  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（与网页抓包 1:1 对齐）
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
       final cookie = HuyaLoginManager().cookie;
 
       final uaInfo = _TarsWriter();
-      uaInfo.writeInt(0, _ayyuid);
+      // ★ tag0 = 登录用户 yyuid（Cookie 里的），未登录才退回房间号
+      uaInfo.writeInt(0, _loginUid > 0 ? _loginUid : _ayyuid);
       uaInfo.writeString(1, _guid);
       uaInfo.writeString(2, '');
       uaInfo.writeString(3, _sendHuYaUA);
       uaInfo.writeString(4, cookie);
       uaInfo.writeString(5, 'edg');
       uaInfo.writeString(6, '');
-      uaInfo.writeString(7, '');
 
       final req = _TarsWriter();
       req.writeStruct(0, uaInfo);
-      req.writeInt(1, _ayyuid);
+      req.writeInt(1, _ayyuid); // tag1 = 房间 ayyuid
       req.writeInt(2, 0);
-      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
-      req.writeInt(4, 0);
-      req.writeInt(5, 0);
-      req.writeString(6, _randHex(32));
-      req.writeInt(8, 0);
-      req.writeBytesMap(9, const {});
-      req.writeBytesMap(10, const {});
+      req.writeInt(3, 0); // ★ tag3 必须是 int 0
 
       final body = _wupBody('mobileui', 'getRctTimedMessage',
           {'tReq': _treq(req.toBytes())});
@@ -654,10 +648,10 @@ class HuyaDanmakuClient {
           if (node is Map<int, Object?>) {
             Map<int, Object?>? msgNode;
             if (node[3] is String && node[0] is Map<int, Object?>) {
-              msgNode = node; // 标准布局 {0:sender,3:content}
+              msgNode = node;
             } else if (node[0] is Map<int, Object?> &&
                 (node[0] as Map<int, Object?>)[3] is String) {
-              msgNode = node[0] as Map<int, Object?>; // 多套一层的布局
+              msgNode = node[0] as Map<int, Object?>;
             }
             if (msgNode != null) {
               if (_emitFromFields(msgNode)) {
@@ -801,7 +795,6 @@ class HuyaDanmakuClient {
 
   /// ★ 弹幕发射器：实时/历史共用，自动兼容历史包多套的一层 struct
   bool _emitFromFields(Map<int, Object?> fields) {
-    // ★ 历史包整体多嵌套一层：fields[0] = {0:sender, 3:content, ...}
     Map<int, Object?> msg = fields;
     if (fields[3] is! String && fields[0] is Map<int, Object?>) {
       final inner = fields[0] as Map<int, Object?>;
@@ -813,7 +806,6 @@ class HuyaDanmakuClient {
 
     var sender = msg[0];
     if (sender is! Map<int, Object?>) return false;
-    // 历史包 sender 还多一层：{0:{0:uid,2:昵称,4:头像}}
     if (sender[0] is Map<int, Object?>) {
       sender = sender[0] as Map<int, Object?>;
     }
