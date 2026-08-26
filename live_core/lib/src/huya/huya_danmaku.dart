@@ -48,6 +48,10 @@ class HuyaDanmakuClient {
   static const _SUB33_CHAT =
       '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a0800010612636861743a313237393532313035333537311800010118431001180c30010b780c8c2c36004c5c6600';
 
+  /// ★ 网页真实 launch.wsTimeSync 请求原包
+  static const _LAUNCH_REQ =
+      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
+
   WebSocket? _ws;
   Timer? _heartTimer;
   Timer? _reconnectTimer;
@@ -63,6 +67,7 @@ class HuyaDanmakuClient {
   String _roomIdStr = '';
   bool _verified = false;
   bool _registered = false;
+  bool _rctOk = false; // ★ 历史弹幕是否获取成功标志
   String _traceId = '';
 
   int _loginUid = 0;
@@ -159,6 +164,7 @@ class HuyaDanmakuClient {
     _roomIdStr = roomIdStr;
     _verified = false;
     _registered = false;
+    _rctOk = false;
     _cmdSeq = 0;
 
     _cookie = HuyaLoginManager().cookie;
@@ -219,9 +225,13 @@ class HuyaDanmakuClient {
       if (_closed) return;
       _sendSubscribeHistory();
     });
-    Timer(const Duration(milliseconds: 1200), () {
-      if (_closed) return;
-      _sendRctTimedMessage();
+    // ★ 1.5s 首次请求历史弹幕
+    Timer(const Duration(milliseconds: 1500), () {
+      if (!_closed) _sendRctTimedMessage();
+    });
+    // ★ 4.5s 若未获取到历史弹幕，自动重试一次
+    Timer(const Duration(milliseconds: 4500), () {
+      if (!_closed && !_rctOk) _sendRctTimedMessage();
     });
 
     _heartTimer?.cancel();
@@ -230,10 +240,6 @@ class HuyaDanmakuClient {
       _sendHeartbeat();
     });
   }
-
-  /// ★ 网页真实 launch.wsTimeSync 请求原包
-  static const _LAUNCH_REQ =
-      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
 
   void _sendRegister() {
     _send(_buildRegisterGroup());
@@ -395,17 +401,13 @@ class HuyaDanmakuClient {
       req.writeStruct(0, uaInfo);
       req.writeInt(1, _ayyuid);
       req.writeInt(2, 0);
-      req.writeInt(3, 0);
-      req.writeInt(8, 0);
-      req._head(9, 8);
-      req._intValue(0);
-      req._head(10, 8);
-      req._intValue(0);
-      req.writeInt(2, 0);
       req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
       req.writeInt(4, 0);
       req.writeInt(5, 0);
       req.writeString(6, _randHex(32));
+      req.writeInt(8, 0);
+      req.writeBytesMap(9, const {});
+      req.writeBytesMap(10, const {});
 
       final body = _wupBody('mobileui', 'getRctTimedMessage',
           {'tReq': _treq(req.toBytes())});
@@ -643,39 +645,39 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕响应：tRsp = {0:{0:[N条]}}，剥两层
+      // ★ 历史弹幕：全树递归收集消息体（不依赖层级/键名）
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
-        final sb = f[7];
-        if (sb is List) {
-          try {
-            final inner = _TarsReader(Uint8List.fromList(
-                    sb.map((e) => (e as int) & 0xFF).toList()))
-                .readFields();
-            final map = inner[0];
-            if (map is List) {
-              for (var i = 0; i + 1 < map.length; i += 2) {
-                if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
-                  final rsp = _TarsReader(Uint8List.fromList((map[i + 1] as List)
-                          .map((e) => (e as int) & 0xFF).toList()))
-                      .readFields();
-                  dynamic node = rsp[0];
-                  if (node is Map<int, Object?>) {
-                    node = node[0] ?? node[1];
-                  }
-                  if (node is List) {
-                    for (final item in node) {
-                      if (item is Map<int, Object?> && _emitFromFields(item)) {
-                        n++;
-                      }
-                    }
-                  }
-                }
+        int listLen = -1;
+        void collect(dynamic node, int depth) {
+          if (depth > 8) return;
+          if (node is Map<int, Object?>) {
+            Map<int, Object?>? msgNode;
+            if (node[3] is String && node[0] is Map<int, Object?>) {
+              msgNode = node; // 标准布局 {0:sender,3:content}
+            } else if (node[0] is Map<int, Object?> &&
+                (node[0] as Map<int, Object?>)[3] is String) {
+              msgNode = node[0] as Map<int, Object?>; // 多套一层的布局
+            }
+            if (msgNode != null) {
+              if (_emitFromFields(msgNode)) {
+                n++;
+                return;
               }
             }
-          } catch (_) {}
+            node.values.forEach((v) => collect(v, depth + 1));
+          } else if (node is List) {
+            if (listLen < 0 && node.isNotEmpty && node.first is Map<int, Object?>) {
+              listLen = node.length;
+            }
+            node.forEach((v) => collect(v, depth + 1));
+          }
         }
-        _dbgPush('历史弹幕 $n 条');
+
+        final sb = f[7];
+        if (sb is List) collect(sb, 0);
+        if (n > 0) _rctOk = true;
+        _dbgPush('历史弹幕 $n 条(list=$listLen)');
         return;
       }
 
