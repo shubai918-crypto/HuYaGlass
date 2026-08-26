@@ -129,7 +129,8 @@ class _HomePageState extends State<HomePage> {
                 SearchPage(
                   onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
                       nickname: nickname, avatarUrl: avatarUrl),
-                  isFollowed: (roomId) => FollowStore.contains(roomId),
+                  // ★ 修复：加上 async 匹配 Future<bool> 签名
+                  isFollowed: (roomId) async => FollowStore.contains(roomId),
                   onToggleFollow: (roomId, follow, nickname, avatar) async {
                     if (follow) {
                       await FollowStore.add(FollowItem(
@@ -376,7 +377,7 @@ class _OpaqueContentCard extends StatelessWidget {
   }
 }
 
-// ================= 订阅 Tab (★ 响应式 + 分组 + 刷新) =================
+// ================= 订阅 Tab =================
 class _FollowsView extends StatefulWidget {
   const _FollowsView();
   @override
