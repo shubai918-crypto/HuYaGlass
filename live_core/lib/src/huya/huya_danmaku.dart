@@ -206,7 +206,6 @@ class HuyaDanmakuClient {
     ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
 
     _send(_buildVerifyCookie());
-    // ★ Launch：网页真实 wsTimeSync 原包（字节级复用）
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
       _send(_hexToBytes(_LAUNCH_REQ));
@@ -220,7 +219,6 @@ class HuyaDanmakuClient {
       if (_closed) return;
       _sendSubscribeHistory();
     });
-    // ★ 1.2s 请求历史弹幕（网页同款 getRctTimedMessage）
     Timer(const Duration(milliseconds: 1200), () {
       if (_closed) return;
       _sendRctTimedMessage();
@@ -233,7 +231,7 @@ class HuyaDanmakuClient {
     });
   }
 
-  /// ★ 网页真实 launch.wsTimeSync 请求原包（不含房间号，直接复用）
+  /// ★ 网页真实 launch.wsTimeSync 请求原包
   static const _LAUNCH_REQ =
       '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
 
@@ -273,13 +271,6 @@ class HuyaDanmakuClient {
     return out.toBytes();
   }
 
-  Uint8List _buildLaunchReq() {
-    final req = _TarsWriter();
-    req.writeString(0, '');
-    req.writeInt(1, 668);
-    return req.toBytes();
-  }
-
   Uint8List _buildVerifyCookie() {
     final req = _TarsWriter();
     req.writeInt(0, _loginUid);
@@ -317,7 +308,6 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
   }
 
-  /// ★ 网页同款心跳：onlineui.OnUserHeartBeat（带 Cookie）
   void _sendUserHeartBeat() {
     try {
       final cookie = HuyaLoginManager().cookie;
@@ -341,7 +331,6 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 订阅实时扩展推送：cmd=33（chat + live 双模板）
   void _sendSubscribeHistory() {
     _sendSub33(_SUB33_CHAT);
     _sendSub33(_SUB33_LIVE);
@@ -386,25 +375,25 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（按抓包结构 1:1 还原）
+  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
       final cookie = HuyaLoginManager().cookie;
 
       final uaInfo = _TarsWriter();
-      uaInfo.writeInt(0, _ayyuid); // tag0 = 房间 ayyuid
-      uaInfo.writeString(1, _guid); // tag1 = guid
-      uaInfo.writeString(2, ''); // tag2 = ""
-      uaInfo.writeString(3, _sendHuYaUA); // tag3 = ua
-      uaInfo.writeString(4, cookie); // tag4 = 完整 Cookie
-      uaInfo.writeString(5, 'edg'); // tag5 = "edg"
-      uaInfo.writeString(6, ''); // tag6 = ""
-      uaInfo.writeString(7, ''); // tag7 = ""
+      uaInfo.writeInt(0, _ayyuid);
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(2, '');
+      uaInfo.writeString(3, _sendHuYaUA);
+      uaInfo.writeString(4, cookie);
+      uaInfo.writeString(5, 'edg');
+      uaInfo.writeString(6, '');
+      uaInfo.writeString(7, '');
 
       final req = _TarsWriter();
       req.writeStruct(0, uaInfo);
-      req.writeInt(1, _ayyuid); // tag1 = 房间 ayyuid
+      req.writeInt(1, _ayyuid);
       req.writeInt(2, 0);
       req.writeInt(3, 0);
       req.writeInt(8, 0);
@@ -413,10 +402,10 @@ class HuyaDanmakuClient {
       req._head(10, 8);
       req._intValue(0);
       req.writeInt(2, 0);
-      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0'); // token
+      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
       req.writeInt(4, 0);
       req.writeInt(5, 0);
-      req.writeString(6, _randHex(32)); // md5 占位
+      req.writeString(6, _randHex(32));
 
       final body = _wupBody('mobileui', 'getRctTimedMessage',
           {'tReq': _treq(req.toBytes())});
@@ -654,7 +643,7 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕响应：tRsp = {0:{0:[N条消息]}}，剥两层取列表
+      // ★ 历史弹幕响应：tRsp = {0:{0:[N条]}}，剥两层
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         final sb = f[7];
@@ -672,7 +661,7 @@ class HuyaDanmakuClient {
                       .readFields();
                   dynamic node = rsp[0];
                   if (node is Map<int, Object?>) {
-                    node = node[0] ?? node[1]; // ★ 关键：剥第二层 struct
+                    node = node[0] ?? node[1];
                   }
                   if (node is List) {
                     for (final item in node) {
@@ -743,7 +732,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 统一推送解析：兼容批量包 / 直推包 / 整包直解
   void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
@@ -809,13 +797,26 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 弹幕发射器：实时/历史共用（sender 遍历取昵称/头像，tag3 正文）
+  /// ★ 弹幕发射器：实时/历史共用，自动兼容历史包多套的一层 struct
   bool _emitFromFields(Map<int, Object?> fields) {
-    final sender = fields[0];
-    final content = fields[3];
-    if (sender is! Map<int, Object?>) return false;
+    // ★ 历史包整体多嵌套一层：fields[0] = {0:sender, 3:content, ...}
+    Map<int, Object?> msg = fields;
+    if (fields[3] is! String && fields[0] is Map<int, Object?>) {
+      final inner = fields[0] as Map<int, Object?>;
+      if (inner[3] is String) msg = inner;
+    }
+
+    final content = msg[3];
     if (content is! String || content.isEmpty) return false;
-    if (sender[0] is! int) return false;
+
+    var sender = msg[0];
+    if (sender is! Map<int, Object?>) return false;
+    // 历史包 sender 还多一层：{0:{0:uid,2:昵称,4:头像}}
+    if (sender[0] is Map<int, Object?>) {
+      sender = sender[0] as Map<int, Object?>;
+    }
+    final uidVal = sender[0];
+    if (uidVal is! int) return false;
 
     String nick = '';
     String avatar = '';
@@ -832,7 +833,7 @@ class HuyaDanmakuClient {
 
     int color = 0;
     for (final k in const [6, 5, 4]) {
-      final cf = fields[k];
+      final cf = msg[k];
       if (cf is Map<int, Object?>) {
         if (cf[0] is int && (cf[0] as int) >= 0x10000 && (cf[0] as int) <= 0xFFFFFF) {
           color = cf[0] as int;
@@ -849,7 +850,7 @@ class HuyaDanmakuClient {
     }
 
     int managerType = 0;
-    final mt = fields[7];
+    final mt = msg[7];
     if (mt is int && mt > 0 && mt <= 3) managerType = mt;
 
     String fansName = '';
@@ -893,14 +894,14 @@ class HuyaDanmakuClient {
       }
     }
 
-    findFans(fields, 0);
+    findFans(msg, 0);
 
     _controller.add(DanmakuMessage(
       nickname: nick,
       content: content,
       fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
       avatar: avatar,
-      uid: sender[0] as int,
+      uid: uidVal,
       fansName: fansName,
       fansLevel: fansLevel,
       managerType: managerType,
