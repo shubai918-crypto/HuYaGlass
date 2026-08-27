@@ -90,6 +90,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
+        // ★ 1.0.0 统一导航：GlassTabBar.bottom() + GlassTab
         bottomBar: GlassTabBar.bottom(
           adaptiveBrightness: true,
           selectedIndex: _selectedIndex,
@@ -129,7 +130,6 @@ class _HomePageState extends State<HomePage> {
                 SearchPage(
                   onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
                       nickname: nickname, avatarUrl: avatarUrl),
-                  // ★ 修复：加上 async 匹配 Future<bool> 签名
                   isFollowed: (roomId) async => FollowStore.contains(roomId),
                   onToggleFollow: (roomId, follow, nickname, avatar) async {
                     if (follow) {
@@ -377,7 +377,7 @@ class _OpaqueContentCard extends StatelessWidget {
   }
 }
 
-// ================= 订阅 Tab =================
+// ================= 订阅 Tab（响应式 + 分组 + 刷新） =================
 class _FollowsView extends StatefulWidget {
   const _FollowsView();
   @override
@@ -500,7 +500,7 @@ class _FollowsViewState extends State<_FollowsView> {
       final all = FollowStore.instance.items.toList();
       final live = all.where((e) => e.isLive).toList();
       final offline = all.where((e) => !e.isLive).toList();
-      
+
       if (all.isEmpty && !FollowStore.instance.refreshing.value) {
         return const Center(
           child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
@@ -529,8 +529,8 @@ class _FollowsViewState extends State<_FollowsView> {
               ),
             ]),
             const SizedBox(height: 12),
-            _section('🔴 开播中 (${live.length})', live),
-            _section('⚪️ 未开播 (${offline.length})', offline),
+            _section('开播中 (${live.length})', live),
+            _section('未开播 (${offline.length})', offline),
           ],
         ),
       );
@@ -567,7 +567,7 @@ class _SettingsView extends StatelessWidget {
           icon: Icons.info_outline,
           color: Colors.white70,
           label: '关于',
-          sub: 'HuyaLive · 液态玻璃版 · 参考 pure_live / dtv',
+          sub: 'HuyaLive · 液态玻璃 1.0.0 · 参考 pure_live / dtv',
           onTap: () {},
         ),
       ],
