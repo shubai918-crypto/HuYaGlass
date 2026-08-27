@@ -14,8 +14,8 @@ class DanmakuMessage {
   final int uid;
   final String fansName;
   final int fansLevel;
-  final int managerType; // 0=无 1=房管 2=超管
-  final List<String> badgeUrls; // ★ 贵族/粉钻等装饰图（有序）
+  final int managerType;
+  final List<String> badgeUrls;
   final bool isHistory;
 
   DanmakuMessage({
@@ -31,18 +31,15 @@ class DanmakuMessage {
     this.isHistory = false,
   });
 
-  // ★ 网页版徽章资源兜底
   static const kBadgeManager =
       'https://livewebbs2.msstatic.com/newfangguan_3.png';
 
-  // ★ 内置表情兜底表（优先使用 emoteRegistry）
   static const Map<String, String> emoteMap = {
     '大哭':
         'https://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
   };
 }
 
-/// 虎牙弹幕客户端（DNS优选 + 全自适应组包 + 历史弹幕 + 表情包映射）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -89,7 +86,7 @@ class HuyaDanmakuClient {
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
   void Function(String)? onSendDebug;
-  void Function()? onEmoteReady; // ★ 表情字典就绪回调
+  void Function()? onEmoteReady;
 
   /// ★ 全局表情注册表：[名字] -> 图片URL
   static final Map<String, String> emoteRegistry = {};
@@ -97,8 +94,8 @@ class HuyaDanmakuClient {
   final List<String> _dbg = [];
   void _dbgPush(String s) {
     _dbg.add(s);
-    if (_dbg.length > 6) _dbg.removeAt(0);
-    onSendDebug?.call(_dbg.join(' | '));
+    if (_dbg.length > 30) _dbg.removeAt(0);
+    onSendDebug?.call(_dbg.join('\n'));
   }
 
   final StreamController<DanmakuMessage> _controller =
@@ -141,19 +138,17 @@ class HuyaDanmakuClient {
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
     final cost = <String, int>{};
-
     await Future.wait(hosts.map((h) async {
       final sw = Stopwatch()..start();
       try {
-        final addrs =
-            await InternetAddress.lookup(h).timeout(const Duration(seconds: 2));
+        final addrs = await InternetAddress.lookup(h)
+            .timeout(const Duration(seconds: 2));
         sw.stop();
         cost[h] = addrs.isNotEmpty ? sw.elapsedMilliseconds : -1;
       } catch (_) {
         cost[h] = -1;
       }
     }));
-
     final ok = hosts.where((h) => (cost[h] ?? -1) >= 0).toList()
       ..sort((a, b) => cost[a]! - cost[b]!);
     final bad = hosts.where((h) => (cost[h] ?? -1) < 0);
@@ -241,7 +236,7 @@ class HuyaDanmakuClient {
       _sendSubscribeHistory();
     });
     Timer(const Duration(milliseconds: 1200), () {
-      if (!_closed) _requestEmoticonPackage(); // ★ 拉取表情包
+      if (!_closed) _requestEmoticonPackage();
     });
     Timer(const Duration(milliseconds: 1500), () {
       if (!_closed) _sendRctTimedMessage();
@@ -369,14 +364,12 @@ class HuyaDanmakuClient {
     try {
       if (_ayyuid <= 0) return;
       var bytes = _hexToBytes(template);
-
       if (_guid.length == 32) {
         final g = utf8.encode(_guid);
         for (var i = 0; i < 32; i++) {
           bytes[16 + i] = g[i];
         }
       }
-
       const oldId = '1279521053571';
       final newId = '$_ayyuid';
       if (newId != oldId) {
@@ -394,7 +387,6 @@ class HuyaDanmakuClient {
           }
         }
       }
-
       final cmd = _TarsWriter();
       cmd.writeInt(0, 33);
       cmd.writeBytes(1, bytes);
@@ -404,7 +396,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 拉取虎牙全量表情包映射
+  /// ★ 请求表情包
   void _requestEmoticonPackage() {
     try {
       final uaInfo = _TarsWriter();
@@ -433,7 +425,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 历史弹幕：mobileui.getRctTimedMessage（嵌套 tReq）
+  /// ★ 历史弹幕请求
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
@@ -486,7 +478,6 @@ class HuyaDanmakuClient {
       final req = _buildSendReq(text);
       final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
       final framed = _withPrefix(body);
-
       _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
       _dbgPush('WS 已发');
       return true;
@@ -561,7 +552,6 @@ class HuyaDanmakuClient {
   Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
-
     final wup = _TarsWriter();
     wup.writeInt(1, 3);
     wup.writeInt(2, 0);
@@ -703,52 +693,37 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 表情包映射解析
+      // ★ 表情包：正则直配对（名字→紧随其后的 png URL）
       if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
+        final s = utf8.decode(bytes, allowMalformed: true);
+        final reg = RegExp(
+            r'\[([^\[\]]{1,12})\]|(https?://[^\s\u0000-\u001f"<>\\]+?\.png)');
+        String? pending;
         int cnt = 0;
-        void walk(dynamic node, int depth) {
-          if (depth > 10) return;
-          if (node is Map<int, Object?>) {
-            final name = node[1];
-            String? url;
-            if (node[3] is String && (node[3] as String).startsWith('http')) {
-              url = node[3] as String;
-            } else if (node[4] is String && (node[4] as String).startsWith('http')) {
-              url = node[4] as String;
-            }
-            if (name is String && name.startsWith('[') && url != null) {
-              emoteRegistry[name] = url;
+        for (final m in reg.allMatches(s)) {
+          if (m.group(1) != null) {
+            pending = '[${m.group(1)}]';
+          } else if (m.group(2) != null && pending != null) {
+            if (!emoteRegistry.containsKey(pending)) {
+              emoteRegistry[pending!] = m.group(2)!;
               cnt++;
             }
-            node.values.forEach((v) => walk(v, depth + 1));
-          } else if (node is List) {
-            if (node.isNotEmpty && node.first is int) {
-              try {
-                walk(_TarsReader(Uint8List.fromList(node.cast<int>())).readFields(),
-                    depth + 1);
-              } catch (_) {}
-            } else {
-              node.forEach((v) => walk(v, depth + 1));
-            }
+            pending = null;
           }
         }
-
-        final sb = f[7];
-        if (sb is List) walk(sb, 0);
-        if (cnt > 0) {
-          _dbgPush('表情 $cnt 个');
-          onEmoteReady?.call();
-        }
+        _dbgPush('表情 ${emoteRegistry.length} 个(新增$cnt)');
+        if (cnt > 0) onEmoteReady?.call();
         return;
       }
 
-      // ★ 历史弹幕
+      // ★ 历史弹幕：TARS 收集 + 多模式兜底
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         int listLen = -1;
         void collect(dynamic node, int depth) {
-          if (depth > 8) return;
+          if (depth > 14 || n > 60) return;
           if (node is Map<int, Object?>) {
+            // 模式A：{0:sender,3:content}
             Map<int, Object?>? msgNode;
             if (node[3] is String && node[0] is Map<int, Object?>) {
               msgNode = node;
@@ -757,6 +732,19 @@ class HuyaDanmakuClient {
               msgNode = node[0] as Map<int, Object?>;
             }
             if (msgNode != null && _emitFromFields(msgNode, history: true)) {
+              n++;
+              return;
+            }
+            // 模式B：{5:nick,6:content}
+            final nk = node[5];
+            final ct = node[6];
+            if (nk is String &&
+                ct is String &&
+                nk.isNotEmpty &&
+                ct.isNotEmpty &&
+                ct != nk) {
+              _controller.add(DanmakuMessage(
+                  nickname: nk, content: ct, isHistory: true));
               n++;
               return;
             }
@@ -798,7 +786,6 @@ class HuyaDanmakuClient {
                   (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList());
               final rsp = _TarsReader(rspBytes).readFields();
               ret = rsp[0] is int ? rsp[0] as int : -99;
-
               if (servant == 'launch' && ret == 0) {
                 _parseLaunchRsp(rsp);
               }
@@ -807,12 +794,11 @@ class HuyaDanmakuClient {
         }
       }
       _dbgPush('WupRsp $servant.$func iRet=$ret');
-    } catch (_) {
-      _dbgPush('WupRsp 解析失败');
+    } catch (e) {
+      _dbgPush('WupRsp 解析异常:$e');
     }
   }
 
-  /// ★ 动态节点更新
   void _parseLaunchRsp(Map<int, Object?> rsp) {
     final newHosts = <String>[];
     for (final entry in rsp.entries) {
@@ -831,7 +817,6 @@ class HuyaDanmakuClient {
         }
       }
     }
-
     if (newHosts.isNotEmpty) {
       _dynamicHosts = newHosts.toSet().toList();
       _dbgPush('动态节点更新: ${_dynamicHosts.length}个');
@@ -841,7 +826,6 @@ class HuyaDanmakuClient {
   void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
-
       for (final key in const [1, 0, 2]) {
         final v = f[key];
         if (v is List && v.isNotEmpty) {
@@ -861,7 +845,6 @@ class HuyaDanmakuClient {
           if (isItemList) return;
         }
       }
-
       final uri = f[1] is int ? f[1] as int : 1400;
       final raw = f[2];
       if (raw is List) {
@@ -871,7 +854,6 @@ class HuyaDanmakuClient {
         _routePush(uri, raw);
         return;
       }
-
       if (f[3] is String || f[0] is Map<int, Object?>) {
         _decodeDanmaku(payload);
       }
@@ -903,21 +885,17 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 弹幕发射器：uid 可嵌套；收集粉丝牌/徽章图
   bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
     if (fields[3] is! String && fields[0] is Map<int, Object?>) {
       final inner = fields[0] as Map<int, Object?>;
       if (inner[3] is String) msg = inner;
     }
-
     final content = msg[3];
     if (content is! String || content.isEmpty) return false;
-
     final senderRaw = msg[0];
     if (senderRaw is! Map<int, Object?>) return false;
     final sender = senderRaw;
-
     dynamic uidVal = sender[0];
     if (uidVal is Map<int, Object?>) uidVal = uidVal[0];
     if (uidVal is! int) return false;
@@ -967,7 +945,7 @@ class HuyaDanmakuClient {
         s != nick &&
         s != content;
     void findFans(dynamic node, int depth) {
-      if (fansName.isNotEmpty || depth > 6) return;
+      if (fansName.isNotEmpty || depth > 8) return;
       if (node is Map<int, Object?>) {
         if (isName(node[3]) && node[4] is int && node[4] as int >= 1 && node[4] as int <= 99) {
           fansName = node[3] as String;
@@ -979,10 +957,7 @@ class HuyaDanmakuClient {
           fansLevel = node[3] as int;
           return;
         }
-        for (final e in node.entries) {
-          if (depth == 0 && e.key == 0) continue;
-          findFans(e.value, depth + 1);
-        }
+        node.values.forEach((v) => findFans(v, depth + 1));
       } else if (node is List) {
         if (node.isNotEmpty && node.first is int) {
           try {
@@ -991,19 +966,16 @@ class HuyaDanmakuClient {
             if (inner.isNotEmpty) findFans(inner, depth + 1);
           } catch (_) {}
         } else {
-          for (final e in node) {
-            findFans(e, depth + 1);
-          }
+          node.forEach((v) => findFans(v, depth + 1));
         }
       }
     }
 
     findFans(msg, 0);
 
-    // ★ 收集装饰徽章图：贵族→粉钻→房管
     final found = <String>[];
     void findBadges(dynamic node, int depth) {
-      if (depth > 6) return;
+      if (depth > 8) return;
       if (node is Map<int, Object?>) {
         node.values.forEach((v) => findBadges(v, depth + 1));
       } else if (node is List) {
@@ -1061,14 +1033,12 @@ class HuyaDanmakuClient {
     return true;
   }
 
-  /// ★ 历史条目兜底
   void _decodeHistoryDanmaku(List<int> payload) {
     try {
       final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
       final nick = fields[5] is String ? fields[5] as String : '';
       final content = fields[6] is String ? fields[6] as String : '';
       if (nick.isEmpty || content.isEmpty || content == nick) return;
-
       String avatar = '';
       for (final v in fields.values) {
         if (v is String && v.startsWith('http')) {
@@ -1076,7 +1046,6 @@ class HuyaDanmakuClient {
           break;
         }
       }
-
       _controller.add(DanmakuMessage(
         nickname: nick,
         content: content,
@@ -1090,7 +1059,6 @@ class HuyaDanmakuClient {
 // ================= Tars 编码 =================
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
-
   void _head(int tag, int type) {
     if (tag < 15) {
       _b.addByte((tag << 4) | type);
@@ -1112,6 +1080,16 @@ class _TarsWriter {
     for (var i = n - 1; i >= 0; i--) {
       _b.addByte((v >> (8 * i)) & 0xFF);
     }
+  }
+
+  void _intValue(int v) {
+    final t = _intType(v);
+    if (t == 12) {
+      _b.addByte(0x0C);
+      return;
+    }
+    _b.addByte(t);
+    _add(v, [1, 2, 4, 8][t]);
   }
 
   void writeInt(int tag, int v) {
@@ -1178,16 +1156,6 @@ class _TarsWriter {
     _head(tag, 10);
     _b.add(inner._b.toBytes());
     _b.addByte(0x0B);
-  }
-
-  void _intValue(int v) {
-    final t = _intType(v);
-    if (t == 12) {
-      _b.addByte(0x0C);
-      return;
-    }
-    _b.addByte(t);
-    _add(v, [1, 2, 4, 8][t]);
   }
 
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
