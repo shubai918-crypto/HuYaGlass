@@ -944,14 +944,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                       top: fullscreen ? 60 : 12,
                       child: _controlBtn(Icons.lock, toggleLock,
                           selected: true, size: 40)),
-                if (!fullscreen)
-                  Positioned(
-                      left: 8,
-                      top: 8,
-                      right: 8,
-                      child: Text(debugInfo.value,
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 10))),
               ])));
     });
   }
