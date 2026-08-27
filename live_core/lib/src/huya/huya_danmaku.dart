@@ -15,7 +15,9 @@ class DanmakuMessage {
   final String fansName;
   final int fansLevel;
   final int managerType; // 0=无 1=房管 2=超管
-  final bool isHistory; // ★ 历史弹幕只进列表，不飘屏
+  final List<String> badgeUrls; // ★ 贵族/粉钻等装饰图（有序）
+  final bool isHistory;
+
   DanmakuMessage({
     required this.nickname,
     required this.content,
@@ -25,11 +27,22 @@ class DanmakuMessage {
     this.fansName = '',
     this.fansLevel = 0,
     this.managerType = 0,
+    this.badgeUrls = const [],
     this.isHistory = false,
   });
+
+  // ★ 网页版徽章资源兜底
+  static const kBadgeManager =
+      'https://livewebbs2.msstatic.com/newfangguan_3.png';
+
+  // ★ 内置表情兜底表（优先使用 emoteRegistry）
+  static const Map<String, String> emoteMap = {
+    '大哭':
+        'https://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
+  };
 }
 
-/// 虎牙弹幕客户端（全自适应组包 + 历史弹幕 getRctTimedMessage）
+/// 虎牙弹幕客户端（DNS优选 + 全自适应组包 + 历史弹幕 + 表情包映射）
 class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
@@ -41,6 +54,12 @@ class HuyaDanmakuClient {
     'wsapi.huya.com',
     'cdnws.api.huya.com',
   ];
+
+  static const _SUB33_LIVE =
+      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a08000106126c6976653a31323739353231303533353731180008011893100101194f100101195110010119531001011bc31001011bc41001011bc51001011bca1001180c30010b780c8c2c36004c5c6600';
+
+  static const _SUB33_CHAT =
+      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a0800010612636861743a313237393532313035333537311800010118431001180c30010b780c8c2c36004c5c6600';
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -70,6 +89,10 @@ class HuyaDanmakuClient {
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
   void Function(String)? onSendDebug;
+  void Function()? onEmoteReady; // ★ 表情字典就绪回调
+
+  /// ★ 全局表情注册表：[名字] -> 图片URL
+  static final Map<String, String> emoteRegistry = {};
 
   final List<String> _dbg = [];
   void _dbgPush(String s) {
@@ -92,59 +115,26 @@ class HuyaDanmakuClient {
     return List.generate(n, (_) => chars[Random().nextInt(16)]).join();
   }
 
-  // ================= 自适应组包 =================
-
-  /// ★ launch.wsTimeSync 请求体（动态生成 token/md5）
-  Uint8List _buildLaunchBody() {
-    final inner = _TarsWriter();
-    inner.writeString(0, '');
-    inner.writeInt(1, 1721);
-
-    final req = _TarsWriter();
-    req.writeStruct(0, inner);
-    req.writeInt(2, 0);
-    req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
-    req.writeInt(4, 0);
-    req.writeInt(5, 0);
-    req.writeString(6, _randHex(32));
-    req.writeInt(8, 0);
-    req.writeBytesMap(9, const {});
-    req.writeBytesMap(10, const {});
-
-    return _wupBody('launch', 'wsTimeSync', {'tReq': req.toBytes()});
+  List<int> _hexToBytes(String hex) {
+    final out = <int>[];
+    for (var i = 0; i + 1 < hex.length; i += 2) {
+      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return out;
   }
 
-  /// ★ cmd=33 分组订阅请求体（guid/房间号动态填入）
-  Uint8List _buildSub33Body(String group, List<int> ids) {
-    final val = _TarsWriter();
-    val._head(1, 8);
-    val._intValue(ids.length);
-    for (final id in ids) {
-      val.writeInt(0, id);
-      val.writeInt(1, 1);
+  int _indexOf(List<int> bytes, List<int> pattern) {
+    for (var i = 0; i + pattern.length <= bytes.length; i++) {
+      var ok = true;
+      for (var j = 0; j < pattern.length; j++) {
+        if (bytes[i + j] != pattern[j]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return i;
     }
-    val._head(1, 8);
-    val._intValue(0);
-    val.writeInt(3, 1);
-
-    final body = _TarsWriter();
-    body.writeString(0, 'HUYA&ZH&2052');
-    body.writeString(1, _guid);
-    body.writeInt(2, 0);
-    body.writeInt(3, 0);
-    body._head(6, 8);
-    body._intValue(1);
-    body.writeString(0, '$group$_ayyuid');
-    body._b.add(val.toBytes());
-    body._b.addByte(0x0B);
-    body.writeInt(7, 0);
-    body.writeInt(8, 0);
-    body.writeInt(2, 0);
-    body.writeString(3, '');
-    body.writeInt(4, 0);
-    body.writeInt(5, 0);
-    body.writeString(6, '');
-    return body.toBytes();
+    return -1;
   }
 
   // ================= DNS 优选 =================
@@ -237,8 +227,10 @@ class HuyaDanmakuClient {
     _send(_buildVerifyCookie());
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
-      _send(_wrapWsCmd(_withPrefix(_buildLaunchBody()), 3));
-      _dbgPush('Launch(自适应) 已发');
+      _send(_wrapWsCmd(
+          _withPrefix(
+              _wupBody('launch', 'wsTimeSync', {'tReq': _treq(_buildLaunchReq())})),
+          3));
     });
     Timer(const Duration(milliseconds: 600), () {
       if (_closed) return;
@@ -247,6 +239,9 @@ class HuyaDanmakuClient {
     Timer(const Duration(milliseconds: 900), () {
       if (_closed) return;
       _sendSubscribeHistory();
+    });
+    Timer(const Duration(milliseconds: 1200), () {
+      if (!_closed) _requestEmoticonPackage(); // ★ 拉取表情包
     });
     Timer(const Duration(milliseconds: 1500), () {
       if (!_closed) _sendRctTimedMessage();
@@ -296,6 +291,13 @@ class HuyaDanmakuClient {
     out.add(structFields);
     out.addByte(0x0B);
     return out.toBytes();
+  }
+
+  Uint8List _buildLaunchReq() {
+    final req = _TarsWriter();
+    req.writeString(0, '');
+    req.writeInt(1, 668);
+    return req.toBytes();
   }
 
   Uint8List _buildVerifyCookie() {
@@ -358,18 +360,80 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 订阅实时扩展推送：cmd=33（chat + live，全自适应）
   void _sendSubscribeHistory() {
-    _send(_wrapWsCmd(_buildSub33Body('chat:', const [6211]), 33));
-    _dbgPush('订阅33(chat) 已发');
-    _send(_wrapWsCmd(
-        _buildSub33Body(
-            'live:', const [6291, 6479, 6481, 6483, 7107, 7108, 7109, 7114]),
-        33));
-    _dbgPush('订阅33(live) 已发');
+    _sendSub33(_SUB33_CHAT);
+    _sendSub33(_SUB33_LIVE);
   }
 
-  /// ★ 拉取下播历史弹幕：mobileui.getRctTimedMessage（嵌套 tReq，裸结构字节）
+  void _sendSub33(String template) {
+    try {
+      if (_ayyuid <= 0) return;
+      var bytes = _hexToBytes(template);
+
+      if (_guid.length == 32) {
+        final g = utf8.encode(_guid);
+        for (var i = 0; i < 32; i++) {
+          bytes[16 + i] = g[i];
+        }
+      }
+
+      const oldId = '1279521053571';
+      final newId = '$_ayyuid';
+      if (newId != oldId) {
+        for (final prefix in const ['live:', 'chat:']) {
+          final oldStr = utf8.encode('$prefix$oldId');
+          final idx = _indexOf(bytes, oldStr);
+          if (idx > 0) {
+            final newStr = utf8.encode('$prefix$newId');
+            bytes = <int>[
+              ...bytes.sublist(0, idx - 1),
+              newStr.length,
+              ...newStr,
+              ...bytes.sublist(idx + oldStr.length),
+            ];
+          }
+        }
+      }
+
+      final cmd = _TarsWriter();
+      cmd.writeInt(0, 33);
+      cmd.writeBytes(1, bytes);
+      cmd.writeInt(2, ++_reqId);
+      _send(cmd.toBytes());
+      _dbgPush('订阅33(${template == _SUB33_CHAT ? "chat" : "live"}) 已发');
+    } catch (_) {}
+  }
+
+  /// ★ 拉取虎牙全量表情包映射
+  void _requestEmoticonPackage() {
+    try {
+      final uaInfo = _TarsWriter();
+      uaInfo.writeInt(0, _ayyuid);
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(2, '');
+      uaInfo.writeString(3, 'webh5&0.1.0&websocket');
+      uaInfo.writeString(4, _cookie);
+      uaInfo.writeInt(5, 0);
+      uaInfo.writeString(6, '');
+      uaInfo.writeString(7, '');
+
+      final req = _TarsWriter();
+      req.writeStruct(0, uaInfo);
+      req.writeInt(1, _ayyuid);
+      req.writeInt(2, 9);
+      req.writeInt(3, 48);
+      req.writeInt(8, 0);
+      req.writeBytesMap(9, const {});
+      req.writeBytesMap(10, const {});
+
+      final body = _wupBody('wupui', 'getExpressionEmoticonPackage',
+          {'tReq': _treq(req.toBytes())});
+      _send(_wrapWsCmd(_withPrefix(body), 3));
+      _dbgPush('请求表情包 已发');
+    } catch (_) {}
+  }
+
+  /// ★ 历史弹幕：mobileui.getRctTimedMessage（嵌套 tReq）
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
@@ -404,7 +468,7 @@ class HuyaDanmakuClient {
       req.writeBytesMap(10, const {});
 
       final body = _wupBody('mobileui', 'getRctTimedMessage',
-          {'tReq': req.toBytes()});
+          {'tReq': _treq(req.toBytes())});
       _send(_wrapWsCmd(_withPrefix(body), 3));
       _dbgPush('请求历史弹幕 已发');
     } catch (_) {}
@@ -639,7 +703,46 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕：全树递归收集（原始字节块先解析再递归）
+      // ★ 表情包映射解析
+      if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
+        int cnt = 0;
+        void walk(dynamic node, int depth) {
+          if (depth > 10) return;
+          if (node is Map<int, Object?>) {
+            final name = node[1];
+            String? url;
+            if (node[3] is String && (node[3] as String).startsWith('http')) {
+              url = node[3] as String;
+            } else if (node[4] is String && (node[4] as String).startsWith('http')) {
+              url = node[4] as String;
+            }
+            if (name is String && name.startsWith('[') && url != null) {
+              emoteRegistry[name] = url;
+              cnt++;
+            }
+            node.values.forEach((v) => walk(v, depth + 1));
+          } else if (node is List) {
+            if (node.isNotEmpty && node.first is int) {
+              try {
+                walk(_TarsReader(Uint8List.fromList(node.cast<int>())).readFields(),
+                    depth + 1);
+              } catch (_) {}
+            } else {
+              node.forEach((v) => walk(v, depth + 1));
+            }
+          }
+        }
+
+        final sb = f[7];
+        if (sb is List) walk(sb, 0);
+        if (cnt > 0) {
+          _dbgPush('表情 $cnt 个');
+          onEmoteReady?.call();
+        }
+        return;
+      }
+
+      // ★ 历史弹幕
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         int listLen = -1;
@@ -709,6 +812,7 @@ class HuyaDanmakuClient {
     }
   }
 
+  /// ★ 动态节点更新
   void _parseLaunchRsp(Map<int, Object?> rsp) {
     final newHosts = <String>[];
     for (final entry in rsp.entries) {
@@ -799,7 +903,7 @@ class HuyaDanmakuClient {
     }
   }
 
-  /// ★ 弹幕发射器：uid 可嵌套一层，昵称/头像在外层 sender 找
+  /// ★ 弹幕发射器：uid 可嵌套；收集粉丝牌/徽章图
   bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
     if (fields[3] is! String && fields[0] is Map<int, Object?>) {
@@ -896,6 +1000,47 @@ class HuyaDanmakuClient {
 
     findFans(msg, 0);
 
+    // ★ 收集装饰徽章图：贵族→粉钻→房管
+    final found = <String>[];
+    void findBadges(dynamic node, int depth) {
+      if (depth > 6) return;
+      if (node is Map<int, Object?>) {
+        node.values.forEach((v) => findBadges(v, depth + 1));
+      } else if (node is List) {
+        if (node.isNotEmpty && node.first is int) {
+          try {
+            findBadges(
+                _TarsReader(Uint8List.fromList(node.cast<int>())).readFields(),
+                depth + 1);
+          } catch (_) {}
+        } else {
+          node.forEach((v) => findBadges(v, depth + 1));
+        }
+      } else if (node is String && node.startsWith('http')) {
+        if (node.contains('guiyepai') ||
+            node.contains('PendantInfoZip') ||
+            node.contains('fenzuan') ||
+            node.contains('fengzuan') ||
+            node.contains('fangguan')) {
+          if (!found.contains(node)) found.add(node);
+        }
+      }
+    }
+
+    findBadges(msg, 0);
+    final badges = <String>[];
+    for (final u in found) {
+      if (u.contains('guiyepai')) badges.add(u);
+    }
+    for (final u in found) {
+      if (u.contains('PendantInfoZip') ||
+          u.contains('fenzuan') ||
+          u.contains('fengzuan')) badges.add(u);
+    }
+    for (final u in found) {
+      if (u.contains('fangguan')) badges.add(u);
+    }
+
     _controller.add(DanmakuMessage(
       nickname: nick,
       content: content,
@@ -905,6 +1050,7 @@ class HuyaDanmakuClient {
       fansName: fansName,
       fansLevel: fansLevel,
       managerType: managerType,
+      badgeUrls: badges,
       isHistory: history,
     ));
 
@@ -915,7 +1061,7 @@ class HuyaDanmakuClient {
     return true;
   }
 
-  /// ★ 历史条目兜底：tag5=昵称 tag6=内容
+  /// ★ 历史条目兜底
   void _decodeHistoryDanmaku(List<int> payload) {
     try {
       final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
@@ -966,16 +1112,6 @@ class _TarsWriter {
     for (var i = n - 1; i >= 0; i--) {
       _b.addByte((v >> (8 * i)) & 0xFF);
     }
-  }
-
-  void _intValue(int v) {
-    final t = _intType(v);
-    if (t == 12) {
-      _b.addByte(0x0C);
-      return;
-    }
-    _b.addByte(t);
-    _add(v, [1, 2, 4, 8][t]);
   }
 
   void writeInt(int tag, int v) {
@@ -1042,6 +1178,16 @@ class _TarsWriter {
     _head(tag, 10);
     _b.add(inner._b.toBytes());
     _b.addByte(0x0B);
+  }
+
+  void _intValue(int v) {
+    final t = _intType(v);
+    if (t == 12) {
+      _b.addByte(0x0C);
+      return;
+    }
+    _b.addByte(t);
+    _add(v, [1, 2, 4, 8][t]);
   }
 
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
