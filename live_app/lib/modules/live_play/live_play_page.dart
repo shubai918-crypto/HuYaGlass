@@ -15,7 +15,7 @@ class LivePlayPage extends StatefulWidget {
 class _LivePlayPageState extends State<LivePlayPage>
     with SingleTickerProviderStateMixin {
   late final LivePlayController c = Get.put(LivePlayController());
-  late final TabController _tab = TabController(length: 2, vsync: this);
+  late final TabController _tab = TabController(length: 3, vsync: this);
 
   @override
   void dispose() {
@@ -67,6 +67,7 @@ class _LivePlayPageState extends State<LivePlayPage>
           child: TabBarView(controller: _tab, children: [
             _DanmakuList(c: c),
             _DetailTab(c: c),
+            _DebugTab(c: c),
           ]),
         ),
         _bottomBar(),
@@ -146,7 +147,11 @@ class _LivePlayPageState extends State<LivePlayPage>
         indicatorColor: const Color(0xFF00D2FF),
         labelColor: const Color(0xFF00D2FF),
         unselectedLabelColor: Colors.white54,
-        tabs: const [Tab(text: '弹幕'), Tab(text: '主播详情')],
+        tabs: const [
+          Tab(text: '弹幕'),
+          Tab(text: '主播详情'),
+          Tab(text: '调试'),
+        ],
       ),
     );
   }
@@ -261,7 +266,7 @@ class _LivePlayPageState extends State<LivePlayPage>
   }
 }
 
-// ================= ★ 飘屏弹幕层 =================
+// ================= 飘屏弹幕层 =================
 class _FloatItem {
   final String text;
   final Color color;
@@ -457,7 +462,6 @@ class _DanmakuListState extends State<_DanmakuList> {
     super.dispose();
   }
 
-  /// ★ 粉丝牌按等级分色（对齐网页版视觉）
   Color _fansColor(int lv) {
     if (lv <= 6) return const Color(0xFF59B4FF);
     if (lv <= 12) return const Color(0xFF38C3FF);
@@ -468,7 +472,6 @@ class _DanmakuListState extends State<_DanmakuList> {
     return const Color(0xFFFF4040);
   }
 
-  /// ★ 参考 pure_live：[表情] → 内联图片（优先全局字典，兜底内置）
   List<InlineSpan> _contentSpans(String text) {
     final spans = <InlineSpan>[];
     final reg = RegExp(r'\[([^\]]+)\]');
@@ -530,7 +533,6 @@ class _DanmakuListState extends State<_DanmakuList> {
         child: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              // ★ 粉丝牌：等级分色
               if (m.fansName.isNotEmpty)
                 Container(
                   margin: const EdgeInsets.only(right: 6),
@@ -549,14 +551,12 @@ class _DanmakuListState extends State<_DanmakuList> {
                           fontSize: 10,
                           fontWeight: FontWeight.w700)),
                 ),
-              // ★ 贵族/粉钻等装饰图
               for (final url in m.badgeUrls)
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Image.network(url, width: 18, height: 18,
                       errorBuilder: (_, __, ___) => const SizedBox.shrink()),
                 ),
-              // ★ 房管图
               if (m.managerType > 0 &&
                   !m.badgeUrls.any((u) => u.contains('fangguan')))
                 Padding(
@@ -743,4 +743,33 @@ class _DetailTab extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withOpacity(0.06)),
       );
+}
+
+// ================= ★ 调试 Tab（不再遮挡画面） =================
+class _DebugTab extends StatelessWidget {
+  final LivePlayController c;
+  const _DebugTab({required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() => ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            const Text('协议调试日志',
+                style: TextStyle(
+                    color: Color(0xFF00D2FF),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            SelectableText(
+              c.debugInfo.value.isEmpty ? '（暂无日志）' : c.debugInfo.value,
+              style: const TextStyle(
+                  color: Colors.white60, fontSize: 12, height: 1.7),
+            ),
+            const SizedBox(height: 12),
+            Text('状态：${c.danmakuStatus.value}',
+                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          ],
+        ));
+  }
 }
