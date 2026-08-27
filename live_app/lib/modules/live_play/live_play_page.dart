@@ -261,7 +261,7 @@ class _LivePlayPageState extends State<LivePlayPage>
   }
 }
 
-// ================= ★ 飘屏弹幕层（时间槽分轨 + 排队，历史不飘屏） =================
+// ================= ★ 飘屏弹幕层 =================
 class _FloatItem {
   final String text;
   final Color color;
@@ -302,7 +302,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     _sub = widget.c.danmakuList.listen((_) {
       if (widget.c.danmakuList.isNotEmpty) {
         final m = widget.c.danmakuList.last;
-        if (!m.isHistory) _enqueue(m); // ★ 历史弹幕不飘屏
+        if (!m.isHistory) _enqueue(m);
       }
     });
   }
@@ -457,6 +457,51 @@ class _DanmakuListState extends State<_DanmakuList> {
     super.dispose();
   }
 
+  /// ★ 粉丝牌按等级分色（对齐网页版视觉）
+  Color _fansColor(int lv) {
+    if (lv <= 6) return const Color(0xFF59B4FF);
+    if (lv <= 12) return const Color(0xFF38C3FF);
+    if (lv <= 19) return const Color(0xFFFFB03A);
+    if (lv <= 25) return const Color(0xFFFF6B9C);
+    if (lv <= 31) return const Color(0xFFB46BFF);
+    if (lv <= 40) return const Color(0xFFFF8800);
+    return const Color(0xFFFF4040);
+  }
+
+  /// ★ 参考 pure_live：[表情] → 内联图片（优先全局字典，兜底内置）
+  List<InlineSpan> _contentSpans(String text) {
+    final spans = <InlineSpan>[];
+    final reg = RegExp(r'\[([^\]]+)\]');
+    var last = 0;
+    for (final m in reg.allMatches(text)) {
+      if (m.start > last) {
+        spans.add(TextSpan(text: text.substring(last, m.start)));
+      }
+      final name = m.group(1) ?? '';
+      final url = HuyaDanmakuClient.emoteRegistry[name] ??
+          DanmakuMessage.emoteMap[name];
+      if (url != null) {
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: Image.network(url, width: 18, height: 18,
+                errorBuilder: (_, __, ___) => Text('[$name]',
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 14))),
+          ),
+        ));
+      } else {
+        spans.add(TextSpan(text: '[$name]'));
+      }
+      last = m.end;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(text: text.substring(last)));
+    }
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
@@ -477,6 +522,7 @@ class _DanmakuListState extends State<_DanmakuList> {
   }
 
   Widget _item(LivePlayController c, DanmakuMessage m) {
+    final fc = _fansColor(m.fansLevel);
     return GestureDetector(
       onTap: () => c.showUserInfo(m),
       child: Padding(
@@ -484,53 +530,50 @@ class _DanmakuListState extends State<_DanmakuList> {
         child: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (m.managerType > 0)
-                Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFE5484D).withOpacity(0.15),
-                        border: Border.all(
-                            color: const Color(0xFFE5484D).withOpacity(0.4)),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text(m.managerType == 2 ? '超管' : '房管',
-                        style: const TextStyle(
-                            color: Color(0xFFE5484D),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700))),
+              // ★ 粉丝牌：等级分色
               if (m.fansName.isNotEmpty)
                 Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [
-                          const Color(0xFFFF8800).withOpacity(0.25),
-                          const Color(0xFFFF8800).withOpacity(0.1),
-                        ]),
-                        border: Border.all(
-                            color: const Color(0xFFFF8800).withOpacity(0.4)),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text('${m.fansLevel} ${m.fansName}',
-                        style: const TextStyle(
-                            color: Color(0xFFFF8800),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700))),
-              Text.rich(
-                TextSpan(children: [
-                  TextSpan(
-                      text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
+                  margin: const EdgeInsets.only(right: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        fc.withOpacity(0.30),
+                        fc.withOpacity(0.12),
+                      ]),
+                      border: Border.all(color: fc.withOpacity(0.55)),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text('${m.fansLevel} ${m.fansName}',
                       style: TextStyle(
-                          color: Color(m.fontColor),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600)),
-                  TextSpan(
-                      text: m.content,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 14)),
-                ]),
-              ),
+                          color: fc,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700)),
+                ),
+              // ★ 贵族/粉钻等装饰图
+              for (final url in m.badgeUrls)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Image.network(url, width: 18, height: 18,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                ),
+              // ★ 房管图
+              if (m.managerType > 0 &&
+                  !m.badgeUrls.any((u) => u.contains('fangguan')))
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Image.network(DanmakuMessage.kBadgeManager,
+                      width: 18, height: 18,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                ),
+              Text.rich(TextSpan(children: [
+                TextSpan(
+                    text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
+                    style: TextStyle(
+                        color: Color(m.fontColor),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600)),
+                ..._contentSpans(m.content),
+              ])),
             ]),
       ),
     );
