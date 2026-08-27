@@ -387,7 +387,7 @@ class HuyaDanmakuClient {
 
       Timer(const Duration(seconds: 6), () {
         try {
-          ws.close();
+          ws?.close();
         } catch (_) {}
         if (identical(_emoWs, ws)) _emoWs = null;
       });
