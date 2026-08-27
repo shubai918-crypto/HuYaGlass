@@ -396,7 +396,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-/// ★ 请求表情包：tReq 扁平结构，禁止二次包裹；uaInfo.tag0 = 登录uid
+/// ★ 请求表情包：tReq 扁平 + 网页同款尾部重复字段
   void _requestEmoticonPackage() {
     try {
       final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
@@ -410,6 +410,7 @@ class HuyaDanmakuClient {
       uaInfo.writeString(6, '');
       uaInfo.writeString(7, '');
 
+      final token = '${_randHex(16)}:${_randHex(16)}:0:0';
       final req = _TarsWriter();
       req.writeStruct(0, uaInfo);
       req.writeInt(1, _ayyuid);
@@ -418,8 +419,13 @@ class HuyaDanmakuClient {
       req.writeInt(8, 0);
       req.writeBytesMap(9, const {});
       req.writeBytesMap(10, const {});
+      // ★ 关键：补齐网页尾部的重复 tag（服务器取后值：tag2=0、tag3=token）
+      req.writeInt(2, 0);
+      req.writeString(3, token);
+      req.writeInt(4, 0);
+      req.writeInt(5, 0);
+      req.writeString(6, '');
 
-      // ★ 关键：直接 req.toBytes()，不再 _treq() 二次包裹
       final body = _wupBody('wupui', 'getExpressionEmoticonPackage',
           {'tReq': req.toBytes()});
       _send(_wrapWsCmd(_withPrefix(body), 3));
