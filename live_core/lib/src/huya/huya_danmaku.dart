@@ -701,23 +701,54 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 表情包：正则直配对（名字→紧随其后的 png URL）
+      // ★ 表情包：大包可能被 zlib 压缩，多候选解压后再正则配对
       if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
-        final s = utf8.decode(bytes, allowMalformed: true);
+        final candidates = <String>[utf8.decode(bytes, allowMalformed: true)];
+        void tryUnzip(List<int> raw) {
+          try {
+            candidates.add(utf8.decode(ZLibCodec().decode(raw), allowMalformed: true));
+          } catch (_) {}
+          try {
+            candidates.add(utf8.decode(ZLibCodec(raw: true).decode(raw), allowMalformed: true));
+          } catch (_) {}
+        }
+        tryUnzip(bytes);
+        try {
+          final sb = f[7];
+          if (sb is List) {
+            final inner = _TarsReader(Uint8List.fromList(
+                    sb.map((e) => (e as int) & 0xFF).toList()))
+                .readFields();
+            final map = inner[0];
+            if (map is List) {
+              for (var i = 0; i + 1 < map.length; i += 2) {
+                if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
+                  final raw = (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList();
+                  candidates.add(utf8.decode(raw, allowMalformed: true));
+                  tryUnzip(raw);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        int cnt = 0;
         final reg = RegExp(
             r'\[([^\[\]]{1,12})\]|(https?://[^\s\u0000-\u001f"<>\\]+?\.png)');
-        String? pending;
-        int cnt = 0;
-        for (final m in reg.allMatches(s)) {
-          if (m.group(1) != null) {
-            pending = '[${m.group(1)}]';
-          } else if (m.group(2) != null && pending != null) {
-            if (!emoteRegistry.containsKey(pending)) {
-              emoteRegistry[pending!] = m.group(2)!;
-              cnt++;
+        for (final s in candidates) {
+          String? pending;
+          for (final m in reg.allMatches(s)) {
+            if (m.group(1) != null) {
+              pending = '[${m.group(1)}]';
+            } else if (m.group(2) != null && pending != null) {
+              if (!emoteRegistry.containsKey(pending)) {
+                emoteRegistry[pending!] = m.group(2)!;
+                cnt++;
+              }
+              pending = null;
             }
-            pending = null;
           }
+          if (cnt > 0) break;
         }
         _dbgPush('表情 ${emoteRegistry.length} 个(新增$cnt)');
         if (cnt > 0) onEmoteReady?.call();
