@@ -396,11 +396,12 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 请求表情包
+/// ★ 请求表情包：tReq 扁平结构，禁止二次包裹；uaInfo.tag0 = 登录uid
   void _requestEmoticonPackage() {
     try {
+      final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
       final uaInfo = _TarsWriter();
-      uaInfo.writeInt(0, _ayyuid);
+      uaInfo.writeInt(0, myUid);
       uaInfo.writeString(1, _guid);
       uaInfo.writeString(2, '');
       uaInfo.writeString(3, 'webh5&0.1.0&websocket');
@@ -418,18 +419,18 @@ class HuyaDanmakuClient {
       req.writeBytesMap(9, const {});
       req.writeBytesMap(10, const {});
 
+      // ★ 关键：直接 req.toBytes()，不再 _treq() 二次包裹
       final body = _wupBody('wupui', 'getExpressionEmoticonPackage',
-          {'tReq': _treq(req.toBytes())});
+          {'tReq': req.toBytes()});
       _send(_wrapWsCmd(_withPrefix(body), 3));
       _dbgPush('请求表情包 已发');
     } catch (_) {}
   }
 
-  /// ★ 历史弹幕请求
+  /// ★ 历史弹幕：同样去二次包裹；uaInfo.tag0 = 登录uid
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
-      final cookie = HuyaLoginManager().cookie;
       final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
 
       final uaInfo = _TarsWriter();
@@ -437,7 +438,7 @@ class HuyaDanmakuClient {
       uaInfo.writeString(1, _guid);
       uaInfo.writeString(2, '');
       uaInfo.writeString(3, _sendHuYaUA);
-      uaInfo.writeString(4, cookie);
+      uaInfo.writeString(4, _cookie);
       uaInfo.writeInt(5, 0);
       uaInfo.writeString(6, 'edg');
       uaInfo.writeString(7, '');
@@ -459,8 +460,9 @@ class HuyaDanmakuClient {
       req.writeBytesMap(9, const {});
       req.writeBytesMap(10, const {});
 
+      // ★ 关键：直接 req.toBytes()
       final body = _wupBody('mobileui', 'getRctTimedMessage',
-          {'tReq': _treq(req.toBytes())});
+          {'tReq': req.toBytes()});
       _send(_wrapWsCmd(_withPrefix(body), 3));
       _dbgPush('请求历史弹幕 已发');
     } catch (_) {}
