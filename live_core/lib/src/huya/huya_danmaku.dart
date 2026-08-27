@@ -34,6 +34,7 @@ class DanmakuMessage {
   static const kBadgeManager =
       'https://livewebbs2.msstatic.com/newfangguan_3.png';
 
+  /// 兜底单表
   static const Map<String, String> emoteMap = {
     '大哭':
         'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
@@ -44,7 +45,7 @@ class HuyaDanmakuClient {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0';
   static const _sendHuYaUA = 'webh5&2608191804&websocket';
-  static const _emoHuYaUA = 'webh5&0.1.0&websocket'; // ★ 表情通道专用 UA
+  static const _emoHuYaUA = 'webh5&0.1.0&websocket';
 
   static const _wsHosts = [
     'ded35397-ws.va.huya.com',
@@ -59,11 +60,19 @@ class HuyaDanmakuClient {
   static const _SUB33_CHAT =
       '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a0800010612636861743a313237393532313035333537311800010118431001180c30010b780c8c2c36004c5c6600';
 
-  /// ★ 内置表情兜底表（pure_live huya.json 提取，离线可用）
+  /// ★ 内置表情表（源自你接收到的 getExpressionEmoticonPackage 数据，离线即用）
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
     '[大哭]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
+    '[大笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141715551855_pic.png',
+    '[害羞]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141715844572_pic.png',
+    '[哭]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_15790913779295_pic.png',
+    '[微笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141737604305_pic.png',
+    '[无语]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738020039_pic.png',
+    '[亲亲]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738398631_pic.png',
+    '[惊呆]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738689917_pic.png',
+    '[漂移]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739087048_pic.png',
     '[不是哥们2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/809a798714164c70a3f24feb090043b4/expressconfig/steam.png',
     '[婉拒了哈]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062162steam_3.png',
     '[这不好吧]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062177steam_3.png',
@@ -98,6 +107,7 @@ class HuyaDanmakuClient {
     '[你好有本领啊]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1633760698steam.png',
   };
 
+  /// ★ 全局表情注册表（内置种子，进房即可用）
   static final Map<String, String> emoteRegistry = {};
   static bool _emoteSeeded = false;
   static void _seedBuiltinEmotes() {
@@ -107,7 +117,6 @@ class HuyaDanmakuClient {
   }
 
   WebSocket? _ws;
-  WebSocket? _emoWs; // ★ 表情专用通道
   Timer? _heartTimer;
   Timer? _reconnectTimer;
   bool _closed = false;
@@ -180,7 +189,6 @@ class HuyaDanmakuClient {
     return -1;
   }
 
-  // ================= DNS 优选 =================
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
     final cost = <String, int>{};
@@ -202,7 +210,6 @@ class HuyaDanmakuClient {
     return ordered.isEmpty ? hosts.toList() : ordered;
   }
 
-  // ================= 弹幕主通道 =================
   Future<void> connect({
     required int topSid,
     required int subSid,
@@ -221,6 +228,7 @@ class HuyaDanmakuClient {
     _rctOk = false;
     _cmdSeq = 0;
 
+    // ★ 内置表情立即生效
     _seedBuiltinEmotes();
     if (emoteRegistry.isNotEmpty) {
       Future.delayed(
@@ -287,10 +295,6 @@ class HuyaDanmakuClient {
       if (_closed) return;
       _sendSubscribeHistory();
     });
-    // ★ 表情走独立 WS 通道（与弹幕主通道并列）
-    Timer(const Duration(milliseconds: 1200), () {
-      if (!_closed) _fetchEmoticonPackage();
-    });
     Timer(const Duration(milliseconds: 1500), () {
       if (!_closed) _sendRctTimedMessage();
     });
@@ -305,157 +309,6 @@ class HuyaDanmakuClient {
     });
   }
 
-  // ================= ★ 表情专用 WS 通道 =================
-  Future<void> _fetchEmoticonPackage() async {
-    if (_closed || _ayyuid <= 0) return;
-    try {
-      // baseinfo 与网页表情通道完全一致（sUA=webh5&0.1.0&websocket）
-      final info = _TarsWriter();
-      info.writeInt(0, _loginUid > 0 ? _loginUid : _ayyuid);
-      info.writeString(1, _guid);
-      info.writeString(2, _emoHuYaUA);
-      info.writeString(3, 'HUYA&ZH&2052');
-      info.writeString(4, '');
-      info.writeString(5, '');
-      info.writeInt(6, 0);
-      info.writeString(7, '');
-      info.writeInt(8, 0);
-      info.writeString(9, '');
-      info.writeInt(10, 0);
-      final baseinfo = base64Encode(info.toBytes());
-
-      final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
-      WebSocket? ws;
-      for (final h in hosts) {
-        try {
-          ws = await WebSocket.connect(
-            'wss://$h/?baseinfo=${Uri.encodeComponent(baseinfo)}',
-            headers: {'Origin': 'https://www.huya.com', 'User-Agent': _ua},
-          ).timeout(const Duration(seconds: 5));
-          break;
-        } catch (_) {}
-      }
-      if (ws == null) {
-        _dbgPush('表情通道连接失败');
-        return;
-      }
-      _emoWs = ws;
-      _dbgPush('表情专用通道已连');
-
-      ws.listen(
-        (data) {
-          try {
-            _parseEmotePayload(
-                Uint8List.fromList((data as List).cast<int>()));
-          } catch (_) {}
-        },
-        onDone: () => _emoWs = null,
-        onError: (_) => _emoWs = null,
-        cancelOnError: true,
-      );
-
-      // 构造请求（与网页同结构）
-      final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
-      final uaInfo = _TarsWriter();
-      uaInfo.writeInt(0, myUid);
-      uaInfo.writeString(1, _guid);
-      uaInfo.writeString(2, '');
-      uaInfo.writeString(3, _emoHuYaUA);
-      uaInfo.writeString(4, _cookie);
-      uaInfo.writeInt(5, 0);
-      uaInfo.writeString(6, '');
-      uaInfo.writeString(7, '');
-
-      final req = _TarsWriter();
-      req.writeStruct(0, uaInfo);
-      req.writeInt(1, _ayyuid);
-      req.writeInt(2, 9);
-      req.writeInt(3, 48);
-      req.writeInt(8, 0);
-      req.writeBytesMap(9, const {});
-      req.writeBytesMap(10, const {});
-      req.writeInt(2, 0);
-      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
-      req.writeInt(4, 0);
-      req.writeInt(5, 0);
-      req.writeString(6, '');
-
-      final body = _wupBody('wupui', 'getExpressionEmoticonPackage',
-          {'tReq': req.toBytes()});
-      ws.add(_wrapWsCmd(_withPrefix(body), 3));
-      _dbgPush('表情请求 已发(独立通道)');
-
-      Timer(const Duration(seconds: 6), () {
-        try {
-          ws?.close();
-        } catch (_) {}
-        if (identical(_emoWs, ws)) _emoWs = null;
-      });
-    } catch (_) {}
-  }
-
-  /// 解析表情响应：多候选（原始/zlib/tRsp子块）+ 正则配对 [名字]→png
-  void _parseEmotePayload(Uint8List bytes) {
-    final candidates = <String>[utf8.decode(bytes, allowMalformed: true)];
-    void tryUnzip(List<int> raw) {
-      try {
-        candidates
-            .add(utf8.decode(ZLibCodec().decode(raw), allowMalformed: true));
-      } catch (_) {}
-      try {
-        candidates.add(
-            utf8.decode(ZLibCodec(raw: true).decode(raw), allowMalformed: true));
-      } catch (_) {}
-    }
-
-    tryUnzip(bytes);
-    try {
-      final f = _readWupFields(bytes);
-      final sb = f[7];
-      if (sb is List) {
-        final inner = _TarsReader(Uint8List.fromList(
-                sb.map((e) => (e as int) & 0xFF).toList()))
-            .readFields();
-        final map = inner[0];
-        if (map is List) {
-          for (var i = 0; i + 1 < map.length; i += 2) {
-            if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
-              final raw = (map[i + 1] as List)
-                  .map((e) => (e as int) & 0xFF)
-                  .toList();
-              candidates.add(utf8.decode(raw, allowMalformed: true));
-              tryUnzip(raw);
-            }
-          }
-        }
-      }
-    } catch (_) {}
-
-    int cnt = 0;
-    final reg =
-        RegExp(r'\[([^\[\]]{1,12})\]|(https?://[^\s\u0000-\u001f"<>\\]+?\.png)');
-    for (final s in candidates) {
-      String? pending;
-      for (final m in reg.allMatches(s)) {
-        if (m.group(1) != null) {
-          pending = '[${m.group(1)}]';
-        } else if (m.group(2) != null && pending != null) {
-          if (!emoteRegistry.containsKey(pending)) {
-            emoteRegistry[pending!] = m.group(2)!;
-            cnt++;
-          }
-          pending = null;
-        }
-      }
-      if (cnt > 0) break;
-    }
-    if (cnt > 0) {
-      _dbgPush('表情 ${emoteRegistry.length} 个(新增$cnt)');
-      onEmoteReady?.call();
-    }
-  }
-
-  // ================= 主通道其余部分 =================
   void _sendRegister() {
     _send(_buildRegisterGroup());
     _registered = true;
@@ -594,7 +447,6 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 历史弹幕（主通道，tReq 扁平不二次包裹）
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
@@ -627,14 +479,13 @@ class HuyaDanmakuClient {
       req.writeBytesMap(9, const {});
       req.writeBytesMap(10, const {});
 
-      final body = _wupBody('mobileui', 'getRctTimedMessage',
-          {'tReq': req.toBytes()});
+      final body =
+          _wupBody('mobileui', 'getRctTimedMessage', {'tReq': req.toBytes()});
       _send(_wrapWsCmd(_withPrefix(body), 3));
       _dbgPush('请求历史弹幕 已发');
     } catch (_) {}
   }
 
-  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -786,14 +637,9 @@ class HuyaDanmakuClient {
     try {
       _ws?.close();
     } catch (_) {}
-    try {
-      _emoWs?.close();
-    } catch (_) {}
     _ws = null;
-    _emoWs = null;
   }
 
-  // ================= 收包 =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
@@ -865,7 +711,6 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 历史弹幕：TARS 收集 + 多模式兜底
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         int listLen = -1;
