@@ -5,7 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import 'modules/home/home_page.dart';
-import 'modules/home/follow_store.dart'; // ★ 引入响应式 Store
+import 'modules/home/follow_store.dart';
 import 'modules/live_play/background_play.dart';
 
 void main() async {
@@ -18,9 +18,10 @@ void main() async {
 
   await HuyaLoginManager.init();
   await BackgroundPlayStore.init();
-  await FollowStore.init(); // ★ 预加载本地订阅列表
+  await FollowStore.init();
 
-  await LiquidGlassWidgets.initialize(warmUpMode: GlassWarmUpMode.auto);
+  // ★ 1.0.0：初始化参数精简，着色器预热与无障碍检测由底层自动完成
+  await LiquidGlassWidgets.initialize();
 
   runApp(
     LiquidGlassWidgets.wrap(
