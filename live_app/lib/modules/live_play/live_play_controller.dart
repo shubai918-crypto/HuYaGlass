@@ -470,7 +470,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       isPaused.value = !c.value.isPlaying;
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
-        debugPrint('PLAYER ERROR: $_lastError');
         if (_backgrounded) return;
         _advance('出错');
       }
@@ -497,7 +496,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  // ================= 控制层交互 =================
+  // ================= 控制层 =================
   void _scheduleHide(int sec) {
     _hideTimer?.cancel();
     _hideTimer = Timer(Duration(seconds: sec), () {
@@ -606,11 +605,15 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _scheduleHide(4);
   }
 
+  // ================= 弹幕 =================
   void _connectDanmaku() {
     _danmakuClient = HuyaDanmakuClient();
     _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
     _danmakuClient!.onPopularity = (v) => heatCount.value = v;
     _danmakuClient!.onSendDebug = (s) => debugInfo.value = s;
+    // ★ 表情字典加载完毕后强制刷新列表以渲染图片
+    _danmakuClient!.onEmoteReady = () => danmakuList.refresh();
+
     _danmakuClient!.connect(
         topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: roomId);
     danmakuStream = _danmakuClient!.danmakuStream;
@@ -644,7 +647,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
     isFollowed.value = !isFollowed.value;
     if (isFollowed.value) {
-      // ★ 加入 isLive 状态，让订阅列表立即正确分组
       FollowStore.add(FollowItem(
           roomId: roomId,
           name: streamerName.value,
@@ -659,9 +661,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     Get.bottomSheet(
       Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF16161E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+            color: Color(0xFF16161E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
         child: SafeArea(
           top: false,
@@ -669,70 +670,64 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2)),
-              ),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 16),
               Row(children: [
                 CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.white10,
-                  backgroundImage:
-                      m.avatar.isNotEmpty ? NetworkImage(m.avatar) : null,
-                  child: m.avatar.isEmpty
-                      ? const Icon(Icons.person, color: Colors.white54)
-                      : null,
-                ),
+                    radius: 28,
+                    backgroundColor: Colors.white10,
+                    backgroundImage:
+                        m.avatar.isNotEmpty ? NetworkImage(m.avatar) : null,
+                    child: m.avatar.isEmpty
+                        ? const Icon(Icons.person, color: Colors.white54)
+                        : null),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(m.nickname.isEmpty ? '神秘用户' : m.nickname,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 4),
-                        Text(m.uid > 0 ? 'UID: ${m.uid}' : 'UID: 未知',
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 12)),
-                      ]),
-                ),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(m.nickname.isEmpty ? '神秘用户' : m.nickname,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text(m.uid > 0 ? 'UID: ${m.uid}' : 'UID: 未知',
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 12)),
+                    ])),
                 if (m.fansName.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFFF8800).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Text('${m.fansLevel} ${m.fansName}',
-                        style: const TextStyle(
-                            color: Color(0xFFFF8800), fontSize: 11)),
-                  ),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFFF8800).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Text('${m.fansLevel} ${m.fansName}',
+                          style: const TextStyle(
+                              color: Color(0xFFFF8800), fontSize: 11))),
               ]),
               const SizedBox(height: 12),
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(12)),
-                child: Text('"${m.content}"',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 13)),
-              ),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Text('"${m.content}"',
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13))),
               const SizedBox(height: 8),
               Row(children: [
                 Expanded(
-                  child: TextButton(
-                      onPressed: () => Get.back(),
-                      child: const Text('关闭',
-                          style: TextStyle(color: Colors.white70))),
-                ),
+                    child: TextButton(
+                        onPressed: () => Get.back(),
+                        child: const Text('关闭',
+                            style: TextStyle(color: Colors.white70)))),
               ]),
             ],
           ),
@@ -743,39 +738,31 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   }
 
   void _showUrlDialog() {
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('当前播放地址',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
-        content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SelectableText(
-                  _currentUrl.isEmpty ? '（还没有地址）' : _currentUrl,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
-              const SizedBox(height: 8),
-              Text(
-                  '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n错误:$_lastError',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
-            ]),
-        actions: [
-          TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: _currentUrl));
-                Get.back();
-                Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
-              },
-              child: const Text('复制地址',
-                  style: TextStyle(color: Color(0xFF00D2FF)))),
-          TextButton(
-              onPressed: () => Get.back(),
-              child:
-                  const Text('关闭', style: TextStyle(color: Colors.white54))),
-        ],
-      ),
-    );
+    Get.dialog(AlertDialog(
+      backgroundColor: const Color(0xFF1A1A2E),
+      title: const Text('当前播放地址',
+          style: TextStyle(color: Colors.white, fontSize: 16)),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SelectableText(_currentUrl.isEmpty ? '（还没有地址）' : _currentUrl,
+            style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        const SizedBox(height: 8),
+        Text(
+            '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n错误:$_lastError',
+            style: const TextStyle(color: Colors.white38, fontSize: 11)),
+      ]),
+      actions: [
+        TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: _currentUrl));
+              Get.back();
+              Get.snackbar('已复制', '把地址粘贴到浏览器打开验证');
+            },
+            child: const Text('复制地址', style: TextStyle(color: Color(0xFF00D2FF)))),
+        TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('关闭', style: TextStyle(color: Colors.white54))),
+      ],
+    ));
   }
 
   // ================= 视频渲染 =================
@@ -785,17 +772,14 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       case 1:
         return SizedBox.expand(child: VideoPlayer(c));
       case 2:
-        return Center(
-            child: AspectRatio(aspectRatio: 16 / 9, child: VideoPlayer(c)));
+        return Center(child: AspectRatio(aspectRatio: 16 / 9, child: VideoPlayer(c)));
       case 3:
-        return Center(
-            child: AspectRatio(aspectRatio: 4 / 3, child: VideoPlayer(c)));
+        return Center(child: AspectRatio(aspectRatio: 4 / 3, child: VideoPlayer(c)));
       case 4:
         return LayoutBuilder(builder: (ctx, cons) {
           final cw = cons.maxWidth, ch = cons.maxHeight;
           if (cw <= 0 || ch <= 0) {
-            return Center(
-                child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
+            return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
           }
           final ca = cw / ch;
           double w, h;
@@ -811,26 +795,23 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   child: SizedBox(width: w, height: h, child: VideoPlayer(c))));
         });
       default:
-        return Center(
-            child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
+        return Center(child: AspectRatio(aspectRatio: va, child: VideoPlayer(c)));
     }
   }
 
   Widget _controlBtn(IconData icon, VoidCallback onTap,
       {bool selected = false, double size = 36}) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-            color: Colors.black.withOpacity(selected ? 0.7 : 0.45),
-            shape: BoxShape.circle),
-        child: Icon(icon,
-            color: selected ? const Color(0xFF7ED97E) : Colors.white,
-            size: size * 0.55),
-      ),
-    );
+        onTap: onTap,
+        child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+                color: Colors.black.withOpacity(selected ? 0.7 : 0.45),
+                shape: BoxShape.circle),
+            child: Icon(icon,
+                color: selected ? const Color(0xFF7ED97E) : Colors.white,
+                size: size * 0.55)));
   }
 
   Widget _buildControls(bool fullscreen) {
@@ -847,8 +828,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   const SizedBox(width: 10),
                   Expanded(
                       child: Text(streamerName.value,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 14),
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis))
                 ] else
@@ -859,7 +839,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                 _controlBtn(Icons.tune, showDanmakuSettings),
                 if (fullscreen) ...[
                   const SizedBox(width: 6),
-                  _controlBtn(Icons.lock_open, toggleLock, size: 40),
+                  _controlBtn(Icons.lock_open, toggleLock, size: 40)
                 ],
               ]))),
       Positioned(
@@ -869,17 +849,15 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
           child: Padding(
               padding: const EdgeInsets.all(8),
               child: Row(children: [
-                _controlBtn(
-                    isPaused.value ? Icons.play_arrow : Icons.pause, togglePlay),
+                _controlBtn(isPaused.value ? Icons.play_arrow : Icons.pause, togglePlay),
                 const SizedBox(width: 6),
                 _controlBtn(Icons.refresh, refreshPlay),
                 const SizedBox(width: 6),
                 _controlBtn(
-                    showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline,
-                    () {
-                      showDanmaku.value = !showDanmaku.value;
-                      _scheduleHide(4);
-                    }),
+                    showDanmaku.value ? Icons.chat : Icons.chat_bubble_outline, () {
+                  showDanmaku.value = !showDanmaku.value;
+                  _scheduleHide(4);
+                }),
                 const SizedBox(width: 6),
                 ValueListenableBuilder<bool>(
                     valueListenable: BackgroundPlayStore.enabled,
@@ -887,9 +865,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                         Icons.headphones, _toggleBackgroundPlay,
                         selected: on)),
                 const SizedBox(width: 6),
-                _controlBtn(
-                    isMuted.value ? Icons.volume_off : Icons.volume_up,
-                    toggleMute),
+                _controlBtn(isMuted.value ? Icons.volume_off : Icons.volume_up, toggleMute),
                 const SizedBox(width: 6),
                 _controlBtn(Icons.aspect_ratio, cycleFit),
                 const Spacer(),
@@ -909,82 +885,74 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       playerVersion.value;
       final c = _controller;
       return GestureDetector(
-        onTap: onTapVideo,
-        onLongPress: _showUrlDialog,
-        child: Container(
-            color: Colors.black,
-            child: Stack(children: [
-              if (!isLive.value)
-                Positioned.fill(
-                  child: Stack(fit: StackFit.expand, children: [
+          onTap: onTapVideo,
+          onLongPress: _showUrlDialog,
+          child: Container(
+              color: Colors.black,
+              child: Stack(children: [
+                if (!isLive.value)
+                  Positioned.fill(
+                      child: Stack(fit: StackFit.expand, children: [
                     if (coverUrl.value.isNotEmpty)
                       Opacity(
-                        opacity: 0.3,
-                        child: Image.network(coverUrl.value,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const SizedBox.shrink()),
-                      ),
+                          opacity: 0.3,
+                          child: Image.network(coverUrl.value,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const SizedBox.shrink())),
                     Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.nightlight_round,
-                                color: Colors.white38, size: 44),
-                            const SizedBox(height: 10),
-                            const Text('主播未开播',
-                                style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600)),
-                            if (lastLiveText.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text('上次开播：$lastLiveText',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                      color: Colors.white54, fontSize: 12)),
-                            ],
-                            if (roomTitle.value.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text('直播预告：${roomTitle.value}',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                      color: Color(0xFFFF8800), fontSize: 13)),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ]),
-                ),
-              if (c != null && c.value.isInitialized)
-                Positioned.fill(
-                    child: KeyedSubtree(
-                        key: const ValueKey('vp'), child: _videoByFit(c))),
-              if (isPaused.value && !isLocked.value)
-                Center(
-                    child: _controlBtn(Icons.play_arrow, togglePlay,
-                        selected: true, size: 64)),
-              if (showControls.value && !isLocked.value)
-                _buildControls(fullscreen),
-              if (isLocked.value && showControls.value)
-                Positioned(
-                    left: 12,
-                    top: fullscreen ? 60 : 12,
-                    child: _controlBtn(Icons.lock, toggleLock,
-                        selected: true, size: 40)),
-              if (!fullscreen)
-                Positioned(
-                    left: 8,
-                    top: 8,
-                    right: 8,
-                    child: Text(debugInfo.value,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 10))),
-            ])),
-      );
+                        child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.nightlight_round,
+                                  color: Colors.white38, size: 44),
+                              const SizedBox(height: 10),
+                              const Text('主播未开播',
+                                  style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600)),
+                              if (lastLiveText.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text('上次开播：$lastLiveText',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 12)),
+                              ],
+                              if (roomTitle.value.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text('直播预告：${roomTitle.value}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        color: Color(0xFFFF8800), fontSize: 13)),
+                              ],
+                            ]))),
+                  ])),
+                if (c != null && c.value.isInitialized)
+                  Positioned.fill(
+                      child: KeyedSubtree(
+                          key: const ValueKey('vp'), child: _videoByFit(c))),
+                if (isPaused.value && !isLocked.value)
+                  Center(
+                      child: _controlBtn(Icons.play_arrow, togglePlay,
+                          selected: true, size: 64)),
+                if (showControls.value && !isLocked.value)
+                  _buildControls(fullscreen),
+                if (isLocked.value && showControls.value)
+                  Positioned(
+                      left: 12,
+                      top: fullscreen ? 60 : 12,
+                      child: _controlBtn(Icons.lock, toggleLock,
+                          selected: true, size: 40)),
+                if (!fullscreen)
+                  Positioned(
+                      left: 8,
+                      top: 8,
+                      right: 8,
+                      child: Text(debugInfo.value,
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 10))),
+              ])));
     });
   }
 
