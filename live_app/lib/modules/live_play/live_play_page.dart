@@ -6,6 +6,41 @@ import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
 
+/// ★ 共用：把 [名字] 渲染成内联表情图
+List<InlineSpan> buildEmoteSpans(String text,
+    {double fontSize = 14, Color? textColor}) {
+  final spans = <InlineSpan>[];
+  final reg = RegExp(r'\[([^\]]+)\]');
+  var last = 0;
+  for (final m in reg.allMatches(text)) {
+    if (m.start > last) {
+      spans.add(TextSpan(text: text.substring(last, m.start)));
+    }
+    final key = m.group(0)!;
+    final url = HuyaDanmakuClient.emoteRegistry[key];
+    if (url != null) {
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: Image.network(url,
+              width: fontSize + 4, height: fontSize + 4,
+              errorBuilder: (_, __, ___) => Text(key,
+                  style: TextStyle(
+                      color: textColor ?? Colors.white70, fontSize: fontSize))),
+        ),
+      ));
+    } else {
+      spans.add(TextSpan(text: key));
+    }
+    last = m.end;
+  }
+  if (last < text.length) {
+    spans.add(TextSpan(text: text.substring(last)));
+  }
+  return spans;
+}
+
 class LivePlayPage extends StatefulWidget {
   const LivePlayPage({super.key});
   @override
@@ -250,6 +285,20 @@ class _LivePlayPageState extends State<LivePlayPage>
             ),
           ),
           const SizedBox(width: 8),
+          // ★ 表情按钮
+          GestureDetector(
+            onTap: () => _showEmotePicker(),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  shape: BoxShape.circle),
+              child: const Icon(Icons.emoji_emotions_outlined,
+                  color: Color(0xFFFFB25E), size: 24),
+            ),
+          ),
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: () => c.sendDanmaku(c.inputController.text),
             child: Container(
@@ -264,16 +313,95 @@ class _LivePlayPageState extends State<LivePlayPage>
       ]),
     );
   }
+
+  /// ★ 半屏表情选择器：点击插入输入框光标处
+  void _showEmotePicker() {
+    final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, sc) => Column(children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(children: [
+              const Text('表情',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700)),
+              const Spacer(),
+              IconButton(
+                  icon: const Icon(Icons.close,
+                      color: Colors.white54, size: 20),
+                  onPressed: () => Navigator.of(context).pop()),
+            ]),
+          ),
+          const Divider(height: 1, color: Colors.white12),
+          Expanded(
+            child: GridView.builder(
+              controller: sc,
+              padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8),
+              itemCount: entries.length,
+              itemBuilder: (_, i) {
+                final e = entries[i];
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    final tc = c.inputController;
+                    final text = tc.text;
+                    final sel = tc.selection;
+                    final start = sel.start.clamp(0, text.length);
+                    final end = sel.end.clamp(0, text.length);
+                    final insert = e.key;
+                    tc.text = text.replaceRange(start, end, insert);
+                    tc.selection = TextSelection.collapsed(
+                        offset: start + insert.length);
+                  },
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.network(e.value,
+                            width: 40, height: 40,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink()),
+                        const SizedBox(height: 4),
+                        Text(e.key,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 10)),
+                      ]),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
-// ================= 飘屏弹幕层 =================
+// ================= 飘屏弹幕层（内联表情） =================
 class _FloatItem {
-  final String text;
+  final String nickname;
+  final String content;
   final Color color;
   final double w;
   double x;
   final double y;
-  _FloatItem(this.text, this.color, this.x, this.y, this.w);
+  _FloatItem(this.nickname, this.content, this.color, this.x, this.y, this.w);
 }
 
 class _PendingItem {
@@ -335,11 +463,27 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     _queue.add(_PendingItem(m, DateTime.now().millisecondsSinceEpoch));
   }
 
-  double _measure(String text, double fs) {
-    double w = 8;
-    for (final r in text.runes) {
+  double _rawWidth(String s, double fs) {
+    double w = 0;
+    for (final r in s.runes) {
       w += r > 255 ? fs : fs * 0.62;
     }
+    return w;
+  }
+
+  double _measureRich(String text, double fs) {
+    double w = 8;
+    final reg = RegExp(r'\[[^\]]+\]');
+    var last = 0;
+    for (final m in reg.allMatches(text)) {
+      w += _rawWidth(text.substring(last, m.start), fs);
+      final key = m.group(0)!;
+      w += HuyaDanmakuClient.emoteRegistry.containsKey(key)
+          ? (fs + 6)
+          : _rawWidth(key, fs);
+      last = m.end;
+    }
+    w += _rawWidth(text.substring(last), fs);
     return w;
   }
 
@@ -354,9 +498,9 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     while (qi < _queue.length) {
       final p = _queue[qi];
       final fs = widget.c.danmakuFontSize.value;
-      final text =
+      final full =
           '${p.m.nickname.isEmpty ? "神秘用户" : p.m.nickname}: ${p.m.content}';
-      final w = _measure(text, fs);
+      final w = _measureRich(full, fs);
       int lane = -1;
       for (int l = 0; l < _laneFreeAt.length; l++) {
         if (_laneFreeAt[l] <= now) {
@@ -367,7 +511,12 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
       if (lane < 0) break;
       _laneFreeAt[lane] = now + ((w + 32) / sp * 1000).round();
       _items.add(_FloatItem(
-          text, Color(p.m.fontColor), _w, lane * _lineHeight() + 4, w));
+          p.m.nickname.isEmpty ? '神秘用户' : p.m.nickname,
+          p.m.content,
+          Color(p.m.fontColor),
+          _w,
+          lane * _lineHeight() + 4,
+          w));
       _queue.removeAt(qi);
     }
   }
@@ -408,17 +557,18 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
                     top: it.y,
                     child: Opacity(
                       opacity: op,
-                      child: Text(
-                        it.text,
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(
+                              text: '${it.nickname}: ',
+                              style: TextStyle(
+                                  color: it.color,
+                                  fontSize: fs,
+                                  fontWeight: FontWeight.w600)),
+                          ...buildEmoteSpans(it.content,
+                              fontSize: fs, textColor: Colors.white),
+                        ]),
                         maxLines: 1,
-                        style: TextStyle(
-                          color: it.color,
-                          fontSize: fs,
-                          fontWeight: FontWeight.w600,
-                          shadows: const [
-                            Shadow(color: Colors.black87, blurRadius: 3),
-                          ],
-                        ),
                       ),
                     ),
                   ),
@@ -470,39 +620,6 @@ class _DanmakuListState extends State<_DanmakuList> {
     if (lv <= 31) return const Color(0xFFB46BFF);
     if (lv <= 40) return const Color(0xFFFF8800);
     return const Color(0xFFFF4040);
-  }
-
-  List<InlineSpan> _contentSpans(String text) {
-    final spans = <InlineSpan>[];
-    final reg = RegExp(r'\[([^\]]+)\]');
-    var last = 0;
-    for (final m in reg.allMatches(text)) {
-      if (m.start > last) {
-        spans.add(TextSpan(text: text.substring(last, m.start)));
-      }
-      final name = m.group(1) ?? '';
-      final url = HuyaDanmakuClient.emoteRegistry[name] ??
-          DanmakuMessage.emoteMap[name];
-      if (url != null) {
-        spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            child: Image.network(url, width: 18, height: 18,
-                errorBuilder: (_, __, ___) => Text('[$name]',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 14))),
-          ),
-        ));
-      } else {
-        spans.add(TextSpan(text: '[$name]'));
-      }
-      last = m.end;
-    }
-    if (last < text.length) {
-      spans.add(TextSpan(text: text.substring(last)));
-    }
-    return spans;
   }
 
   @override
@@ -572,7 +689,7 @@ class _DanmakuListState extends State<_DanmakuList> {
                         color: Color(m.fontColor),
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
-                ..._contentSpans(m.content),
+                ...buildEmoteSpans(m.content, fontSize: 14),
               ])),
             ]),
       ),
@@ -745,7 +862,7 @@ class _DetailTab extends StatelessWidget {
       );
 }
 
-// ================= ★ 调试 Tab（不再遮挡画面） =================
+// ================= 调试 Tab =================
 class _DebugTab extends StatelessWidget {
   final LivePlayController c;
   const _DebugTab({required this.c});
