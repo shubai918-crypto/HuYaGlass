@@ -76,7 +76,7 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  // ================= 完整内置表情表（兜底+初始，源自 pure_live 数据） =================
+  // ================= 完整内置表情表（兜底+初始） =================
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -579,10 +579,12 @@ class HuyaDanmakuClient {
 
       if (cmdType == 11) {
         final f = _TarsReader(payload).readFields();
-        if (f[0] == 0) _verified = true;
+        final f0 = f[0];
+        if (f0 == 0) _verified = true;
       } else if (cmdType == 17) {
         final f = _TarsReader(payload).readFields();
-        if (f[0] == 0) _registered = true;
+        final f0 = f[0];
+        if (f0 == 0) _registered = true;
       } else if (cmdType == 4) {
         _handleWupRsp(payload);
       } else if (cmdType == 22 || cmdType == 7) {
@@ -678,8 +680,13 @@ class HuyaDanmakuClient {
         if (node is Map<int, Object?>) {
           final name = node[1];
           String? url;
-          if (node[3] is String && (node[3] as String).startsWith('http')) url = node[3] as String;
-          else if (node[4] is String && (node[4] as String).startsWith('http')) url = node[4] as String;
+          final u3 = node[3];
+          final u4 = node[4];
+          if (u3 is String && u3.startsWith('http')) {
+            url = u3;
+          } else if (u4 is String && u4.startsWith('http')) {
+            url = u4;
+          }
           if (name is String && name.startsWith('[') && url != null) {
             emoteRegistry[name] = _fixEmoteUrl(url);
             cnt++;
@@ -700,10 +707,15 @@ class HuyaDanmakuClient {
         if (depth > 14 || n > 60) return;
         if (node is Map<int, Object?>) {
           Map<int, Object?>? msgNode;
-          if (node[3] is String && node[0] is Map<int, Object?>) msgNode = node;
-          else if (node[0] is Map<int, Object?> &&
-              (node[0] as Map<int, Object?>)[3] is String) {
-            msgNode = node[0] as Map<int, Object?>;
+          final n3 = node[3];
+          final n0 = node[0];
+          if (n3 is String && n0 is Map<int, Object?>) {
+            msgNode = node;
+          } else if (n0 is Map<int, Object?>) {
+            final n0_3 = n0[3];
+            if (n0_3 is String) {
+              msgNode = n0;
+            }
           }
           if (msgNode != null && _emitFromFields(msgNode, history: true)) {
             n++;
@@ -726,7 +738,8 @@ class HuyaDanmakuClient {
       if (v is List && v.isNotEmpty && v.first is Map<int, Object?>) {
         for (final item in v) {
           if (item is Map<int, Object?>) {
-            final uri = item[0] is int ? item[0] as int : 1400;
+            final uriVal = item[0];
+            final uri = uriVal is int ? uriVal : 1400;
             final raw = item[1];
             if (raw is List) {
               _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
@@ -736,14 +749,18 @@ class HuyaDanmakuClient {
         return;
       }
     }
-    if (f[3] is String || f[0] is Map<int, Object?>) _decodeDanmaku(payload);
+    final f3 = f[3];
+    final f0 = f[0];
+    if (f3 is String || f0 is Map<int, Object?>) _decodeDanmaku(payload);
   }
 
   void _routePush(int uri, List<int> payload) {
-    if (uri == 1400) _decodeDanmaku(payload);
-    else if (uri == 8006) {
+    if (uri == 1400) {
+      _decodeDanmaku(payload);
+    } else if (uri == 8006) {
       final f = _TarsReader(Uint8List.fromList(payload)).readFields();
-      if (f[0] is int && f[0] > 0) onPopularity?.call(f[0] as int);
+      final pop = f[0];
+      if (pop is int && pop > 0) onPopularity?.call(pop);
     }
   }
 
@@ -757,16 +774,25 @@ class HuyaDanmakuClient {
 
   bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
-    if (fields[3] is! String && fields[0] is Map<int, Object?> &&
-        (fields[0] as Map<int, Object?>)[3] is String) {
-      msg = fields[0] as Map<int, Object?>;
+    final f3 = fields[3];
+    final f0 = fields[0];
+    if (f3 is! String && f0 is Map<int, Object?>) {
+      final f0_3 = f0[3];
+      if (f0_3 is String) {
+        msg = f0;
+      }
     }
     final content = msg[3];
     if (content is! String || content.isEmpty) return false;
+    
     var sender = msg[0];
     if (sender is! Map<int, Object?>) return false;
-    if (sender[0] is Map<int, Object?>) sender = sender[0] as Map<int, Object?>;
-    if (sender[0] is! int) return false;
+    final s0 = sender[0];
+    if (s0 is Map<int, Object?>) {
+      sender = s0;
+    }
+    final uidVal = sender[0];
+    if (uidVal is! int) return false;
 
     String nick = '', avatar = '';
     for (final v in sender.values) {
@@ -780,9 +806,12 @@ class HuyaDanmakuClient {
     int color = 0;
     for (final k in const [6, 5, 4]) {
       final cf = msg[k];
-      if (cf is Map<int, Object?> && cf[0] is int && cf[0] >= 0x10000) {
-        color = cf[0] as int;
-        break;
+      if (cf is Map<int, Object?>) {
+        final cf0 = cf[0];
+        if (cf0 is int && cf0 >= 0x10000) {
+          color = cf0;
+          break;
+        }
       }
     }
 
@@ -791,9 +820,11 @@ class HuyaDanmakuClient {
     void findFans(dynamic n, int d) {
       if (fansName.isNotEmpty || d > 8) return;
       if (n is Map<int, Object?>) {
-        if (n[3] is String && n[4] is int && n[4] >= 1 && n[4] <= 99) {
-          fansName = n[3] as String;
-          fansLevel = n[4] as int;
+        final n3 = n[3];
+        final n4 = n[4];
+        if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99) {
+          fansName = n3;
+          fansLevel = n4;
           return;
         }
         n.values.forEach((v) => findFans(v, d + 1));
@@ -819,7 +850,7 @@ class HuyaDanmakuClient {
     _controller.add(DanmakuMessage(
       nickname: nick, content: content,
       fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
-      avatar: avatar, uid: sender[0] as int,
+      avatar: avatar, uid: uidVal,
       fansName: fansName, fansLevel: fansLevel,
       badgeUrls: badges, isHistory: history,
     ));
