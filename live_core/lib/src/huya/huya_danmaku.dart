@@ -33,12 +33,6 @@ class DanmakuMessage {
 
   static const kBadgeManager =
       'https://livewebbs2.msstatic.com/newfangguan_3.png';
-
-  /// 兜底单表
-  static const Map<String, String> emoteMap = {
-    '大哭':
-        'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
-  };
 }
 
 class HuyaDanmakuClient {
@@ -54,13 +48,7 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  static const _SUB33_LIVE =
-      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a08000106126c6976653a31323739353231303533353731180008011893100101194f100101195110010119531001011bc31001011bc41001011bc51001011bca1001180c30010b780c8c2c36004c5c6600';
-
-  static const _SUB33_CHAT =
-      '060c48555941265a482632303532162030613764666161323338353538323661326330316239383562613835363639632c3c6a0800010612636861743a313237393532313035333537311800010118431001180c30010b780c8c2c36004c5c6600';
-
-  /// ★ 内置表情表（源自你接收到的 getExpressionEmoticonPackage 数据，离线即用）
+  /// ★ 内置表情表（源自你接收到的 getExpressionEmoticonPackage 数据）
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -167,28 +155,6 @@ class HuyaDanmakuClient {
     return List.generate(n, (_) => chars[Random().nextInt(16)]).join();
   }
 
-  List<int> _hexToBytes(String hex) {
-    final out = <int>[];
-    for (var i = 0; i + 1 < hex.length; i += 2) {
-      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
-    }
-    return out;
-  }
-
-  int _indexOf(List<int> bytes, List<int> pattern) {
-    for (var i = 0; i + pattern.length <= bytes.length; i++) {
-      var ok = true;
-      for (var j = 0; j < pattern.length; j++) {
-        if (bytes[i + j] != pattern[j]) {
-          ok = false;
-          break;
-        }
-      }
-      if (ok) return i;
-    }
-    return -1;
-  }
-
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
     final cost = <String, int>{};
@@ -228,7 +194,6 @@ class HuyaDanmakuClient {
     _rctOk = false;
     _cmdSeq = 0;
 
-    // ★ 内置表情立即生效
     _seedBuiltinEmotes();
     if (emoteRegistry.isNotEmpty) {
       Future.delayed(
@@ -406,45 +371,41 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
+  // ================= ★ 自适应订阅（动态构建，无硬编码模板） =================
   void _sendSubscribeHistory() {
-    _sendSub33(_SUB33_CHAT);
-    _sendSub33(_SUB33_LIVE);
+    _sendSub33(_buildSub33Body('chat:', const [6211]));
+    _sendSub33(_buildSub33Body(
+        'live:', const [6291, 6479, 6481, 6483, 7107, 7108, 7109, 7114]));
   }
 
-  void _sendSub33(String template) {
-    try {
-      if (_ayyuid <= 0) return;
-      var bytes = _hexToBytes(template);
-      if (_guid.length == 32) {
-        final g = utf8.encode(_guid);
-        for (var i = 0; i < 32; i++) {
-          bytes[16 + i] = g[i];
-        }
-      }
-      const oldId = '1279521053571';
-      final newId = '$_ayyuid';
-      if (newId != oldId) {
-        for (final prefix in const ['live:', 'chat:']) {
-          final oldStr = utf8.encode('$prefix$oldId');
-          final idx = _indexOf(bytes, oldStr);
-          if (idx > 0) {
-            final newStr = utf8.encode('$prefix$newId');
-            bytes = <int>[
-              ...bytes.sublist(0, idx - 1),
-              newStr.length,
-              ...newStr,
-              ...bytes.sublist(idx + oldStr.length),
-            ];
-          }
-        }
-      }
-      final cmd = _TarsWriter();
-      cmd.writeInt(0, 33);
-      cmd.writeBytes(1, bytes);
-      cmd.writeInt(2, ++_reqId);
-      _send(cmd.toBytes());
-      _dbgPush('订阅33(${template == _SUB33_CHAT ? "chat" : "live"}) 已发');
-    } catch (_) {}
+  Uint8List _buildSub33Body(String group, List<int> ids) {
+    final val = _TarsWriter();
+    val.writeIntIntMap(1, {for (final i in ids) i: 1});
+    val.writeInt(3, 1);
+
+    final body = _TarsWriter();
+    body.writeString(0, 'HUYA&ZH&2052');
+    body.writeString(1, _guid);
+    body.writeInt(2, 0);
+    body.writeInt(3, 0);
+    body.writeStructMap(6, {'$group$_ayyuid': val});
+    body.writeInt(7, 0);
+    body.writeInt(8, 0);
+    body.writeInt(2, 0);
+    body.writeString(3, '');
+    body.writeInt(4, 0);
+    body.writeInt(5, 0);
+    body.writeString(6, '');
+    return body.toBytes();
+  }
+
+  void _sendSub33(Uint8List body) {
+    final cmd = _TarsWriter();
+    cmd.writeInt(0, 33);
+    cmd.writeBytes(1, body);
+    cmd.writeInt(2, ++_reqId);
+    _send(cmd.toBytes());
+    _dbgPush('订阅33 已发');
   }
 
   void _sendRctTimedMessage() {
@@ -1128,6 +1089,28 @@ class _TarsWriter {
     for (final v in items) {
       writeInt(0, v);
     }
+  }
+
+  /// ★ int→int map（订阅 id 用）
+  void writeIntIntMap(int tag, Map<int, int> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeInt(0, k);
+      writeInt(1, v);
+    });
+  }
+
+  /// ★ string→struct map（订阅分组用）
+  void writeStructMap(int tag, Map<String, _TarsWriter> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeString(0, k);
+      _head(1, 10);
+      _b.add(v._b.toBytes());
+      _b.addByte(0x0B);
+    });
   }
 
   void writeBytes(int tag, List<int> bytes) {
