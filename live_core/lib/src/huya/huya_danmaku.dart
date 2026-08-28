@@ -31,6 +31,7 @@ class DanmakuMessage {
     this.isHistory = false,
   });
 
+  /// 房管徽章（自带 _3，可直接加载）
   static const kBadgeManager =
       'https://livewebbs2.msstatic.com/newfangguan_3.png';
 }
@@ -48,51 +49,119 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  /// ★ 内置表情表（源自你接收到的 getExpressionEmoticonPackage 数据）
+  // ================= 内置表情表（源自接收数据） =================
+  // 默认包用 _pic.png（正常）；express 包统一 steam_3.png（steam.png 加载不出）
   static const Map<String, String> _builtinEmotes = {
+    // ---- 默认包 ----
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
-    '[大哭]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
-    '[大笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141715551855_pic.png',
-    '[害羞]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141715844572_pic.png',
-    '[哭]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_15790913779295_pic.png',
-    '[微笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141737604305_pic.png',
-    '[无语]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738020039_pic.png',
+    '[滑稽]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739087048_pic.png',
+    '[难受]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738689917_pic.png',
     '[亲亲]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738398631_pic.png',
-    '[惊呆]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738689917_pic.png',
-    '[漂移]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739087048_pic.png',
-    '[不是哥们2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/809a798714164c70a3f24feb090043b4/expressconfig/steam.png',
+    '[无辜]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141738020039_pic.png',
+    '[震惊]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141737604305_pic.png',
+    '[大笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141715551855_pic.png',
+    '[送花]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141715844572_pic.png',
+    '[偷笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_15790913779295_pic.png',
+    '[大哭]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141716134667_pic.png',
+    '[嘿哈]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141728933000_pic.png',
+    '[疑问]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729809356_pic.png',
+    '[赞]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16142231359365_pic.png',
+    '[可爱]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141731673076_pic.png',
+    '[开心]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141732333718_pic.png',
+    '[害羞]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141734805267_pic.png',
+    '[笑哭]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141744424368_pic.png',
+    '[调皮]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141743387129_pic.png',
+    '[狗头]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16164185817771_pic.png',
+    '[就这？]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16164186362506_pic.png',
+    '[OK]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16100992014714_pic.png',
+    '[爱心]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16104371440086_pic.png',
+    '[吃瓜]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16104410395955_pic.png',
+    '[哈哈大笑]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16104451098331_pic.png',
+    '[么么哒]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16104459735817_pic.png',
+    '[裂开了]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16104458758417_pic.png',
+    '[流泪]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16104459270039_pic.png',
+    // ---- 梗表情（express，steam_3.png） ----
+    '[不是哥们2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/809a798714164c70a3f24feb090043b4/expressconfig/steam_3.png',
+    '[神金3]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/1d5d44528d2544cabd96063d899842e8/expressconfig/steam_3.png',
     '[婉拒了哈]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062162steam_3.png',
     '[这不好吧]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062177steam_3.png',
-    '[他在CPU你]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/78f30039a103416cb7e2e5394138e0ea/expressconfig/steam.png',
-    '[注意看1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/88187b37451a4ab9a98eb3fba1fb3463/expressconfig/steam.png',
+    '[他在CPU你]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/78f30039a103416cb7e2e5394138e0ea/expressconfig/steam_3.png',
+    '[注意看1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/88187b37451a4ab9a98eb3fba1fb3463/expressconfig/steam_3.png',
     '[整不会了6]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/abee3a09a3ca49e4b4e567886eb0f5c9/expressconfig/steam_3.png',
     '[你是我的哥]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/dda720298ab146419718397f97dcb2eb/expressconfig/steam_3.png',
-    '[厚礼蟹]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e9206baa27e341e0b556de168c6003d6/expressconfig/steam.png',
-    '[真服了老六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/61d215d04b7145908d0af419f0111aec/expressconfig/steam.png',
-    '[泰酷辣]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e61973807356460a83adc9568799a938/expressconfig/steam.png',
-    '[几个菜啊]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/b638ab65dfad4a149e20feebda223ba7/expressconfig/steam.png',
-    '[街溜子]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c4586ceb173340a19ea86a64d11792cb/expressconfig/steam.png',
-    '[我是学生]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f1a8ec12f6a746a2ad4f4df389876d6b/expressconfig/steam.png',
-    '[兔个好运1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/937dc6416c574022bcfa8e5bca22518c/expressconfig/steam.png',
-    '[不会吧]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f9f7caf65ef9419f8ee967e01e6dccab/expressconfig/steam.png',
-    '[恭喜发财2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/58f65d52b10b4187815de239362565ba/expressconfig/steam.png',
-    '[指哪打哪]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdc237fe5f64411cbff3039933daa294/expressconfig/steam.png',
-    '[心里有数]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27ae54d51eba4f769bcbb51aa6ca3270/expressconfig/steam.png',
-    '[你应得的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5a63dc48a52a497d8410c86ed754592f/expressconfig/steam.png',
-    '[顶级]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdd03cdbd4f94cf7afe7077c07b9cea4/expressconfig/steam.png',
-    '[有实力的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c49b89484a1d4476b307fc163ff721a3/expressconfig/steam.png',
-    '[蒜鸟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5293fc1adc0c4820aad8d2ce4eabc387/expressconfig/steam.png',
-    '[几个意思]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/a25c121f18114c8390f850669f9d8ea9/expressconfig/steam.png',
-    '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282c72b257/expressconfig/steam.png',
-    '[包的兄弟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/883edb56e08b443cad098a8173b0f80d/expressconfig/steam.png',
-    '[真的六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/023c6ec6575c4952ae77c4bd74d2a72f/expressconfig/steam.png',
-    '[白子说话]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/202eb7ce3c5742c194a95fc0ddd94584/expressconfig/steam.png',
+    '[厚礼蟹]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e9206baa27e341e0b556de168c6003d6/expressconfig/steam_3.png',
+    '[真服了老六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/61d215d04b7145908d0af419f0111aec/expressconfig/steam_3.png',
+    '[泰酷辣]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e61973807356460a83adc9568799a938/expressconfig/steam_3.png',
+    '[几个菜啊]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/b638ab65dfad4a149e20feebda223ba7/expressconfig/steam_3.png',
+    '[街溜子]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c4586ceb173340a19ea86a64d11792cb/expressconfig/steam_3.png',
+    '[我是学生]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f1a8ec12f6a746a2ad4f4df389876d6b/expressconfig/steam_3.png',
+    '[兔个好运1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/937dc6416c574022bcfa8e5bca22518c/expressconfig/steam_3.png',
+    '[不会吧]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f9f7caf65ef9419f8ee967e01e6dccab/expressconfig/steam_3.png',
+    '[恭喜发财2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/58f65d52b10b4187815de239362565ba/expressconfig/steam_3.png',
+    '[指哪打哪]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdc237fe5f64411cbff3039933daa294/expressconfig/steam_3.png',
+    '[心里有数]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27ae54d51eba4f769bcbb51aa6ca3270/expressconfig/steam_3.png',
+    '[你应得的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5a63dc48a52a497d8410c86ed754592f/expressconfig/steam_3.png',
+    '[顶级]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdd03cdbd4f94cf7afe7077c07b9cea4/expressconfig/steam_3.png',
+    '[有实力的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c49b89484a1d4476b307fc163ff721a3/expressconfig/steam_3.png',
+    '[蒜鸟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5293fc1adc0c4820aad8d2ce4eabc387/expressconfig/steam_3.png',
+    '[几个意思]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/a25c121f18114c8390f850669f9d8ea9/expressconfig/steam_3.png',
+    '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282c72b257/expressconfig/steam_3.png',
+    '[包的兄弟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/883edb56e08b443cad098a8173b0f80d/expressconfig/steam_3.png',
+    '[真的六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/023c6ec6575c4952ae77c4bd74d2a72f/expressconfig/steam_3.png',
+    '[白子说话]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/202eb7ce3c5742c194a95fc0ddd94584/expressconfig/steam_3.png',
     '[黑子说话3]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/24f3300a0a964b7fb87da623893bc753/expressconfig/steam_3.png',
     '[俺不中嘞]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c0a00ac14515474f8f65101132964e76/expressconfig/steam_3.png',
-    '[这瓜保熟吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978877steam.png',
+    '[这瓜保熟吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978877steam_3.png',
     '[我不理解]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978857steam_3.png',
-    '[你好有本领啊]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1633760698steam.png',
+    '[你好有本领啊]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1633760698steam_3.png',
+    '[破防了]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1637921177steam_3.png',
+    '[摆烂]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1637921193steam_3.png',
+    '[赢麻了]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1636083068steam_3.png',
+    '[贴贴]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1639125875steam_3.png',
+    '[冲鸭]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1639537717steam_3.png',
+    '[好家伙]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1628217761steam_3.png',
+    '[你礼貌吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1628217778steam_3.png',
+    '[栓Q]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1652683448steam_3.png',
+    '[炫]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1654832600steam_3.png',
+    '[可爱滴捏]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1655452661steam_3.png',
+    '[全是感情]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1655452979steam_3.png',
+    '[已经结束咧]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656671691steam_3.png',
+    '[就是玩儿]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1631872668steam_3.png',
+    '[我emo了]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1637313705steam_3.png',
+    '[懂的都懂]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1637313653steam_3.png',
+    '[你相信光吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1633760683steam_3.png',
+    '[你是真的gou]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1632897534steam_3.png',
+    '[勇敢牛牛不怕困难]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1625140968steam_3.png',
+    '[社交牛逼症]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1631267767steam_3.png',
+    '[绝绝子]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1632659203steam_3.png',
+    '[那我当房外人]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1632659218steam_3.png',
+    '[不回我很酷]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1623816934steam_3.png',
+    '[丝滑]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1637313692steam_3.png',
+    '[躺平1]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1648203074steam_3.png',
+    '[摸鱼鱼]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1649412887steam_3.png',
+    '[看乐了]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1654832366steam_3.png',
+    '[轻轻敲醒]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062145steam_3.png',
+    '[牛哇]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1649939757steam_3.png',
+    '[让我看看梗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1649939773steam_3.png',
+    '[牛波一]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/aee99479b07042a9be457dcd8d6aeb7f/expressconfig/steam_3.png',
+    '[别闹了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/ff7f7665699543719a9b55eb6fcd9a00/expressconfig/steam_3.png',
+    '[想咋滴]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/51e3baac4b854147806f635ec0dabfd7/expressconfig/steam_3.png',
+    '[贴脸开大]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/21c48719ad4c474c9d246508511adb30/expressconfig/steam_3.png',
+    '[还在演]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/90dcd501b90044b99b11e5bf0b522053/expressconfig/steam_3.png',
+    '[下饭操作]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/6463ef711e074a24a6bd5c2993b27344/expressconfig/steam_3.png',
+    '[真小丑]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5c285481fd234b03afb8895ae915c1fc/expressconfig/steam_3.png',
+    '[那咋啦]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/a7bcac402efe4f61a3052e6649d9d060/expressconfig/steam_3.png',
+    '[三连问]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/ddaac95f714147eda8bcc7f77d951d41/expressconfig/steam_3.png',
+    '[这事闹的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/dd012d8af3b74760a2e8086312de1145/expressconfig/steam_3.png',
+    '[你好香啊]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/691fce42d2ac486293468bb9a86ef1eb/expressconfig/steam_3.png',
+    '[彳亍]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f50e346e2bb5450b9c29f4bda53b752e/expressconfig/steam_3.png',
+    '[闹呢]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/b88ec557b6514de9996dbed01cc06cb8/expressconfig/steam_3.png',
+    '[太拉勒]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/62a13e439ec34234a2c1f82da6f3d250/expressconfig/steam_3.png',
+    '[理所当然]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5233b74530d54f94be0ccbe9b6175c6f/expressconfig/steam_3.png',
+    '[前方高能]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5bd5391455b34539950a3a1fbee498e7/expressconfig/steam_3.png',
+    '[仍有高手]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/316c94a267964d89bb8382921d508c00/expressconfig/steam_3.png',
+    '[难绷1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/599afbc84a5b4105b2b3ed52aadb5b08/expressconfig/steam_3.png',
   };
 
   /// ★ 全局表情注册表（内置种子，进房即可用）
@@ -101,7 +170,25 @@ class HuyaDanmakuClient {
   static void _seedBuiltinEmotes() {
     if (_emoteSeeded) return;
     _emoteSeeded = true;
-    _builtinEmotes.forEach((k, v) => emoteRegistry.putIfAbsent(k, () => v));
+    _builtinEmotes.forEach(
+        (k, v) => emoteRegistry.putIfAbsent(k, () => _fixEmoteUrl(v)));
+  }
+
+  /// ★ express 的 steam.png 加载不出，统一换 steam_3.png
+  static String _fixEmoteUrl(String url) {
+    const bad = 'steam.png';
+    if (url.endsWith(bad)) {
+      return url.substring(0, url.length - bad.length) + 'steam_3.png';
+    }
+    return url;
+  }
+
+  /// ★ 爷牌 guiyepai.png 加载不出，换 guiyepai_3.png
+  static String _fixBadgeUrl(String url) {
+    if (url.contains('guiyepai') && !url.contains('_3.png')) {
+      return url.replaceAll('guiyepai.png', 'guiyepai_3.png');
+    }
+    return url;
   }
 
   WebSocket? _ws;
@@ -371,7 +458,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  // ================= ★ 自适应订阅（动态构建，无硬编码模板） =================
+  // ================= 自适应订阅（动态组包，无硬编码模板） =================
   void _sendSubscribeHistory() {
     _sendSub33(_buildSub33Body('chat:', const [6211]));
     _sendSub33(_buildSub33Body(
@@ -408,6 +495,7 @@ class HuyaDanmakuClient {
     _dbgPush('订阅33 已发');
   }
 
+  // ================= 历史弹幕（tReq 扁平，不二次包裹） =================
   void _sendRctTimedMessage() {
     try {
       if (_ayyuid <= 0) return;
@@ -447,6 +535,7 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
+  // ================= 发送弹幕 =================
   Future<bool> sendDanmaku(String text) async {
     if (_loginUid <= 0) return false;
     if (!_verified || !_registered) {
@@ -601,6 +690,7 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
+  // ================= 收包 =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
@@ -937,6 +1027,7 @@ class HuyaDanmakuClient {
 
     findFans(msg, 0);
 
+    // 收集徽章：爷牌(归一化_3) → 粉钻/粉丝钻 → 房管，顺序与网页一致
     final found = <String>[];
     void findBadges(dynamic node, int depth) {
       if (depth > 8) return;
@@ -966,7 +1057,7 @@ class HuyaDanmakuClient {
     findBadges(msg, 0);
     final badges = <String>[];
     for (final u in found) {
-      if (u.contains('guiyepai')) badges.add(u);
+      if (u.contains('guiyepai')) badges.add(_fixBadgeUrl(u));
     }
     for (final u in found) {
       if (u.contains('PendantInfoZip') ||
@@ -1091,7 +1182,7 @@ class _TarsWriter {
     }
   }
 
-  /// ★ int→int map（订阅 id 用）
+  /// int→int map（订阅 id 用）
   void writeIntIntMap(int tag, Map<int, int> m) {
     _head(tag, 8);
     _intValue(m.length);
@@ -1101,7 +1192,7 @@ class _TarsWriter {
     });
   }
 
-  /// ★ string→struct map（订阅分组用）
+  /// string→struct map（订阅分组用）
   void writeStructMap(int tag, Map<String, _TarsWriter> m) {
     _head(tag, 8);
     _intValue(m.length);
