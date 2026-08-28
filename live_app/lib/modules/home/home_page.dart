@@ -143,7 +143,7 @@ class _HomePageState extends State<HomePage> {
               SearchPage(
                 onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
                     nickname: nickname, avatarUrl: avatarUrl),
-                isFollowed: (roomId) => FollowStore.contains(roomId),
+                isFollowed: (roomId) async => FollowStore.contains(roomId),
                 onToggleFollow: (roomId, follow, nickname, avatar) async {
                   if (follow) {
                     await FollowStore.add(FollowItem(
