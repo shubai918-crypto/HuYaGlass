@@ -4,7 +4,14 @@ class FollowItem {
   final String roomId;
   final String name;
   final String avatar;
-  FollowItem({required this.roomId, required this.name, this.avatar = ''});
+  final bool isLive; // ★ 补齐 isLive 字段，适配 Controller 传参
+
+  FollowItem({
+    required this.roomId,
+    required this.name,
+    this.avatar = '',
+    this.isLive = false,
+  });
 }
 
 class FollowStore extends GetxController {
@@ -13,12 +20,11 @@ class FollowStore extends GetxController {
   final items = <FollowItem>[].obs;
   final refreshing = false.obs;
 
-  /// ★ 适配 main.dart 中的 await FollowStore.init();
+  /// 适配 main.dart 中的 await FollowStore.init();
   static Future<void> init() async {
     if (!Get.isRegistered<FollowStore>()) {
       Get.put(FollowStore());
     }
-    // 这里可以加入本地数据库 (如 sqflite / shared_preferences) 的读取逻辑
   }
 
   static bool contains(String roomId) {
@@ -27,6 +33,11 @@ class FollowStore extends GetxController {
     } catch (_) {
       return false;
     }
+  }
+
+  /// ★ 补齐 isFollowed 方法，适配 live_play_controller.dart 的调用
+  static Future<bool> isFollowed(String roomId) async {
+    return contains(roomId);
   }
 
   static Future<void> add(FollowItem item) async {
@@ -42,7 +53,6 @@ class FollowStore extends GetxController {
   }
 
   Future<void> refresh() async {
-    // 模拟网络请求或本地读取
     await Future.delayed(const Duration(milliseconds: 500));
   }
 }
