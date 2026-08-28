@@ -9,9 +9,17 @@ class FollowItem {
 
 class FollowStore extends GetxController {
   static FollowStore get to => Get.find();
-  
+
   final items = <FollowItem>[].obs;
   final refreshing = false.obs;
+
+  /// ★ 适配 main.dart 中的 await FollowStore.init();
+  static Future<void> init() async {
+    if (!Get.isRegistered<FollowStore>()) {
+      Get.put(FollowStore());
+    }
+    // 这里可以加入本地数据库 (如 sqflite / shared_preferences) 的读取逻辑
+  }
 
   static bool contains(String roomId) {
     try {
@@ -34,7 +42,7 @@ class FollowStore extends GetxController {
   }
 
   Future<void> refresh() async {
-    // 这里可以接入真实的网络请求或本地数据库读取
+    // 模拟网络请求或本地读取
     await Future.delayed(const Duration(milliseconds: 500));
   }
 }
