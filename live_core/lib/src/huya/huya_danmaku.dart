@@ -76,6 +76,10 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
+  /// ★ 握手必备：launch.wsTimeSync 首发帧（服务器不回包就卡"握手中"）
+  static const _LAUNCH_REQ =
+      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
+
   // ================= 完整内置表情表（兜底+初始） =================
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
@@ -134,11 +138,16 @@ class HuyaDanmakuClient {
   static void _seedBuiltinEmotes() {
     if (_emoteSeeded) return;
     _emoteSeeded = true;
-    _builtinEmotes.forEach((k, v) => emoteRegistry.putIfAbsent(k, () => _fixEmoteUrl(v)));
+    _builtinEmotes.forEach(
+        (k, v) => emoteRegistry.putIfAbsent(k, () => _fixEmoteUrl(v)));
   }
 
+  /// ★ express 的 steam.png 加载不出，统一换 steam_3.png
   static String _fixEmoteUrl(String url) {
-    if (url.endsWith('steam.png')) return url.replaceAll('steam.png', 'steam_3.png');
+    const bad = 'steam.png';
+    if (url.endsWith(bad)) {
+      return url.substring(0, url.length - bad.length) + 'steam_3.png';
+    }
     return url;
   }
 
@@ -187,8 +196,17 @@ class HuyaDanmakuClient {
 
   String _cookieVal(String name) =>
       RegExp('$name=([^;]+)').firstMatch(_cookie)?.group(1)?.trim() ?? '';
+
   String _randHex(int n) =>
       List.generate(n, (_) => '0123456789abcdef'[Random().nextInt(16)]).join();
+
+  List<int> _hexToBytes(String hex) {
+    final out = <int>[];
+    for (var i = 0; i + 1 < hex.length; i += 2) {
+      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return out;
+  }
 
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
@@ -196,8 +214,8 @@ class HuyaDanmakuClient {
     await Future.wait(hosts.map((h) async {
       final sw = Stopwatch()..start();
       try {
-        final addrs =
-            await InternetAddress.lookup(h).timeout(const Duration(seconds: 2));
+        final addrs = await InternetAddress.lookup(h)
+            .timeout(const Duration(seconds: 2));
         sw.stop();
         cost[h] = addrs.isNotEmpty ? sw.elapsedMilliseconds : -1;
       } catch (_) {
@@ -232,7 +250,8 @@ class HuyaDanmakuClient {
 
     _seedBuiltinEmotes();
     if (emoteRegistry.isNotEmpty) {
-      Future.delayed(const Duration(milliseconds: 100), () => onEmoteReady?.call());
+      Future.delayed(
+          const Duration(milliseconds: 100), () => onEmoteReady?.call());
     }
 
     _cookie = HuyaLoginManager().cookie;
@@ -245,7 +264,8 @@ class HuyaDanmakuClient {
     final baseinfo = _buildBaseinfo();
     final hosts = await _preferredHosts();
     final urls = [
-      for (final h in hosts) 'wss://$h/?baseinfo=${Uri.encodeComponent(baseinfo)}'
+      for (final h in hosts)
+        'wss://$h/?baseinfo=${Uri.encodeComponent(baseinfo)}'
     ];
 
     WebSocket? ws;
@@ -253,10 +273,15 @@ class HuyaDanmakuClient {
     for (final ep in urls) {
       if (_closed) return;
       try {
-        ws = await WebSocket.connect(ep,
-            headers: {'Origin': 'https://www.huya.com', 'User-Agent': _ua},
-            compression: CompressionOptions.compressionDefault)
-            .timeout(const Duration(seconds: 6));
+        ws = await WebSocket.connect(
+          ep,
+          headers: {
+            'Origin': 'https://www.huya.com',
+            'User-Agent': _ua,
+            'Cache-Control': 'no-cache',
+          },
+          compression: CompressionOptions.compressionDefault,
+        ).timeout(const Duration(seconds: 6));
         connectedHost = Uri.parse(ep).host;
         break;
       } catch (_) {}
@@ -269,9 +294,15 @@ class HuyaDanmakuClient {
     _ws = ws;
     _dbgPush('WS host: $connectedHost');
     onStatus?.call('弹幕已连接，握手中…');
-    ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(), cancelOnError: true);
+    ws.listen(_onData, onDone: _onDone, onError: (_) => _onDone(),
+        cancelOnError: true);
 
     _send(_buildVerifyCookie());
+    // ★ 握手关键：verify 之后立刻发 launch.wsTimeSync
+    Timer(const Duration(milliseconds: 300), () {
+      if (_closed) return;
+      _send(_hexToBytes(_LAUNCH_REQ));
+    });
     Timer(const Duration(milliseconds: 600), () {
       if (!_closed) _sendRegister();
     });
@@ -286,6 +317,9 @@ class HuyaDanmakuClient {
     });
     Timer(const Duration(milliseconds: 1800), () {
       if (!_closed) _sendVipbarRegister();
+    });
+    Timer(const Duration(milliseconds: 4500), () {
+      if (!_closed && !_rctOk) _sendRctTimedMessage();
     });
 
     _heartTimer?.cancel();
@@ -305,6 +339,7 @@ class HuyaDanmakuClient {
     cmd.writeInt(2, ++_reqId);
     _send(cmd.toBytes());
     _registered = true;
+    _dbgPush('Register(16) 已发');
   }
 
   void _sendVipbarRegister() {
@@ -316,21 +351,26 @@ class HuyaDanmakuClient {
     cmd.writeBytes(1, req.toBytes());
     cmd.writeInt(2, ++_reqId);
     _send(cmd.toBytes());
+    _dbgPush('Register(vipbar) 已发');
   }
 
+  /// ★ 旧版 baseinfo（tag10 用 map，带 mid），服务器才认
   String _buildBaseinfo() {
+    final r = Random();
+    final mid =
+        '${(10000 + r.nextDouble() * 89999).toStringAsFixed(5)},${(10000 + r.nextDouble() * 89999).toStringAsFixed(6)}';
     final info = _TarsWriter();
     info.writeInt(0, _loginUid);
     info.writeString(1, _guid);
-    info.writeString(2, _emoHuYaUA);
+    info.writeString(2, _sendHuYaUA);
     info.writeString(3, 'HUYA&ZH&2052');
     info.writeString(4, '');
-    info.writeString(5, '');
+    info.writeString(5, mid);
     info.writeInt(6, 0);
     info.writeString(7, '');
-    info.writeInt(8, 0);
+    info.writeString(8, '');
     info.writeString(9, '');
-    info.writeInt(10, 0);
+    info.writeMap(10, const {'HUYA_NET': '0', 'HUYA_VSDKUA': _sendHuYaUA});
     return base64Encode(info.toBytes());
   }
 
@@ -361,22 +401,26 @@ class HuyaDanmakuClient {
   }
 
   void _sendUserHeartBeat() {
-    final uaInfo = _TarsWriter();
-    uaInfo.writeString(1, _guid);
-    uaInfo.writeString(3, _sendHuYaUA);
-    uaInfo.writeString(4, _cookie);
-    uaInfo.writeString(5, 'edg');
-    final req = _TarsWriter();
-    req.writeStruct(0, uaInfo);
-    req.writeInt(2, _ayyuid);
-    req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
-    req.writeString(4, _randHex(31));
-    req.writeInt(10, 14);
-    req.writeInt(11, 1);
-    final body = _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
-    _send(_wrapWsCmd(_withPrefix(body), 3));
+    try {
+      final uaInfo = _TarsWriter();
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(3, _sendHuYaUA);
+      uaInfo.writeString(4, _cookie);
+      uaInfo.writeString(5, 'edg');
+      final req = _TarsWriter();
+      req.writeStruct(0, uaInfo);
+      req.writeInt(2, _ayyuid);
+      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
+      req.writeString(4, _randHex(31));
+      req.writeInt(10, 14);
+      req.writeInt(11, 1);
+      final body =
+          _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
+      _send(_wrapWsCmd(_withPrefix(body), 3));
+    } catch (_) {}
   }
 
+  // ================= 自适应订阅（动态组包，无硬编码模板） =================
   void _sendSubscribeHistory() {
     _sendSub33(_buildSub33Body('chat:', const [6211]));
     _sendSub33(_buildSub33Body(
@@ -412,107 +456,166 @@ class HuyaDanmakuClient {
     _dbgPush('订阅33 已发');
   }
 
+  /// ★ 表情包：独立请求 + 解析 + 归一化
   void _fetchEmoticonPackage() {
-    final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
-    final uaInfo = _TarsWriter();
-    uaInfo.writeInt(0, myUid);
-    uaInfo.writeString(1, _guid);
-    uaInfo.writeString(3, _emoHuYaUA);
-    uaInfo.writeString(4, _cookie);
-    final req = _TarsWriter();
-    req.writeStruct(0, uaInfo);
-    req.writeInt(1, _ayyuid);
-    req.writeInt(2, 0);
-    req.writeInt(3, 0);
-    final body =
-        _wupBody('wupui', 'getExpressionEmoticonPackage', {'tReq': _treq(req.toBytes())});
-    _send(_wrapWsCmd(_withPrefix(body), 3));
+    try {
+      final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
+      final uaInfo = _TarsWriter();
+      uaInfo.writeInt(0, myUid);
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(2, '');
+      uaInfo.writeString(3, _emoHuYaUA);
+      uaInfo.writeString(4, _cookie);
+      uaInfo.writeInt(5, 0);
+      uaInfo.writeString(6, '');
+      uaInfo.writeString(7, '');
+      final req = _TarsWriter();
+      req.writeStruct(0, uaInfo);
+      req.writeInt(1, _ayyuid);
+      req.writeInt(2, 0);
+      req.writeInt(3, 0);
+      final body = _wupBody('wupui', 'getExpressionEmoticonPackage',
+          {'tReq': _treq(req.toBytes())});
+      _send(_wrapWsCmd(_withPrefix(body), 3));
+      _dbgPush('请求表情包 已发');
+    } catch (_) {}
   }
 
   void _sendRctTimedMessage() {
-    final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
-    final uaInfo = _TarsWriter();
-    uaInfo.writeInt(0, myUid);
-    uaInfo.writeString(1, _guid);
-    uaInfo.writeString(3, _sendHuYaUA);
-    uaInfo.writeString(4, _cookie);
-    uaInfo.writeString(6, 'edg');
-    final info = _TarsWriter();
-    info.writeStruct(0, uaInfo);
-    info.writeInt(1, _ayyuid);
-    info.writeInt(2, 0);
-    info.writeInt(3, 0);
-    final req = _TarsWriter();
-    req.writeStruct(0, info);
-    req.writeInt(2, 0);
-    req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
-    req.writeString(6, _randHex(32));
-    req.writeInt(8, 0);
-    final body = _wupBody('mobileui', 'getRctTimedMessage', {'tReq': req.toBytes()});
-    _send(_wrapWsCmd(_withPrefix(body), 3));
+    try {
+      if (_ayyuid <= 0) return;
+      final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
+      final uaInfo = _TarsWriter();
+      uaInfo.writeInt(0, myUid);
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(2, '');
+      uaInfo.writeString(3, _sendHuYaUA);
+      uaInfo.writeString(4, _cookie);
+      uaInfo.writeInt(5, 0);
+      uaInfo.writeString(6, 'edg');
+      uaInfo.writeString(7, '');
+      final info = _TarsWriter();
+      info.writeStruct(0, uaInfo);
+      info.writeInt(1, _ayyuid);
+      info.writeInt(2, 0);
+      info.writeInt(3, 0);
+      final req = _TarsWriter();
+      req.writeStruct(0, info);
+      req.writeInt(2, 0);
+      req.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
+      req.writeInt(4, 0);
+      req.writeInt(5, 0);
+      req.writeString(6, _randHex(32));
+      req.writeInt(8, 0);
+      req.writeBytesMap(9, const {});
+      req.writeBytesMap(10, const {});
+      final body =
+          _wupBody('mobileui', 'getRctTimedMessage', {'tReq': req.toBytes()});
+      _send(_wrapWsCmd(_withPrefix(body), 3));
+      _dbgPush('请求历史弹幕 已发');
+    } catch (_) {}
   }
 
   Future<bool> sendDanmaku(String text) async {
-    if (_loginUid <= 0 || !_verified || !_registered) return false;
-    _pendingDanmaku = text;
-    final req = _buildSendReq(text);
-    final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
-    final framed = _withPrefix(body);
-    _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
-    return true;
+    if (_loginUid <= 0) return false;
+    if (!_verified || !_registered) {
+      _dbgPush('未认证/未注册');
+      return false;
+    }
+    try {
+      _pendingDanmaku = text;
+      final req = _buildSendReq(text);
+      final body = _wupBody('liveui', 'sendMessage', {'tReq': _treq(req)});
+      final framed = _withPrefix(body);
+      _send(_wrapWsCmd(framed, 3, md5.convert(framed).toString()));
+      _dbgPush('WS 已发');
+      return true;
+    } catch (e) {
+      _dbgPush('发送异常:$e');
+      return false;
+    }
   }
 
   Uint8List _buildSendReq(String text) {
     final user = _TarsWriter();
     user.writeInt(0, _loginUid);
     user.writeString(1, _guid);
+    user.writeString(2, '');
     user.writeString(3, _sendHuYaUA);
     user.writeString(4, _cookie);
+    user.writeInt(5, 0);
     user.writeString(6, 'edg');
+    user.writeString(7, '');
     final cf = _TarsWriter();
     cf.writeInt(0, -1);
     cf.writeInt(1, 4);
+    cf.writeInt(2, 0);
     cf.writeInt(3, -1);
     cf.writeInt(4, -1);
     cf.writeInt(5, -1);
     final border = _TarsWriter();
+    border.writeInt(0, 0);
+    border.writeInt(1, 0);
+    border.writeInt(2, -1);
     border.writeInt(3, 100);
+    border.writeInt(4, -1);
     border.writeInt(5, 100);
+    border.writeString(6, '');
+    border.writeInt(7, -1);
+    border.writeInt(8, -1);
     final bf = _TarsWriter();
+    bf.writeInt(0, -1);
     bf.writeInt(1, 4);
+    bf.writeInt(2, 0);
     bf.writeInt(3, 1);
+    bf.writeInt(4, 0);
     bf.writeStruct(5, border);
     bf.writeListInt(6, const []);
+    bf.writeInt(7, 0);
+    bf.writeInt(8, -1);
     final sence = _TarsWriter();
+    sence.writeInt(0, 0);
+    sence.writeInt(1, 0);
+    sence.writeInt(2, 0);
     final req = _TarsWriter();
     req.writeStruct(0, user);
     req.writeInt(1, _topSid);
     req.writeInt(2, _subSid > 0 ? _subSid : _topSid);
     req.writeString(3, text.replaceAll('\n', ' '));
+    req.writeInt(4, 0);
     req.writeStruct(5, cf);
     req.writeStruct(6, bf);
+    req.writeListInt(7, const []);
     req.writeInt(8, _topSid);
+    req.writeListInt(9, const []);
     req.writeStruct(10, sence);
+    req.writeInt(11, 0);
     return req.toBytes();
   }
 
-  Uint8List _treq(Uint8List s) {
-    final o = BytesBuilder();
-    o.addByte(0x0A);
-    o.add(s);
-    o.addByte(0x0B);
-    return o.toBytes();
+  Uint8List _treq(Uint8List structFields) {
+    final out = BytesBuilder();
+    out.addByte(0x0A);
+    out.add(structFields);
+    out.addByte(0x0B);
+    return out.toBytes();
   }
 
-  Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
+  Uint8List _wupBody(
+      String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
     final wup = _TarsWriter();
     wup.writeInt(1, 3);
+    wup.writeInt(2, 0);
+    wup.writeInt(3, 0);
     wup.writeInt(4, ++_reqId);
     wup.writeString(5, servant);
     wup.writeString(6, func);
     wup.writeBytes(7, inner.toBytes());
+    wup.writeInt(8, 0);
+    wup.writeBytesMap(9, const {});
+    wup.writeBytesMap(10, const {});
     return wup.toBytes();
   }
 
@@ -531,7 +634,10 @@ class HuyaDanmakuClient {
     final cmd = _TarsWriter();
     cmd.writeInt(0, cmdType);
     cmd.writeBytes(1, vData);
+    cmd.writeInt(2, 0);
     cmd.writeString(3, '$_traceId:$_traceId:0:${_cmdSeq++}');
+    cmd.writeInt(4, 0);
+    cmd.writeInt(5, 0);
     cmd.writeString(6, sMd5 ?? md5.convert(vData).toString());
     return cmd.toBytes();
   }
@@ -541,14 +647,19 @@ class HuyaDanmakuClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 5), () {
       if (!_closed) {
-        connect(topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: _roomIdStr);
+        connect(
+            topSid: _topSid,
+            subSid: _subSid,
+            uid: _ayyuid,
+            roomIdStr: _roomIdStr);
       }
     });
   }
 
   void _onDone() {
     _heartTimer?.cancel();
-    if (!_closed) _scheduleReconnect();
+    if (_closed) return;
+    _scheduleReconnect();
   }
 
   void _send(List<int> data) {
@@ -567,53 +678,77 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
+  // ================= 收包 =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
       final fields = _TarsReader(bytes).readFields();
-      final cmdType = fields[0] is int ? fields[0] as int : -1;
+      final cmdTypeRaw = fields[0];
+      final cmdType = cmdTypeRaw is int ? cmdTypeRaw : -1;
       final vData = fields[1];
-      if (vData is! List) return;
-      final payload = Uint8List.fromList(vData.map((e) => (e as int) & 0xFF).toList());
+      if (vData is! List) {
+        onStatus?.call('收包$_recvCount cmd=$cmdType');
+        return;
+      }
+      final payload =
+          Uint8List.fromList(vData.map((e) => (e as int) & 0xFF).toList());
 
       if (cmdType == 11) {
         final f = _TarsReader(payload).readFields();
         final f0 = f[0];
-        if (f0 == 0) _verified = true;
+        if (f0 is int && f0 == 0) _verified = true;
+        _dbgPush('Verify iValidate=$f0');
       } else if (cmdType == 17) {
         final f = _TarsReader(payload).readFields();
         final f0 = f[0];
-        if (f0 == 0) _registered = true;
+        if (f0 is int && f0 == 0) _registered = true;
+        _dbgPush('Register iResCode=$f0');
+      } else if (cmdType == 33) {
+        _dbgPush('分组状态(33)');
+      } else if (cmdType == 34) {
+        final f = _TarsReader(payload).readFields();
+        final f0 = f[0];
+        _dbgPush('Register34 iResCode=$f0');
       } else if (cmdType == 4) {
         _handleWupRsp(payload);
+      } else if (cmdType == 21) {
+        // 心跳回执
       } else if (cmdType == 22 || cmdType == 7) {
         final s = utf8.decode(payload.sublist(0, min(40, payload.length)),
             allowMalformed: true);
         if (s.contains('vipbar')) {
-          if (cmdType == 22) _parseGuardPush(payload); else _parseVipPush(payload);
+          if (cmdType == 22) {
+            _parseGuardPush(payload);
+          } else {
+            _parseVipPush(payload);
+          }
         } else {
           _handleMsgPushUnified(payload);
         }
       } else {
         _handleMsgPushUnified(payload);
       }
+      onStatus?.call('收包$_recvCount cmd=$cmdType');
     } catch (_) {}
   }
 
+  // ================= 守护 / 贵宾 =================
   void _parseGuardPush(Uint8List p) {
     guardList.clear();
-    _walkVip(p, guardList, true);
+    _walkVip(p, guardList);
     _vipController.add(List.from(guardList));
+    _dbgPush('守护 ${guardList.length} 人');
   }
 
   void _parseVipPush(Uint8List p) {
     vipList.clear();
-    _walkVip(p, vipList, false);
+    _walkVip(p, vipList);
     _vipController.add(List.from(vipList));
+    _dbgPush('贵宾 ${vipList.length} 人');
   }
 
-  void _walkVip(Uint8List p, List<VipUser> list, bool isGuard) {
+  void _walkVip(Uint8List p, List<VipUser> list) {
     void walk(dynamic node, int depth) {
       if (depth > 10) return;
       if (node is Map<int, Object?>) {
@@ -623,12 +758,17 @@ class HuyaDanmakuClient {
           if (v is String && v.isNotEmpty && !v.startsWith('http') && nick.isEmpty) {
             nick = v;
           }
-          if (v is String && v.startsWith('http') && v.contains('avatar') && avatar.isEmpty) {
+          if (v is String &&
+              v.startsWith('http') &&
+              v.contains('avatar') &&
+              avatar.isEmpty) {
             avatar = v;
           }
         }
         if (nick.isNotEmpty && avatar.isNotEmpty) {
-          String gIcon = '', nIcon = '', pIcon = '';
+          String gIcon = '';
+          String nIcon = '';
+          String pIcon = '';
           void findUrls(dynamic n, int d) {
             if (d > 6) return;
             if (n is String && n.startsWith('http')) {
@@ -643,12 +783,21 @@ class HuyaDanmakuClient {
           }
           findUrls(node, 0);
           int gl = 0;
-          if (gIcon.contains('/1.png')) gl = 1;
-          else if (gIcon.contains('/2.png')) gl = 2;
-          else if (gIcon.contains('/3.png')) gl = 3;
+          if (gIcon.contains('/1.png')) {
+            gl = 1;
+          } else if (gIcon.contains('/2.png')) {
+            gl = 2;
+          } else if (gIcon.contains('/3.png')) {
+            gl = 3;
+          }
           list.add(VipUser(
-              nickname: nick, avatar: avatar, guardLevel: gl,
-              guardIcon: gIcon, nobleIcon: nIcon, pendantIcon: pIcon));
+            nickname: nick,
+            avatar: avatar,
+            guardLevel: gl,
+            guardIcon: gIcon,
+            nobleIcon: nIcon,
+            pendantIcon: pIcon,
+          ));
           return;
         }
         node.values.forEach((v) => walk(v, depth + 1));
@@ -656,117 +805,193 @@ class HuyaDanmakuClient {
         node.forEach((v) => walk(v, depth + 1));
       }
     }
+
     walk(_TarsReader(p).readFields(), 0);
   }
 
+  // ================= Wup 响应 =================
   Map<int, Object?> _readWupFields(List<int> bytes) {
     var start = 0;
     if (bytes.length > 4) {
-      final prefix = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
+      final prefix =
+          (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
       if (prefix == bytes.length) start = 4;
     }
     return _TarsReader(Uint8List.fromList(bytes.sublist(start))).readFields();
   }
 
   void _handleWupRsp(List<int> bytes) {
-    final f = _readWupFields(bytes);
-    final servant = '${f[5] ?? ''}';
-    final func = '${f[6] ?? ''}';
+    try {
+      final f = _readWupFields(bytes);
+      final servant = '${f[5] ?? ''}';
+      final func = '${f[6] ?? ''}';
 
-    if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
-      int cnt = 0;
-      void walk(dynamic node, int depth) {
-        if (depth > 12) return;
-        if (node is Map<int, Object?>) {
-          final name = node[1];
-          String? url;
-          final u3 = node[3];
-          final u4 = node[4];
-          if (u3 is String && u3.startsWith('http')) {
-            url = u3;
-          } else if (u4 is String && u4.startsWith('http')) {
-            url = u4;
+      // ★ 表情包响应：解析并归一化
+      if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
+        int cnt = 0;
+        void walk(dynamic node, int depth) {
+          if (depth > 12) return;
+          if (node is Map<int, Object?>) {
+            final name = node[1];
+            String? url;
+            final u3 = node[3];
+            final u4 = node[4];
+            if (u3 is String && u3.startsWith('http')) {
+              url = u3;
+            } else if (u4 is String && u4.startsWith('http')) {
+              url = u4;
+            }
+            if (name is String && name.startsWith('[') && url != null) {
+              emoteRegistry[name] = _fixEmoteUrl(url);
+              cnt++;
+            }
+            node.values.forEach((v) => walk(v, depth + 1));
+          } else if (node is List) {
+            node.forEach((v) => walk(v, depth + 1));
           }
-          if (name is String && name.startsWith('[') && url != null) {
-            emoteRegistry[name] = _fixEmoteUrl(url);
-            cnt++;
-          }
-          node.values.forEach((v) => walk(v, depth + 1));
-        } else if (node is List) {
-          node.forEach((v) => walk(v, depth + 1));
         }
-      }
-      walk(f, 0);
-      if (cnt > 0) onEmoteReady?.call();
-      return;
-    }
 
-    if (servant == 'mobileui' && func == 'getRctTimedMessage') {
-      int n = 0;
-      void collect(dynamic node, int depth) {
-        if (depth > 14 || n > 60) return;
-        if (node is Map<int, Object?>) {
-          Map<int, Object?>? msgNode;
-          final n3 = node[3];
-          final n0 = node[0];
-          if (n3 is String && n0 is Map<int, Object?>) {
-            msgNode = node;
-          } else if (n0 is Map<int, Object?>) {
-            final n0_3 = n0[3];
-            if (n0_3 is String) {
-              msgNode = n0;
+        walk(f, 0);
+        _dbgPush('表情 $cnt 个');
+        if (cnt > 0) onEmoteReady?.call();
+        return;
+      }
+
+      // ★ 历史弹幕
+      if (servant == 'mobileui' && func == 'getRctTimedMessage') {
+        int n = 0;
+        void collect(dynamic node, int depth) {
+          if (depth > 14 || n > 60) return;
+          if (node is Map<int, Object?>) {
+            Map<int, Object?>? msgNode;
+            final n3 = node[3];
+            final n0 = node[0];
+            if (n3 is String && n0 is Map<int, Object?>) {
+              msgNode = node;
+            } else if (n0 is Map<int, Object?>) {
+              final n03 = n0[3];
+              if (n03 is String) msgNode = n0;
+            }
+            if (msgNode != null && _emitFromFields(msgNode, history: true)) {
+              n++;
+              return;
+            }
+            node.values.forEach((v) => collect(v, depth + 1));
+          } else if (node is List) {
+            node.forEach((v) => collect(v, depth + 1));
+          }
+        }
+
+        collect(f, 0);
+        if (n > 0) _rctOk = true;
+        _dbgPush('历史弹幕 $n 条');
+        return;
+      }
+
+      int ret = -99;
+      final sb = f[7];
+      if (sb is List) {
+        final inner = _TarsReader(Uint8List.fromList(
+                sb.map((e) => (e as int) & 0xFF).toList()))
+            .readFields();
+        final map = inner[0];
+        if (map is List) {
+          for (var i = 0; i + 1 < map.length; i += 2) {
+            if ('${map[i]}' == 'tRsp' && map[i + 1] is List) {
+              final rspBytes = Uint8List.fromList(
+                  (map[i + 1] as List).map((e) => (e as int) & 0xFF).toList());
+              final rsp = _TarsReader(rspBytes).readFields();
+              final r0 = rsp[0];
+              ret = r0 is int ? r0 : -99;
+              if (servant == 'launch' && ret == 0) _parseLaunchRsp(rsp);
             }
           }
-          if (msgNode != null && _emitFromFields(msgNode, history: true)) {
-            n++;
-            return;
-          }
-          node.values.forEach((v) => collect(v, depth + 1));
-        } else if (node is List) {
-          node.forEach((v) => collect(v, depth + 1));
         }
       }
-      collect(f, 0);
-      if (n > 0) _rctOk = true;
+      _dbgPush('WupRsp $servant.$func iRet=$ret');
+    } catch (_) {
+      _dbgPush('WupRsp 解析失败');
     }
   }
 
-  void _handleMsgPushUnified(Uint8List payload) {
-    final f = _TarsReader(payload).readFields();
-    for (final key in const [1, 0, 2]) {
-      final v = f[key];
-      if (v is List && v.isNotEmpty && v.first is Map<int, Object?>) {
+  void _parseLaunchRsp(Map<int, Object?> rsp) {
+    final newHosts = <String>[];
+    for (final entry in rsp.entries) {
+      final v = entry.value;
+      if (v is List && v.isNotEmpty && v.first is String) {
         for (final item in v) {
-          if (item is Map<int, Object?>) {
-            final uriVal = item[0];
-            final uri = uriVal is int ? uriVal : 1400;
-            final raw = item[1];
-            if (raw is List) {
-              _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+          if (item is String) {
+            if (item.contains('huya.com')) {
+              newHosts.add(item);
+            } else if (item.contains(':')) {
+              newHosts.add(item.split(':').first);
             }
           }
         }
-        return;
       }
     }
-    final f3 = f[3];
-    final f0 = f[0];
-    if (f3 is String || f0 is Map<int, Object?>) _decodeDanmaku(payload);
+    if (newHosts.isNotEmpty) {
+      _dynamicHosts = newHosts.toSet().toList();
+      _dbgPush('动态节点更新: ${_dynamicHosts.length}个');
+    }
+  }
+
+  // ================= 弹幕推送 =================
+  void _handleMsgPushUnified(Uint8List payload) {
+    try {
+      final f = _TarsReader(payload).readFields();
+      for (final key in const [1, 0, 2]) {
+        final v = f[key];
+        if (v is List && v.isNotEmpty && v.first is Map<int, Object?>) {
+          for (final item in v) {
+            if (item is Map<int, Object?>) {
+              final uriRaw = item[0];
+              final uri = uriRaw is int ? uriRaw : 1400;
+              final raw = item[1];
+              if (raw is List) {
+                _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+              } else if (raw is Uint8List) {
+                _routePush(uri, raw);
+              }
+            }
+          }
+          return;
+        }
+      }
+      final uriRaw = f[1];
+      final uri = uriRaw is int ? uriRaw : 1400;
+      final raw = f[2];
+      if (raw is List) {
+        _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+        return;
+      } else if (raw is Uint8List) {
+        _routePush(uri, raw);
+        return;
+      }
+      final f3 = f[3];
+      final f0 = f[0];
+      if (f3 is String || f0 is Map<int, Object?>) _decodeDanmaku(payload);
+    } catch (_) {}
   }
 
   void _routePush(int uri, List<int> payload) {
     if (uri == 1400) {
       _decodeDanmaku(payload);
+    } else if (uri == 6500 || uri == 6501 || uri == 6502) {
+      if (!_decodeDanmaku(payload)) _decodeHistoryDanmaku(payload);
     } else if (uri == 8006) {
-      final f = _TarsReader(Uint8List.fromList(payload)).readFields();
-      final pop = f[0];
-      if (pop is int && pop > 0) onPopularity?.call(pop);
+      try {
+        final f = _TarsReader(Uint8List.fromList(payload)).readFields();
+        final pop = f[0];
+        if (pop is int && pop > 0) onPopularity?.call(pop);
+      } catch (_) {}
     }
   }
 
   bool _decodeDanmaku(List<int> payload) {
     try {
-      return _emitFromFields(_TarsReader(Uint8List.fromList(payload)).readFields());
+      return _emitFromFields(
+          _TarsReader(Uint8List.fromList(payload)).readFields());
     } catch (_) {
       return false;
     }
@@ -777,28 +1002,27 @@ class HuyaDanmakuClient {
     final f3 = fields[3];
     final f0 = fields[0];
     if (f3 is! String && f0 is Map<int, Object?>) {
-      final f0_3 = f0[3];
-      if (f0_3 is String) {
-        msg = f0;
-      }
+      final f03 = f0[3];
+      if (f03 is String) msg = f0;
     }
     final content = msg[3];
     if (content is! String || content.isEmpty) return false;
-    
     var sender = msg[0];
     if (sender is! Map<int, Object?>) return false;
     final s0 = sender[0];
-    if (s0 is Map<int, Object?>) {
-      sender = s0;
-    }
+    if (s0 is Map<int, Object?>) sender = s0;
     final uidVal = sender[0];
     if (uidVal is! int) return false;
 
-    String nick = '', avatar = '';
+    String nick = '';
+    String avatar = '';
     for (final v in sender.values) {
       if (v is String) {
-        if (v.startsWith('http') && avatar.isEmpty) avatar = v;
-        else if (v.isNotEmpty && nick.isEmpty) nick = v;
+        if (v.startsWith('http') && avatar.isEmpty) {
+          avatar = v;
+        } else if (!v.startsWith('http') && v.isNotEmpty && nick.isEmpty) {
+          nick = v;
+        }
       }
     }
     if (nick.isEmpty) return false;
@@ -808,63 +1032,171 @@ class HuyaDanmakuClient {
       final cf = msg[k];
       if (cf is Map<int, Object?>) {
         final cf0 = cf[0];
-        if (cf0 is int && cf0 >= 0x10000) {
+        if (cf0 is int && cf0 >= 0x10000 && cf0 <= 0xFFFFFF) {
           color = cf0;
           break;
         }
+        for (final v in cf.values) {
+          if (v is int && v >= 0x10000 && v <= 0xFFFFFF) {
+            color = v;
+            break;
+          }
+        }
       }
+      if (color != 0) break;
     }
+
+    int managerType = 0;
+    final mt = msg[7];
+    if (mt is int && mt > 0 && mt <= 3) managerType = mt;
 
     String fansName = '';
     int fansLevel = 0;
-    void findFans(dynamic n, int d) {
-      if (fansName.isNotEmpty || d > 8) return;
-      if (n is Map<int, Object?>) {
-        final n3 = n[3];
-        final n4 = n[4];
-        if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99) {
-          fansName = n3;
+    bool isName(dynamic s) =>
+        s is String &&
+        s.isNotEmpty &&
+        !s.startsWith('http') &&
+        s.length <= 12 &&
+        s != nick &&
+        s != content;
+    void findFans(dynamic node, int depth) {
+      if (fansName.isNotEmpty || depth > 8) return;
+      if (node is Map<int, Object?>) {
+        final n3 = node[3];
+        final n4 = node[4];
+        if (isName(n3) && n4 is int && n4 >= 1 && n4 <= 99) {
+          fansName = n3 as String;
           fansLevel = n4;
           return;
         }
-        n.values.forEach((v) => findFans(v, d + 1));
-      } else if (n is List) {
-        n.forEach((v) => findFans(v, d + 1));
+        final n2 = node[2];
+        final n3b = node[3];
+        final n0 = node[0];
+        if (isName(n2) && n3b is int && n3b >= 1 && n3b <= 99 && n0 is int) {
+          fansName = n2 as String;
+          fansLevel = n3b;
+          return;
+        }
+        node.values.forEach((v) => findFans(v, depth + 1));
+      } else if (node is List) {
+        if (node.isNotEmpty && node.first is int) {
+          try {
+            final inner =
+                _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
+            if (inner.isNotEmpty) findFans(inner, depth + 1);
+          } catch (_) {}
+        } else {
+          node.forEach((v) => findFans(v, depth + 1));
+        }
       }
     }
+
     findFans(msg, 0);
 
-    final badges = <String>[];
-    void findBadges(dynamic n, int d) {
-      if (d > 8) return;
-      if (n is Map<int, Object?>) n.values.forEach((v) => findBadges(v, d + 1));
-      else if (n is List) n.forEach((v) => findBadges(v, d + 1));
-      else if (n is String && n.startsWith('http') &&
-          (n.contains('guiyepai') || n.contains('Pendant') || n.contains('fenzuan') || n.contains('fangguan'))) {
-        final fixed = n.contains('guiyepai') ? n.replaceAll('guiyepai.png', 'guiyepai_3.png') : n;
-        if (!badges.contains(fixed)) badges.add(fixed);
+    // 收集徽章：爷牌(归一化_3) → 粉钻/粉丝钻 → 房管
+    final found = <String>[];
+    void findBadges(dynamic node, int depth) {
+      if (depth > 8) return;
+      if (node is Map<int, Object?>) {
+        node.values.forEach((v) => findBadges(v, depth + 1));
+      } else if (node is List) {
+        if (node.isNotEmpty && node.first is int) {
+          try {
+            findBadges(
+                _TarsReader(Uint8List.fromList(node.cast<int>())).readFields(),
+                depth + 1);
+          } catch (_) {}
+        } else {
+          node.forEach((v) => findBadges(v, depth + 1));
+        }
+      } else if (node is String && node.startsWith('http')) {
+        if (node.contains('guiyepai') ||
+            node.contains('PendantInfoZip') ||
+            node.contains('fenzuan') ||
+            node.contains('fengzuan') ||
+            node.contains('fangguan')) {
+          if (!found.contains(node)) found.add(node);
+        }
       }
     }
+
     findBadges(msg, 0);
+    final badges = <String>[];
+    for (final u in found) {
+      if (u.contains('guiyepai')) {
+        final fixed = u.contains('_3.png')
+            ? u
+            : u.replaceAll('guiyepai.png', 'guiyepai_3.png');
+        badges.add(fixed);
+      }
+    }
+    for (final u in found) {
+      if (u.contains('PendantInfoZip') ||
+          u.contains('fenzuan') ||
+          u.contains('fengzuan')) badges.add(u);
+    }
+    for (final u in found) {
+      if (u.contains('fangguan')) badges.add(u);
+    }
 
     _controller.add(DanmakuMessage(
-      nickname: nick, content: content,
+      nickname: nick,
+      content: content,
       fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
-      avatar: avatar, uid: uidVal,
-      fansName: fansName, fansLevel: fansLevel,
-      badgeUrls: badges, isHistory: history,
+      avatar: avatar,
+      uid: uidVal,
+      fansName: fansName,
+      fansLevel: fansLevel,
+      managerType: managerType,
+      badgeUrls: badges,
+      isHistory: history,
     ));
-    if (_pendingDanmaku != null && content == _pendingDanmaku) _pendingDanmaku = null;
+
+    if (_pendingDanmaku != null && content == _pendingDanmaku) {
+      _pendingDanmaku = null;
+      _dbgPush('回显确认 ✔');
+    }
     return true;
+  }
+
+  void _decodeHistoryDanmaku(List<int> payload) {
+    try {
+      final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
+      final n5 = fields[5];
+      final n6 = fields[6];
+      final nick = n5 is String ? n5 : '';
+      final content = n6 is String ? n6 : '';
+      if (nick.isEmpty || content.isEmpty || content == nick) return;
+      String avatar = '';
+      for (final v in fields.values) {
+        if (v is String && v.startsWith('http')) {
+          avatar = v;
+          break;
+        }
+      }
+      _controller.add(DanmakuMessage(
+        nickname: nick,
+        content: content,
+        avatar: avatar,
+        isHistory: true,
+      ));
+    } catch (_) {}
   }
 }
 
+// ================= Tars 编码 =================
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
+
   void _head(int tag, int type) {
-    if (tag < 15) _b.addByte((tag << 4) | type);
-    else { _b.addByte(0xF0 | type); _b.addByte(tag); }
+    if (tag < 15) {
+      _b.addByte((tag << 4) | type);
+    } else {
+      _b.addByte(0xF0 | type);
+      _b.addByte(tag);
+    }
   }
+
   int _intType(int v) {
     if (v == 0) return 12;
     if (v >= -128 && v <= 127) return 0;
@@ -872,45 +1204,150 @@ class _TarsWriter {
     if (v >= -2147483648 && v <= 2147483647) return 2;
     return 3;
   }
-  void _add(int v, int n) { for (var i = n - 1; i >= 0; i--) _b.addByte((v >> (8 * i)) & 0xFF); }
+
+  void _add(int v, int n) {
+    for (var i = n - 1; i >= 0; i--) {
+      _b.addByte((v >> (8 * i)) & 0xFF);
+    }
+  }
+
   void _intValue(int v) {
     final t = _intType(v);
-    if (t == 12) { _b.addByte(0x0C); return; }
-    _b.addByte(t); _add(v, [1, 2, 4, 8][t]);
+    if (t == 12) {
+      _b.addByte(0x0C);
+      return;
+    }
+    _b.addByte(t);
+    _add(v, [1, 2, 4, 8][t]);
   }
-  void writeInt(int tag, int v) { final t = _intType(v); _head(tag, t); if (t == 12) return; _add(v, [1, 2, 4, 8][t]); }
+
+  void writeInt(int tag, int v) {
+    final t = _intType(v);
+    _head(tag, t);
+    if (t == 12) return;
+    _add(v, [1, 2, 4, 8][t]);
+  }
+
   void writeString(int tag, String s) {
     final b = utf8.encode(s);
-    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); }
-    else { _head(tag, 7); _add(b.length, 4); }
+    if (b.length < 256) {
+      _head(tag, 6);
+      _b.addByte(b.length);
+    } else {
+      _head(tag, 7);
+      _add(b.length, 4);
+    }
     _b.add(b);
   }
-  void writeStringList(int tag, List<String> items) { _head(tag, 9); _intValue(items.length); for (final s in items) writeString(0, s); }
-  void writeListInt(int tag, List<int> items) { _head(tag, 9); _intValue(items.length); for (final v in items) writeInt(0, v); }
-  void writeIntIntMap(int tag, Map<int, int> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeInt(0, k); writeInt(1, v); }); }
-  void writeStructMap(int tag, Map<String, _TarsWriter> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeString(0, k); _head(1, 10); _b.add(v._b.toBytes()); _b.addByte(0x0B); }); }
-  void writeBytes(int tag, List<int> bytes) { _head(tag, 13); _head(0, 0); _intValue(bytes.length); _b.add(bytes); }
-  void writeBytesMap(int tag, Map<String, List<int>> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeBytes(1, v); }); }
-  void writeStruct(int tag, _TarsWriter inner) { _head(tag, 10); _b.add(inner._b.toBytes()); _b.addByte(0x0B); }
+
+  void writeStringList(int tag, List<String> items) {
+    _head(tag, 9);
+    _intValue(items.length);
+    for (final s in items) {
+      writeString(0, s);
+    }
+  }
+
+  void writeListInt(int tag, List<int> items) {
+    _head(tag, 9);
+    _intValue(items.length);
+    for (final v in items) {
+      writeInt(0, v);
+    }
+  }
+
+  void writeIntIntMap(int tag, Map<int, int> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeInt(0, k);
+      writeInt(1, v);
+    });
+  }
+
+  void writeStructMap(int tag, Map<String, _TarsWriter> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeString(0, k);
+      _head(1, 10);
+      _b.add(v._b.toBytes());
+      _b.addByte(0x0B);
+    });
+  }
+
+  void writeBytes(int tag, List<int> bytes) {
+    _head(tag, 13);
+    _head(0, 0);
+    _intValue(bytes.length);
+    _b.add(bytes);
+  }
+
+  void writeMap(int tag, Map<String, String> entries) {
+    _head(tag, 8);
+    _intValue(entries.length);
+    entries.forEach((k, v) {
+      writeString(0, k);
+      writeString(1, v);
+    });
+  }
+
+  void writeBytesMap(int tag, Map<String, List<int>> entries) {
+    _head(tag, 8);
+    _intValue(entries.length);
+    entries.forEach((k, v) {
+      writeString(0, k);
+      writeBytes(1, v);
+    });
+  }
+
+  void writeStruct(int tag, _TarsWriter inner) {
+    _head(tag, 10);
+    _b.add(inner._b.toBytes());
+    _b.addByte(0x0B);
+  }
+
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
 }
 
+// ================= Tars 解码 =================
 class _TarsReader {
   final Uint8List _d;
   int _pos = 0;
+
   _TarsReader(this._d);
+
   bool get hasMore => _pos < _d.length;
+
   int _byte() => _d[_pos++];
+
   int _readIntN(int n) {
     var v = 0;
-    for (var i = 0; i < n; i++) v = (v << 8) | _d[_pos++];
-    return (v << (64 - 8 * n)) >> (64 - 8 * n);
+    for (var i = 0; i < n; i++) {
+      v = (v << 8) | _d[_pos++];
+    }
+    final shift = 64 - 8 * n;
+    return (v << shift) >> shift;
   }
+
   int _readValueInt() {
     final t = _byte();
-    if (t == 12) return 0;
-    return _readIntN([1, 2, 4, 8][t]);
+    switch (t) {
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
+      default:
+        throw FormatException('tars: not an int, type=$t');
+    }
   }
+
   Map<int, Object?> readFields() {
     final m = <int, Object?>{};
     while (hasMore) {
@@ -923,15 +1360,67 @@ class _TarsReader {
     }
     return m;
   }
+
   Object? _readValue(int type) {
-    if (type <= 3) return _readIntN([1, 2, 4, 8][type]);
-    if (type == 12) return 0;
-    if (type == 6) { final n = _byte(); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
-    if (type == 7) { final n = _readIntN(4); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
-    if (type == 13) { _byte(); final n = _readValueInt(); final bytes = _d.sublist(_pos, _pos + n); _pos += n; return bytes; }
-    if (type == 9) { final size = _readValueInt(); final list = <Object?>[]; for (var i = 0; i < size; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); list.add(_readValue(h & 0x0F)); } return list; }
-    if (type == 8) { final size = _readValueInt(); final list = <Object?>[]; for (var i = 0; i < size * 2; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); list.add(_readValue(h & 0x0F)); } return list; }
-    if (type == 10) return readFields();
-    return null;
+    switch (type) {
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
+      case 4:
+        final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
+        _pos += 4;
+        return v;
+      case 5:
+        final v = ByteData.sublistView(_d, _pos, _pos + 8).getFloat64(0);
+        _pos += 8;
+        return v;
+      case 6:
+        final n = _byte();
+        final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
+        _pos += n;
+        return s;
+      case 7:
+        final n = _readIntN(4);
+        final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
+        _pos += n;
+        return s;
+      case 13:
+        _byte();
+        final n = _readValueInt();
+        final bytes = _d.sublist(_pos, _pos + n);
+        _pos += n;
+        return bytes;
+      case 9:
+        final size = _readValueInt();
+        final list = <Object?>[];
+        for (var i = 0; i < size; i++) {
+          final h = _byte();
+          var tag = (h >> 4) & 0x0F;
+          if (tag == 15) tag = _byte();
+          list.add(_readValue(h & 0x0F));
+        }
+        return list;
+      case 8:
+        final size = _readValueInt();
+        final list = <Object?>[];
+        for (var i = 0; i < size * 2; i++) {
+          final h = _byte();
+          var tag = (h >> 4) & 0x0F;
+          if (tag == 15) tag = _byte();
+          list.add(_readValue(h & 0x0F));
+        }
+        return list;
+      case 10:
+        return readFields();
+      default:
+        throw FormatException('tars: unknown type $type');
+    }
   }
 }
