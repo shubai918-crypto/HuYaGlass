@@ -21,7 +21,6 @@ class _FollowPageState extends State<FollowPage> {
     _refresh();
   }
 
-  /// 刷新：逐个核验开播状态并回写，用于分组
   Future<void> _refresh() async {
     final store = FollowStore.to;
     if (store.refreshing.value) return;
@@ -50,7 +49,8 @@ class _FollowPageState extends State<FollowPage> {
           }
         } catch (_) {}
       }
-      await store._save();
+      // ★ 修复：调用公开的 save() 方法
+      await store.save();
     } finally {
       store.refreshing.value = false;
     }
@@ -83,7 +83,6 @@ class _FollowPageState extends State<FollowPage> {
     if (ok) await FollowStore.remove(it.roomId);
   }
 
-  /// 分组标题：纯色点 + 文字，不使用 emoji
   Widget _sectionHeader(String title, int count, Color dot) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
