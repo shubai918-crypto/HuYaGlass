@@ -3,13 +3,12 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
-import '../live_play/background_play.dart';
 import '../live_play/live_play_page.dart';
 import '../search/search_page.dart';
-import '../settings/huya_login_page.dart';
+import '../settings/settings_page.dart';
+import 'follow_page.dart';
 import 'follow_store.dart';
 
-/// 虎牙品牌橙
 const Color kHuyaAccent = Color(0xFFFF8800);
 
 class NowRoom {
@@ -42,111 +41,196 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  final ValueNotifier<bool> _barMinimized = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _barMinimized.dispose();
+    super.dispose();
+  }
+
+  void _select(int i) {
+    setState(() {
+      _selectedIndex = i;
+      _barMinimized.value = false;
+    });
+  }
+
+  /// 搜索(1)/订阅(2) 下滑超阈值收拢，上滑/回顶展开
+  bool _onScroll(ScrollNotification n) {
+    if (_selectedIndex != 1 && _selectedIndex != 2) return false;
+    if (n is ScrollUpdateNotification) {
+      final delta = n.scrollDelta ?? 0.0;
+      final pixels = n.metrics.pixels;
+      if (delta > 0 && pixels > 120) {
+        if (!_barMinimized.value) _barMinimized.value = true;
+      } else if (delta < 0) {
+        if (_barMinimized.value) _barMinimized.value = false;
+      }
+    } else if (n is ScrollEndNotification) {
+      if (n.metrics.pixels < 40 && _barMinimized.value) {
+        _barMinimized.value = false;
+      }
+    }
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).padding.bottom;
-    return Material(
-      type: MaterialType.transparency,
-      child: GlassScaffold(
-        contentAwareBrightness: true,
-        statusBarStyle: GlassStatusBarStyle.light,
-        background: SizedBox.expand(
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(-0.3, -0.8),
-                radius: 1.6,
-                colors: [
-                  Color(0xFF2D1B4E),
-                  Color(0xFF12121A),
-                  Color(0xFF050508),
-                ],
-                stops: [0.0, 0.6, 1.0],
-              ),
-            ),
-          ),
-        ),
-        appBar: GlassAppBar(
-          title: GlassContainer(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-            useOwnLayer: true,
-            settings: LiquidGlassSettings(blur: 8, thickness: 20),
-            child: const Text(
-              'HuyaLive',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600),
-            ),
-          ),
-          actions: [
-            GlassIconButton(
-              icon: const Icon(Icons.settings, color: Colors.white),
-              size: 44,
-              onPressed: () => setState(() => _selectedIndex = 3),
-            ),
-          ],
-        ),
-        // ★ 1.0.0 统一导航：GlassTabBar.bottom() + GlassTab
-        bottomBar: GlassTabBar.bottom(
-          adaptiveBrightness: true,
-          selectedIndex: _selectedIndex,
-          onTabSelected: (i) => setState(() => _selectedIndex = i),
-          selectedIconColor: kHuyaAccent,
-          selectedLabelColor: kHuyaAccent,
-          unselectedIconColor: Colors.white.withOpacity(0.5),
-          unselectedLabelColor: Colors.white.withOpacity(0.5),
-          indicatorColor: kHuyaAccent.withOpacity(0.15),
-          settings: LiquidGlassSettings(
-            blur: 24,
-            thickness: 30,
-            glassColor: Colors.black.withOpacity(0.35),
-          ),
-          bottomAccessory: _buildMiniBar(),
-          bottomAccessoryHeight: 64,
-          bottomAccessorySpacing: 8.0,
-          tabs: const [
-            GlassTab(icon: Icon(Icons.home), label: '首页'),
-            GlassTab(icon: Icon(Icons.search), label: '搜索'),
-            GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-            GlassTab(icon: Icon(Icons.settings), label: '设置'),
-          ],
-        ),
-        body: ValueListenableBuilder<NowRoom?>(
-          valueListenable: NowWatching.notifier,
-          builder: (context, room, _) => Padding(
-            padding: EdgeInsets.only(
-              top: topPad + 64,
-              bottom: bottomPad + (room != null ? 170 : 100),
-            ),
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: [
-                _HomeView(
-                    onOpenFollows: () => setState(() => _selectedIndex = 2)),
-                SearchPage(
-                  onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
-                      nickname: nickname, avatarUrl: avatarUrl),
-                  isFollowed: (roomId) async => FollowStore.contains(roomId),
-                  onToggleFollow: (roomId, follow, nickname, avatar) async {
-                    if (follow) {
-                      await FollowStore.add(FollowItem(
-                          roomId: roomId, name: nickname, avatar: avatar));
-                    } else {
-                      await FollowStore.remove(roomId);
-                    }
-                  },
-                ),
-                const _FollowsView(),
-                const _SettingsView(),
+    return GlassScaffold(
+      contentAwareBrightness: true,
+      statusBarStyle: GlassStatusBarStyle.light,
+      background: SizedBox.expand(
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(-0.3, -0.8),
+              radius: 1.6,
+              colors: [
+                Color(0xFF2D1B4E),
+                Color(0xFF12121A),
+                Color(0xFF050508),
               ],
+              stops: [0.0, 0.6, 1.0],
             ),
           ),
         ),
       ),
+      appBar: GlassAppBar(
+        title: GlassContainer(
+          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+          useOwnLayer: true,
+          settings: LiquidGlassSettings(blur: 8, thickness: 20),
+          child: const Text(
+            'HuyaLive',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600),
+          ),
+        ),
+        actions: [
+          GlassIconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            size: 44,
+            onPressed: () => _select(3),
+          ),
+        ],
+      ),
+      // ★ 双形态底部栏：展开 ↔ 收拢（Apple Music 式）
+      bottomBar: ValueListenableBuilder<bool>(
+        valueListenable: _barMinimized,
+        builder: (context, minimized, _) => AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          alignment: Alignment.bottomCenter,
+          child: minimized
+              ? _compactBar(bottomPad)
+              : _expandedBar(bottomPad),
+        ),
+      ),
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: Padding(
+          padding: EdgeInsets.only(top: topPad + 64),
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              _HomeView(onOpenFollows: () => _select(2)),
+              SearchPage(
+                onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
+                    nickname: nickname, avatarUrl: avatarUrl),
+                isFollowed: (roomId) => FollowStore.contains(roomId),
+                onToggleFollow: (roomId, follow, nickname, avatar) async {
+                  if (follow) {
+                    await FollowStore.add(FollowItem(
+                        roomId: roomId, name: nickname, avatar: avatar));
+                  } else {
+                    await FollowStore.remove(roomId);
+                  }
+                },
+              ),
+              const FollowPage(),
+              const SettingsPage(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------- 展开态：Mini 条 + 带标签 Tab ----------
+  Widget _expandedBar(double bottomPad) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomPad + 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+            child: _buildMiniBar(),
+          ),
+          _buildTabBar(),
+        ],
+      ),
+    );
+  }
+
+  // ---------- 收拢态：圆形图标 + 中间 Mini 条 ----------
+  Widget _compactBar(double bottomPad) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(10, 0, 10, bottomPad + 6),
+      child: Row(
+        children: [
+          _circleTab(0, Icons.home),
+          const SizedBox(width: 8),
+          _circleTab(1, Icons.search),
+          const SizedBox(width: 8),
+          Expanded(child: _buildMiniBar()),
+          const SizedBox(width: 8),
+          _circleTab(2, Icons.subscriptions_outlined),
+          const SizedBox(width: 8),
+          _circleTab(3, Icons.settings),
+        ],
+      ),
+    );
+  }
+
+  Widget _circleTab(int index, IconData icon) {
+    final selected = _selectedIndex == index;
+    return GlassIconButton(
+      icon: Icon(icon,
+          color: selected ? kHuyaAccent : Colors.white.withOpacity(0.5),
+          size: 22),
+      size: 46,
+      onPressed: () => _select(index),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return GlassTabBar.bottom(
+      adaptiveBrightness: true,
+      selectedIndex: _selectedIndex,
+      onTabSelected: _select,
+      selectedIconColor: kHuyaAccent,
+      selectedLabelColor: kHuyaAccent,
+      unselectedIconColor: Colors.white.withOpacity(0.5),
+      unselectedLabelColor: Colors.white.withOpacity(0.5),
+      indicatorColor: kHuyaAccent.withOpacity(0.15),
+      settings: LiquidGlassSettings(
+        blur: 24,
+        thickness: 30,
+        glassColor: Colors.black.withOpacity(0.35),
+      ),
+      tabs: const [
+        GlassTab(icon: Icon(Icons.home), label: '首页'),
+        GlassTab(icon: Icon(Icons.search), label: '搜索'),
+        GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+        GlassTab(icon: Icon(Icons.settings), label: '设置'),
+      ],
     );
   }
 
@@ -170,9 +254,7 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(10),
                 child: room.avatarUrl.isNotEmpty
                     ? Image.network(room.avatarUrl,
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
+                        width: 40, height: 40, fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _artPlaceholder())
                     : _artPlaceholder(),
               ),
@@ -224,40 +306,6 @@ class _HomeView extends StatelessWidget {
   final VoidCallback onOpenFollows;
   const _HomeView({required this.onOpenFollows});
 
-  void _openEnterRoom(BuildContext context) {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('进入直播间',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: '输入房间号，如 31343932',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Get.back(),
-              child:
-                  const Text('取消', style: TextStyle(color: Colors.white54))),
-          TextButton(
-            onPressed: () {
-              Get.back();
-              goLive(ctrl.text.trim());
-            },
-            child: const Text('进入', style: TextStyle(color: kHuyaAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -284,8 +332,8 @@ class _HomeView extends StatelessWidget {
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Text('看直播 · 弹幕 · 订阅 · 真实发送',
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.9), fontSize: 13)),
+                  style:
+                      TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
               const SizedBox(height: 18),
               GlassButton(
                 icon: const Icon(Icons.play_arrow),
@@ -296,7 +344,7 @@ class _HomeView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _OpaqueContentCard(
+        _card(
           icon: Icons.subscriptions_outlined,
           color: kHuyaAccent,
           label: '我的订阅',
@@ -304,34 +352,24 @@ class _HomeView extends StatelessWidget {
           onTap: onOpenFollows,
         ),
         const SizedBox(height: 12),
-        _OpaqueContentCard(
+        _card(
           icon: Icons.account_circle,
           color: const Color(0xFFFFB25E),
           label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
           sub: '登录后可发真实弹幕 / 看真实订阅数',
-          onTap: () => Get.to(() => const HuyaLoginPage()),
+          onTap: () => Get.toNamed('/huya_login'),
         ),
       ],
     );
   }
-}
 
-class _OpaqueContentCard extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String label;
-  final String sub;
-  final VoidCallback onTap;
-  const _OpaqueContentCard({
-    required this.icon,
-    required this.color,
-    required this.label,
-    required this.sub,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _card({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String sub,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -375,202 +413,38 @@ class _OpaqueContentCard extends StatelessWidget {
       ),
     );
   }
-}
 
-// ================= 订阅 Tab（响应式 + 分组 + 刷新） =================
-class _FollowsView extends StatefulWidget {
-  const _FollowsView();
-  @override
-  State<_FollowsView> createState() => _FollowsViewState();
-}
-
-class _FollowsViewState extends State<_FollowsView> {
-  final HuyaStreamResolver _resolver = HuyaStreamResolver();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
-  }
-
-  Future<void> _refresh() async {
-    if (FollowStore.instance.refreshing.value) return;
-    FollowStore.instance.refreshing.value = true;
-    try {
-      for (final it in FollowStore.instance.items.toList()) {
-        try {
-          final info = await _resolver
-              .resolveStream(it.roomId)
-              .timeout(const Duration(seconds: 8));
-          if (info != null) {
-            FollowStore.updateLive(
-              it.roomId,
-              info.isLive,
-              name: info.streamerInfo.nickname.isNotEmpty
-                  ? info.streamerInfo.nickname
-                  : null,
-              avatar: info.streamerInfo.avatar.isNotEmpty
-                  ? info.streamerInfo.avatar
-                  : null,
-            );
-          }
-        } catch (_) {}
-      }
-    } finally {
-      FollowStore.instance.refreshing.value = false;
-    }
-  }
-
-  Widget _tile(FollowItem it) {
-    return GestureDetector(
-      onTap: () => goLive(it.roomId, nickname: it.name, avatarUrl: it.avatar),
-      onLongPress: () async {
-        await FollowStore.remove(it.roomId);
-      },
-      child: GlassListTile(
-        leading: CircleAvatar(
-          radius: 22,
-          backgroundColor: Colors.white10,
-          backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
-          child: it.avatar.isEmpty
-              ? const Icon(Icons.person, color: Colors.white54, size: 22)
-              : null,
+  void _openEnterRoom(BuildContext context) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('进入直播间',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: '输入房间号，如 31343932',
+            hintStyle: TextStyle(color: Colors.white38),
+          ),
         ),
-        title: Text(it.name,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600)),
-        subtitle: Text('房间 ${it.roomId}',
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        trailing: it.isLive
-            ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                    color: const Color(0x33E5484D),
-                    borderRadius: BorderRadius.circular(8)),
-                child: const Text('直播中',
-                    style: TextStyle(
-                        color: Color(0xFFE5484D),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
-              )
-            : GlassListTile.chevron,
+        actions: [
+          TextButton(
+              onPressed: () => Get.back(),
+              child:
+                  const Text('取消', style: TextStyle(color: Colors.white54))),
+          TextButton(
+            onPressed: () {
+              Get.back();
+              goLive(ctrl.text.trim());
+            },
+            child: const Text('进入', style: TextStyle(color: kHuyaAccent)),
+          ),
+        ],
       ),
-    );
-  }
-
-  Widget _section(String title, List<FollowItem> list) {
-    return GlassGroupedSection(
-      header: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-        child: Row(children: [
-          Text(title,
-              style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700)),
-          const Spacer(),
-          Obx(() => FollowStore.instance.refreshing.value
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: kHuyaAccent))
-              : const SizedBox.shrink()),
-        ]),
-      ),
-      margin: const EdgeInsets.only(bottom: 16),
-      children: list.isEmpty
-          ? [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Center(
-                    child: Text('暂无数据',
-                        style: TextStyle(color: Colors.white38))),
-              ),
-            ]
-          : list.map(_tile).toList(),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      final all = FollowStore.instance.items.toList();
-      final live = all.where((e) => e.isLive).toList();
-      final offline = all.where((e) => !e.isLive).toList();
-
-      if (all.isEmpty && !FollowStore.instance.refreshing.value) {
-        return const Center(
-          child: Text('暂无订阅主播\n在直播间点「订阅」即可收藏',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white38)),
-        );
-      }
-
-      return RefreshIndicator(
-        color: kHuyaAccent,
-        onRefresh: _refresh,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          children: [
-            Row(children: [
-              const Text('我的订阅',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800)),
-              const Spacer(),
-              GlassIconButton(
-                icon: const Icon(Icons.refresh, color: kHuyaAccent),
-                size: 40,
-                onPressed: _refresh,
-              ),
-            ]),
-            const SizedBox(height: 12),
-            _section('开播中 (${live.length})', live),
-            _section('未开播 (${offline.length})', offline),
-          ],
-        ),
-      );
-    });
-  }
-}
-
-// ================= 设置 Tab =================
-class _SettingsView extends StatelessWidget {
-  const _SettingsView();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _OpaqueContentCard(
-          icon: Icons.account_circle,
-          color: kHuyaAccent,
-          label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
-          sub: '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
-          onTap: () => Get.to(() => const HuyaLoginPage()),
-        ),
-        const SizedBox(height: 12),
-        _OpaqueContentCard(
-          icon: Icons.battery_charging_full,
-          color: const Color(0xFF7ED97E),
-          label: '允许应用后台运行',
-          sub: '弹出系统授权对话框（后台播放必开）',
-          onTap: () => BackgroundPlayStore.requestBatteryWhitelist(),
-        ),
-        const SizedBox(height: 12),
-        _OpaqueContentCard(
-          icon: Icons.info_outline,
-          color: Colors.white70,
-          label: '关于',
-          sub: 'HuyaLive · 液态玻璃 1.0.0 · 参考 pure_live / dtv',
-          onTap: () {},
-        ),
-      ],
     );
   }
 }
