@@ -79,83 +79,83 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).padding.bottom;
-    return GlassScaffold(
-      contentAwareBrightness: true,
-      statusBarStyle: GlassStatusBarStyle.light,
-      background: SizedBox.expand(
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(-0.3, -0.8),
-              radius: 1.6,
-              colors: [
-                Color(0xFF2D1B4E),
-                Color(0xFF12121A),
-                Color(0xFF050508),
-              ],
-              stops: [0.0, 0.6, 1.0],
+    return Material(
+      type: MaterialType.transparency, // ★ 关键：提供文本样式环境，去掉黄色双下划线
+      child: GlassScaffold(
+        contentAwareBrightness: true,
+        statusBarStyle: GlassStatusBarStyle.light,
+        background: SizedBox.expand(
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment(-0.3, -0.8),
+                radius: 1.6,
+                colors: [
+                  Color(0xFF2D1B4E),
+                  Color(0xFF12121A),
+                  Color(0xFF050508),
+                ],
+                stops: [0.0, 0.6, 1.0],
+              ),
             ),
           ),
         ),
-      ),
-      appBar: GlassAppBar(
-        title: GlassContainer(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-          useOwnLayer: true,
-          settings: LiquidGlassSettings(blur: 8, thickness: 20),
-          child: const Text(
-            'HuyaLive',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600),
+        appBar: GlassAppBar(
+          title: GlassContainer(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+            useOwnLayer: true,
+            settings: LiquidGlassSettings(blur: 8, thickness: 20),
+            child: const Text(
+              'HuyaLive',
+              style: TextStyle(
+                  color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+          actions: [
+            GlassIconButton(
+              icon: const Icon(Icons.settings, color: Colors.white),
+              size: 44,
+              onPressed: () => _select(3),
+            ),
+          ],
+        ),
+        bottomBar: ValueListenableBuilder<bool>(
+          valueListenable: _barMinimized,
+          builder: (context, minimized, _) => AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.bottomCenter,
+            child: minimized
+                ? _compactBar(bottomPad)
+                : _expandedBar(bottomPad),
           ),
         ),
-        actions: [
-          GlassIconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
-            size: 44,
-            onPressed: () => _select(3),
-          ),
-        ],
-      ),
-      // ★ 双形态底部栏：展开 ↔ 收拢（Apple Music 式）
-      bottomBar: ValueListenableBuilder<bool>(
-        valueListenable: _barMinimized,
-        builder: (context, minimized, _) => AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          alignment: Alignment.bottomCenter,
-          child: minimized
-              ? _compactBar(bottomPad)
-              : _expandedBar(bottomPad),
-        ),
-      ),
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _onScroll,
-        child: Padding(
-          padding: EdgeInsets.only(top: topPad + 64),
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: [
-              _HomeView(onOpenFollows: () => _select(2)),
-              SearchPage(
-                onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
-                    nickname: nickname, avatarUrl: avatarUrl),
-                isFollowed: (roomId) async => FollowStore.contains(roomId),
-                onToggleFollow: (roomId, follow, nickname, avatar) async {
-                  if (follow) {
-                    await FollowStore.add(FollowItem(
-                        roomId: roomId, name: nickname, avatar: avatar));
-                  } else {
-                    await FollowStore.remove(roomId);
-                  }
-                },
-              ),
-              const FollowPage(),
-              const SettingsPage(),
-            ],
+        body: NotificationListener<ScrollNotification>(
+          onNotification: _onScroll,
+          child: Padding(
+            padding: EdgeInsets.only(top: topPad + 64),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _HomeView(onOpenFollows: () => _select(2)),
+                SearchPage(
+                  onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId,
+                      nickname: nickname, avatarUrl: avatarUrl),
+                  isFollowed: (roomId) async => FollowStore.contains(roomId),
+                  onToggleFollow: (roomId, follow, nickname, avatar) async {
+                    if (follow) {
+                      await FollowStore.add(FollowItem(
+                          roomId: roomId, name: nickname, avatar: avatar));
+                    } else {
+                      await FollowStore.remove(roomId);
+                    }
+                  },
+                ),
+                const FollowPage(),
+                const SettingsPage(),
+              ],
+            ),
           ),
         ),
       ),
