@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,7 +33,6 @@ class FollowStore extends GetxController {
   final items = <FollowItem>[].obs;
   final refreshing = false.obs;
 
-  /// 适配 main.dart 的 await FollowStore.init();
   static Future<void> init() async {
     if (!Get.isRegistered<FollowStore>()) Get.put(FollowStore());
     await to._load();
@@ -53,7 +51,8 @@ class FollowStore extends GetxController {
     } catch (_) {}
   }
 
-  Future<void> _save() async {
+  // ★ 修复：去掉下划线，改为公开方法，允许跨文件调用
+  Future<void> save() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -70,13 +69,13 @@ class FollowStore extends GetxController {
     final store = to;
     if (store.items.any((e) => e.roomId == item.roomId)) return;
     store.items.add(item);
-    await store._save();
+    await store.save(); // 内部调用也同步修改
   }
 
   static Future<void> remove(String roomId) async {
     final store = to;
     store.items.removeWhere((e) => e.roomId == roomId);
-    await store._save();
+    await store.save(); // 内部调用也同步修改
   }
 
   Future<void> refresh() async {
