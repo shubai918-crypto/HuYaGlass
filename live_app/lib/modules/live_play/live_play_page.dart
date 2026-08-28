@@ -115,16 +115,16 @@ class _LivePlayPageState extends State<LivePlayPage>
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: Row(children: [
             CircleAvatar(
-              radius: 24,
+              radius: 20,
               backgroundColor: Colors.white10,
               backgroundImage: c.streamerAvatar.value.isNotEmpty
                   ? NetworkImage(c.streamerAvatar.value)
                   : null,
               child: c.streamerAvatar.value.isEmpty
-                  ? const Icon(Icons.person, color: Colors.white54)
+                  ? const Icon(Icons.person, color: Colors.white54, size: 20)
                   : null,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,14 +135,34 @@ class _LivePlayPageState extends State<LivePlayPage>
                             : c.streamerName.value,
                         style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.w700),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     Text('粉丝 ${_fmt(c.fansCount.value)}',
                         style: const TextStyle(
-                            color: Colors.white54, fontSize: 12)),
+                            color: Colors.white54, fontSize: 11)),
                   ]),
+            ),
+            // ★ 高能观众入口（昵称/粉丝 与 订阅 之间）
+            GestureDetector(
+              onTap: _showHighEnergySheet,
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0x33FFB25E),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.local_fire_department,
+                      color: Color(0xFFFFB25E), size: 16),
+                  SizedBox(width: 4),
+                  Text('高能观众',
+                      style: TextStyle(color: Color(0xFFFFB25E), fontSize: 12)),
+                ]),
+              ),
             ),
             GestureDetector(
               onTap: c.toggleFollow,
@@ -172,6 +192,15 @@ class _LivePlayPageState extends State<LivePlayPage>
             ),
           ]),
         ));
+  }
+
+  void _showHighEnergySheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _HighEnergySheet(c: c),
+    );
   }
 
   Widget _tabs() {
@@ -285,7 +314,6 @@ class _LivePlayPageState extends State<LivePlayPage>
             ),
           ),
           const SizedBox(width: 8),
-          // ★ 表情按钮
           GestureDetector(
             onTap: () => _showEmotePicker(),
             child: Container(
@@ -314,7 +342,6 @@ class _LivePlayPageState extends State<LivePlayPage>
     );
   }
 
-  /// ★ 半屏表情选择器：点击插入输入框光标处
   void _showEmotePicker() {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
     showModalBottomSheet(
@@ -393,7 +420,7 @@ class _LivePlayPageState extends State<LivePlayPage>
   }
 }
 
-// ================= 飘屏弹幕层（内联表情） =================
+// ================= 飘屏弹幕层 =================
 class _FloatItem {
   final String nickname;
   final String content;
@@ -657,7 +684,7 @@ class _DanmakuListState extends State<_DanmakuList> {
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                       gradient: LinearGradient(colors: [
-                        fc.withOpacity(0.30),
+                        fc.withOpacity(0.3),
                         fc.withOpacity(0.12),
                       ]),
                       border: Border.all(color: fc.withOpacity(0.55)),
@@ -888,5 +915,143 @@ class _DebugTab extends StatelessWidget {
                 style: const TextStyle(color: Colors.white38, fontSize: 12)),
           ],
         ));
+  }
+}
+
+// ================= 高能观众半屏面板 =================
+class _HighEnergySheet extends StatefulWidget {
+  final LivePlayController c;
+  const _HighEnergySheet({required this.c});
+  @override
+  State<_HighEnergySheet> createState() => _HighEnergySheetState();
+}
+
+class _HighEnergySheetState extends State<_HighEnergySheet>
+    with SingleTickerProviderStateMixin {
+  late TabController _tab;
+  List<VipUser> _guard = [];
+  List<VipUser> _vip = [];
+  StreamSubscription? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 3, vsync: this);
+    _guard = List.from(widget.c.client.guardList);
+    _vip = List.from(widget.c.client.vipList);
+    _sub = widget.c.client.vipStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _guard = List.from(widget.c.client.guardList);
+          _vip = List.from(widget.c.client.vipList);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _tab.dispose();
+    super.dispose();
+  }
+
+  Color _fansColor(int lv) {
+    if (lv <= 6) return const Color(0xFF59B4FF);
+    if (lv <= 12) return const Color(0xFF38C3FF);
+    if (lv <= 19) return const Color(0xFFFFB03A);
+    if (lv <= 25) return const Color(0xFFFF6B9C);
+    if (lv <= 31) return const Color(0xFFB46BFF);
+    if (lv <= 40) return const Color(0xFFFF8800);
+    return const Color(0xFFFF4040);
+  }
+
+  Widget _badgeImg(String url, {double size = 16}) => url.isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: Image.network(url, width: size, height: size,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+        );
+
+  Widget _row(VipUser u) {
+    final fc = _fansColor(u.fansLevel);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.white10,
+            backgroundImage:
+                u.avatar.isNotEmpty ? NetworkImage(u.avatar) : null,
+            child: u.avatar.isEmpty
+                ? const Icon(Icons.person, size: 18, color: Colors.white54)
+                : null),
+        const SizedBox(width: 8),
+        if (u.fansName.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    colors: [fc.withOpacity(0.3), fc.withOpacity(0.12)]),
+                border: Border.all(color: fc.withOpacity(0.55)),
+                borderRadius: BorderRadius.circular(8)),
+            child: Text('${u.fansLevel} ${u.fansName}',
+                style: TextStyle(
+                    color: fc, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+        _badgeImg(u.nobleIcon),
+        if (u.managerType > 0) _badgeImg(DanmakuMessage.kBadgeManager),
+        _badgeImg(u.guardIcon),
+        _badgeImg(u.pendantIcon),
+        Expanded(
+            child: Text(u.nickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 14))),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.of(context).size.height * 0.5;
+    return Container(
+      height: height,
+      decoration: const BoxDecoration(
+        color: Color(0xFF16161E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(children: [
+        TabBar(
+          controller: _tab,
+          labelColor: const Color(0xFF00D2FF),
+          unselectedLabelColor: Colors.white54,
+          indicatorColor: const Color(0xFF00D2FF),
+          tabs: const [
+            Tab(text: '在线榜'),
+            Tab(text: '守护'),
+            Tab(text: '贵宾'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tab,
+            children: [
+              ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [..._guard, ..._vip].map(_row).toList()),
+              ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: _guard.map(_row).toList()),
+              ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: _vip.map(_row).toList()),
+            ],
+          ),
+        ),
+      ]),
+    );
   }
 }
