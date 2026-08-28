@@ -76,11 +76,11 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  /// ★ 握手必备：launch.wsTimeSync 首发帧（服务器不回包就卡"握手中"）
+  /// ★ 握手必备：launch.wsTimeSync 首发帧
   static const _LAUNCH_REQ =
       '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
 
-  // ================= 完整内置表情表（兜底+初始） =================
+  // ================= 内置表情表（兜底+初始） =================
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -142,7 +142,6 @@ class HuyaDanmakuClient {
         (k, v) => emoteRegistry.putIfAbsent(k, () => _fixEmoteUrl(v)));
   }
 
-  /// ★ express 的 steam.png 加载不出，统一换 steam_3.png
   static String _fixEmoteUrl(String url) {
     const bad = 'steam.png';
     if (url.endsWith(bad)) {
@@ -298,10 +297,9 @@ class HuyaDanmakuClient {
         cancelOnError: true);
 
     _send(_buildVerifyCookie());
-    // ★ 握手关键：verify 之后立刻发 launch.wsTimeSync
     Timer(const Duration(milliseconds: 300), () {
       if (_closed) return;
-      _send(_hexToBytes(_LAUNCH_REQ));
+      _send(_hexToBytes(_LAUNCH_REQ)); // ★ 握手关键
     });
     Timer(const Duration(milliseconds: 600), () {
       if (!_closed) _sendRegister();
@@ -354,7 +352,6 @@ class HuyaDanmakuClient {
     _dbgPush('Register(vipbar) 已发');
   }
 
-  /// ★ 旧版 baseinfo（tag10 用 map，带 mid），服务器才认
   String _buildBaseinfo() {
     final r = Random();
     final mid =
@@ -420,7 +417,6 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  // ================= 自适应订阅（动态组包，无硬编码模板） =================
   void _sendSubscribeHistory() {
     _sendSub33(_buildSub33Body('chat:', const [6211]));
     _sendSub33(_buildSub33Body(
@@ -456,7 +452,6 @@ class HuyaDanmakuClient {
     _dbgPush('订阅33 已发');
   }
 
-  /// ★ 表情包：独立请求 + 解析 + 归一化
   void _fetchEmoticonPackage() {
     try {
       final myUid = _loginUid > 0 ? _loginUid : _ayyuid;
@@ -678,14 +673,13 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  // ================= 收包 =================
   void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
       final fields = _TarsReader(bytes).readFields();
-      final cmdTypeRaw = fields[0];
-      final cmdType = cmdTypeRaw is int ? cmdTypeRaw : -1;
+      final cmdRaw = fields[0];
+      final cmdType = cmdRaw is int ? cmdRaw : -1;
       final vData = fields[1];
       if (vData is! List) {
         onStatus?.call('收包$_recvCount cmd=$cmdType');
@@ -733,7 +727,6 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  // ================= 守护 / 贵宾 =================
   void _parseGuardPush(Uint8List p) {
     guardList.clear();
     _walkVip(p, guardList);
@@ -748,6 +741,7 @@ class HuyaDanmakuClient {
     _dbgPush('贵宾 ${vipList.length} 人');
   }
 
+  /// ★ 守护/贵宾 walker（带原始字节块下钻）
   void _walkVip(Uint8List p, List<VipUser> list) {
     void walk(dynamic node, int depth) {
       if (depth > 10) return;
@@ -766,9 +760,7 @@ class HuyaDanmakuClient {
           }
         }
         if (nick.isNotEmpty && avatar.isNotEmpty) {
-          String gIcon = '';
-          String nIcon = '';
-          String pIcon = '';
+          String gIcon = '', nIcon = '', pIcon = '';
           void findUrls(dynamic n, int d) {
             if (d > 6) return;
             if (n is String && n.startsWith('http')) {
@@ -778,38 +770,43 @@ class HuyaDanmakuClient {
             } else if (n is Map<int, Object?>) {
               n.values.forEach((v) => findUrls(v, d + 1));
             } else if (n is List) {
-              n.forEach((v) => findUrls(v, d + 1));
+              if (n.isNotEmpty && n.first is int) {
+                try {
+                  final parsed = _TarsReader(Uint8List.fromList(n.cast<int>()))
+                      .readFields();
+                  if (parsed.isNotEmpty) findUrls(parsed, d + 1);
+                } catch (_) {}
+              } else {
+                n.forEach((v) => findUrls(v, d + 1));
+              }
             }
           }
           findUrls(node, 0);
           int gl = 0;
-          if (gIcon.contains('/1.png')) {
-            gl = 1;
-          } else if (gIcon.contains('/2.png')) {
-            gl = 2;
-          } else if (gIcon.contains('/3.png')) {
-            gl = 3;
-          }
+          if (gIcon.contains('/1.png')) gl = 1;
+          else if (gIcon.contains('/2.png')) gl = 2;
+          else if (gIcon.contains('/3.png')) gl = 3;
           list.add(VipUser(
-            nickname: nick,
-            avatar: avatar,
-            guardLevel: gl,
-            guardIcon: gIcon,
-            nobleIcon: nIcon,
-            pendantIcon: pIcon,
-          ));
+              nickname: nick, avatar: avatar, guardLevel: gl,
+              guardIcon: gIcon, nobleIcon: nIcon, pendantIcon: pIcon));
           return;
         }
         node.values.forEach((v) => walk(v, depth + 1));
       } else if (node is List) {
+        if (node.isNotEmpty && node.first is int) {
+          try {
+            final parsed =
+                _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
+            if (parsed.isNotEmpty) walk(parsed, depth + 1);
+          } catch (_) {}
+          return;
+        }
         node.forEach((v) => walk(v, depth + 1));
       }
     }
-
     walk(_TarsReader(p).readFields(), 0);
   }
 
-  // ================= Wup 响应 =================
   Map<int, Object?> _readWupFields(List<int> bytes) {
     var start = 0;
     if (bytes.length > 4) {
@@ -826,7 +823,7 @@ class HuyaDanmakuClient {
       final servant = '${f[5] ?? ''}';
       final func = '${f[6] ?? ''}';
 
-      // ★ 表情包响应：解析并归一化
+      // ★ 表情包响应（带原始字节块下钻）
       if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
         int cnt = 0;
         void walk(dynamic node, int depth) {
@@ -847,17 +844,24 @@ class HuyaDanmakuClient {
             }
             node.values.forEach((v) => walk(v, depth + 1));
           } else if (node is List) {
+            if (node.isNotEmpty && node.first is int) {
+              try {
+                final parsed = _TarsReader(Uint8List.fromList(node.cast<int>()))
+                    .readFields();
+                if (parsed.isNotEmpty) walk(parsed, depth + 1);
+              } catch (_) {}
+              return;
+            }
             node.forEach((v) => walk(v, depth + 1));
           }
         }
-
         walk(f, 0);
         _dbgPush('表情 $cnt 个');
         if (cnt > 0) onEmoteReady?.call();
         return;
       }
 
-      // ★ 历史弹幕
+      // ★ 历史弹幕（带原始字节块下钻）
       if (servant == 'mobileui' && func == 'getRctTimedMessage') {
         int n = 0;
         void collect(dynamic node, int depth) {
@@ -878,10 +882,17 @@ class HuyaDanmakuClient {
             }
             node.values.forEach((v) => collect(v, depth + 1));
           } else if (node is List) {
+            if (node.isNotEmpty && node.first is int) {
+              try {
+                final parsed = _TarsReader(Uint8List.fromList(node.cast<int>()))
+                    .readFields();
+                if (parsed.isNotEmpty) collect(parsed, depth + 1);
+              } catch (_) {}
+              return;
+            }
             node.forEach((v) => collect(v, depth + 1));
           }
         }
-
         collect(f, 0);
         if (n > 0) _rctOk = true;
         _dbgPush('历史弹幕 $n 条');
@@ -936,7 +947,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  // ================= 弹幕推送 =================
   void _handleMsgPushUnified(Uint8List payload) {
     try {
       final f = _TarsReader(payload).readFields();
@@ -1093,8 +1103,7 @@ class HuyaDanmakuClient {
 
     findFans(msg, 0);
 
-    // 收集徽章：爷牌(归一化_3) → 粉钻/粉丝钻 → 房管
-    final found = <String>[];
+    final badges = <String>[];
     void findBadges(dynamic node, int depth) {
       if (depth > 8) return;
       if (node is Map<int, Object?>) {
@@ -1115,28 +1124,27 @@ class HuyaDanmakuClient {
             node.contains('fenzuan') ||
             node.contains('fengzuan') ||
             node.contains('fangguan')) {
-          if (!found.contains(node)) found.add(node);
+          if (!badges.contains(node)) badges.add(node);
         }
       }
     }
 
     findBadges(msg, 0);
-    final badges = <String>[];
-    for (final u in found) {
+    final ordered = <String>[];
+    for (final u in badges) {
       if (u.contains('guiyepai')) {
-        final fixed = u.contains('_3.png')
+        ordered.add(u.contains('_3.png')
             ? u
-            : u.replaceAll('guiyepai.png', 'guiyepai_3.png');
-        badges.add(fixed);
+            : u.replaceAll('guiyepai.png', 'guiyepai_3.png'));
       }
     }
-    for (final u in found) {
+    for (final u in badges) {
       if (u.contains('PendantInfoZip') ||
           u.contains('fenzuan') ||
-          u.contains('fengzuan')) badges.add(u);
+          u.contains('fengzuan')) ordered.add(u);
     }
-    for (final u in found) {
-      if (u.contains('fangguan')) badges.add(u);
+    for (final u in badges) {
+      if (u.contains('fangguan')) ordered.add(u);
     }
 
     _controller.add(DanmakuMessage(
@@ -1148,7 +1156,7 @@ class HuyaDanmakuClient {
       fansName: fansName,
       fansLevel: fansLevel,
       managerType: managerType,
-      badgeUrls: badges,
+      badgeUrls: ordered,
       isHistory: history,
     ));
 
