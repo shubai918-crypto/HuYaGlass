@@ -89,8 +89,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
-  HuyaDanmakuClient? _danmakuClient;
-
+HuyaDanmakuClient get client => _danmakuClient!;
   final inputController = TextEditingController();
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
