@@ -983,10 +983,16 @@ class HuyaDanmakuClient {
 
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
+
   void _head(int tag, int type) {
-    if (tag < 15) _b.addByte((tag << 4) | type);
-    else { _b.addByte(0xF0 | type); _b.addByte(tag); }
+    if (tag < 15) {
+      _b.addByte((tag << 4) | type);
+    } else {
+      _b.addByte(0xF0 | type);
+      _b.addByte(tag);
+    }
   }
+
   int _intType(int v) {
     if (v == 0) return 12;
     if (v >= -128 && v <= 127) return 0;
@@ -994,21 +1000,110 @@ class _TarsWriter {
     if (v >= -2147483648 && v <= 2147483647) return 2;
     return 3;
   }
-  void _add(int v, int n) { for (var i = n - 1; i >= 0; i--) _b.addByte((v >> (8 * i)) & 0xFF); }
-  void _intValue(int v) { final t = _intType(v); if (t == 12) { _b.addByte(0x0C); return; } _b.addByte(t); _add(v, [1, 2, 4, 8][t]); }
-  void writeInt(int tag, int v) { final t = _intType(v); _head(tag, t); if (t == 12) return; _add(v, [1, 2, 4, 8][t]); }
+
+  void _add(int v, int n) {
+    for (var i = n - 1; i >= 0; i--) {
+      _b.addByte((v >> (8 * i)) & 0xFF);
+    }
+  }
+
+  void _intValue(int v) {
+    final t = _intType(v);
+    if (t == 12) {
+      _b.addByte(0x0C);
+      return;
+    }
+    _b.addByte(t);
+    _add(v, [1, 2, 4, 8][t]);
+  }
+
+  void writeInt(int tag, int v) {
+    final t = _intType(v);
+    _head(tag, t);
+    if (t == 12) return;
+    _add(v, [1, 2, 4, 8][t]);
+  }
+
   void writeString(int tag, String s) {
     final b = utf8.encode(s);
-    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); } else { _head(tag, 7); _add(b.length, 4); }
+    if (b.length < 256) {
+      _head(tag, 6);
+      _b.addByte(b.length);
+    } else {
+      _head(tag, 7);
+      _add(b.length, 4);
+    }
     _b.add(b);
   }
-  void writeStringList(int tag, List<String> items) { _head(tag, 9); _intValue(items.length); for (final s in items) writeString(0, s); }
-  void writeListInt(int tag, List<int> items) { _head(tag, 9); _intValue(items.length); for (final v in items) writeInt(0, v); }
-  void writeIntIntMap(int tag, Map<int, int> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeInt(0, k); writeInt(1, v); }); }
-  void writeStructMap(int tag, Map<String, _TarsWriter> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeString(0, k); _head(1, 10); _b.add(v._b.toBytes()); _b.addByte(0x0B); }); }
-  void writeBytes(int tag, List<int> bytes) { _head(tag, 13); _head(0, 0); _intValue(bytes.length); _b.add(bytes); }
-  void writeBytesMap(int tag, Map<String, List<int>> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeBytes(1, v); }); }
-  void writeStruct(int tag, _TarsWriter inner) { _head(tag, 10); _b.add(inner._b.toBytes()); _b.addByte(0x0B); }
+
+  void writeStringList(int tag, List<String> items) {
+    _head(tag, 9);
+    _intValue(items.length);
+    for (final s in items) {
+      writeString(0, s);
+    }
+  }
+
+  void writeListInt(int tag, List<int> items) {
+    _head(tag, 9);
+    _intValue(items.length);
+    for (final v in items) {
+      writeInt(0, v);
+    }
+  }
+
+  void writeIntIntMap(int tag, Map<int, int> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeInt(0, k);
+      writeInt(1, v);
+    });
+  }
+
+  void writeStructMap(int tag, Map<String, _TarsWriter> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeString(0, k);
+      _head(1, 10);
+      _b.add(v._b.toBytes());
+      _b.addByte(0x0B);
+    });
+  }
+
+  void writeBytes(int tag, List<int> bytes) {
+    _head(tag, 13);
+    _head(0, 0);
+    _intValue(bytes.length);
+    _b.add(bytes);
+  }
+
+  // ★ 补全缺失的 writeMap 方法（用于 baseinfo 的 tag 10）
+  void writeMap(int tag, Map<String, String> entries) {
+    _head(tag, 8);
+    _intValue(entries.length);
+    entries.forEach((k, v) {
+      writeString(0, k);
+      writeString(1, v);
+    });
+  }
+
+  void writeBytesMap(int tag, Map<String, List<int>> entries) {
+    _head(tag, 8);
+    _intValue(entries.length);
+    entries.forEach((k, v) {
+      writeString(0, k);
+      writeBytes(1, v);
+    });
+  }
+
+  void writeStruct(int tag, _TarsWriter inner) {
+    _head(tag, 10);
+    _b.add(inner._b.toBytes());
+    _b.addByte(0x0B);
+  }
+
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
 }
 
