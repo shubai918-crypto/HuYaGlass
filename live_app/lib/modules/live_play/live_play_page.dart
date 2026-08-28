@@ -3,43 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
-
-/// ★ 共用：把 [名字] 渲染成内联表情图
-List<InlineSpan> buildEmoteSpans(String text,
-    {double fontSize = 14, Color? textColor}) {
-  final spans = <InlineSpan>[];
-  final reg = RegExp(r'\[([^\]]+)\]');
-  var last = 0;
-  for (final m in reg.allMatches(text)) {
-    if (m.start > last) {
-      spans.add(TextSpan(text: text.substring(last, m.start)));
-    }
-    final key = m.group(0)!;
-    final url = HuyaDanmakuClient.emoteRegistry[key];
-    if (url != null) {
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: Image.network(url,
-              width: fontSize + 4, height: fontSize + 4,
-              errorBuilder: (_, __, ___) => Text(key,
-                  style: TextStyle(
-                      color: textColor ?? Colors.white70, fontSize: fontSize))),
-        ),
-      ));
-    } else {
-      spans.add(TextSpan(text: key));
-    }
-    last = m.end;
-  }
-  if (last < text.length) {
-    spans.add(TextSpan(text: text.substring(last)));
-  }
-  return spans;
-}
 
 class LivePlayPage extends StatefulWidget {
   const LivePlayPage({super.key});
@@ -110,9 +76,10 @@ class _LivePlayPageState extends State<LivePlayPage>
     );
   }
 
+  // ================= ★ 1. 头部排版优化（单行省略+按钮压缩） =================
   Widget _header() {
     return Obx(() => Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
           child: Row(children: [
             CircleAvatar(
               radius: 20,
@@ -141,53 +108,58 @@ class _LivePlayPageState extends State<LivePlayPage>
                         overflow: TextOverflow.ellipsis),
                     Text('粉丝 ${_fmt(c.fansCount.value)}',
                         style: const TextStyle(
-                            color: Colors.white54, fontSize: 11)),
+                            color: Colors.white54, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                   ]),
             ),
-            // ★ 高能观众入口（昵称/粉丝 与 订阅 之间）
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: _showHighEnergySheet,
               child: Container(
-                margin: const EdgeInsets.only(right: 8),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
                   color: const Color(0x33FFB25E),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.local_fire_department,
-                      color: Color(0xFFFFB25E), size: 16),
-                  SizedBox(width: 4),
-                  Text('高能观众',
-                      style: TextStyle(color: Color(0xFFFFB25E), fontSize: 12)),
-                ]),
+                child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.local_fire_department,
+                          color: Color(0xFFFFB25E), size: 14),
+                      SizedBox(width: 3),
+                      Text('高能观众',
+                          style: TextStyle(
+                              color: Color(0xFFFFB25E), fontSize: 11)),
+                    ]),
               ),
             ),
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: c.toggleFollow,
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                     color: const Color(0x33E5484D),
                     border: Border.all(color: const Color(0xFFE5484D)),
                     borderRadius: BorderRadius.circular(12)),
                 child: Text(c.isFollowed.value ? '已订阅' : '订阅',
                     style:
-                        const TextStyle(color: Color(0xFFE5484D), fontSize: 13)),
+                        const TextStyle(color: Color(0xFFE5484D), fontSize: 12)),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: () => Get.back(),
               child: Container(
-                width: 36,
-                height: 36,
+                width: 32,
+                height: 32,
                 decoration: const BoxDecoration(
                     color: Colors.white10, shape: BoxShape.circle),
                 child:
-                    const Icon(Icons.close, color: Colors.white70, size: 20),
+                    const Icon(Icons.close, color: Colors.white70, size: 18),
               ),
             ),
           ]),
@@ -422,13 +394,12 @@ class _LivePlayPageState extends State<LivePlayPage>
 
 // ================= 飘屏弹幕层 =================
 class _FloatItem {
-  final String nickname;
-  final String content;
+  final String text;
   final Color color;
   final double w;
   double x;
   final double y;
-  _FloatItem(this.nickname, this.content, this.color, this.x, this.y, this.w);
+  _FloatItem(this.text, this.color, this.x, this.y, this.w);
 }
 
 class _PendingItem {
@@ -490,27 +461,11 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     _queue.add(_PendingItem(m, DateTime.now().millisecondsSinceEpoch));
   }
 
-  double _rawWidth(String s, double fs) {
-    double w = 0;
-    for (final r in s.runes) {
+  double _measure(String text, double fs) {
+    double w = 8;
+    for (final r in text.runes) {
       w += r > 255 ? fs : fs * 0.62;
     }
-    return w;
-  }
-
-  double _measureRich(String text, double fs) {
-    double w = 8;
-    final reg = RegExp(r'\[[^\]]+\]');
-    var last = 0;
-    for (final m in reg.allMatches(text)) {
-      w += _rawWidth(text.substring(last, m.start), fs);
-      final key = m.group(0)!;
-      w += HuyaDanmakuClient.emoteRegistry.containsKey(key)
-          ? (fs + 6)
-          : _rawWidth(key, fs);
-      last = m.end;
-    }
-    w += _rawWidth(text.substring(last), fs);
     return w;
   }
 
@@ -525,9 +480,9 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     while (qi < _queue.length) {
       final p = _queue[qi];
       final fs = widget.c.danmakuFontSize.value;
-      final full =
+      final text =
           '${p.m.nickname.isEmpty ? "神秘用户" : p.m.nickname}: ${p.m.content}';
-      final w = _measureRich(full, fs);
+      final w = _measure(text, fs);
       int lane = -1;
       for (int l = 0; l < _laneFreeAt.length; l++) {
         if (_laneFreeAt[l] <= now) {
@@ -538,12 +493,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
       if (lane < 0) break;
       _laneFreeAt[lane] = now + ((w + 32) / sp * 1000).round();
       _items.add(_FloatItem(
-          p.m.nickname.isEmpty ? '神秘用户' : p.m.nickname,
-          p.m.content,
-          Color(p.m.fontColor),
-          _w,
-          lane * _lineHeight() + 4,
-          w));
+          text, Color(p.m.fontColor), _w, lane * _lineHeight() + 4, w));
       _queue.removeAt(qi);
     }
   }
@@ -584,18 +534,17 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
                     top: it.y,
                     child: Opacity(
                       opacity: op,
-                      child: Text.rich(
-                        TextSpan(children: [
-                          TextSpan(
-                              text: '${it.nickname}: ',
-                              style: TextStyle(
-                                  color: it.color,
-                                  fontSize: fs,
-                                  fontWeight: FontWeight.w600)),
-                          ...buildEmoteSpans(it.content,
-                              fontSize: fs, textColor: Colors.white),
-                        ]),
+                      child: Text(
+                        it.text,
                         maxLines: 1,
+                        style: TextStyle(
+                          color: it.color,
+                          fontSize: fs,
+                          fontWeight: FontWeight.w600,
+                          shadows: const [
+                            Shadow(color: Colors.black87, blurRadius: 3),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -608,7 +557,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
   }
 }
 
-// ================= 弹幕列表 =================
+// ================= ★ 2. 弹幕列表：去自动上拉 + 滚动条 + 玻璃快速上/下 =================
 class _DanmakuList extends StatefulWidget {
   final LivePlayController c;
   const _DanmakuList({required this.c});
@@ -618,25 +567,27 @@ class _DanmakuList extends StatefulWidget {
 
 class _DanmakuListState extends State<_DanmakuList> {
   final ScrollController _sc = ScrollController();
-  StreamSubscription? _sub;
-
-  @override
-  void initState() {
-    super.initState();
-    _sub = widget.c.danmakuList.listen((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_sc.hasClients && _sc.position.maxScrollExtent > 0) {
-          _sc.jumpTo(_sc.position.maxScrollExtent);
-        }
-      });
-    });
-  }
 
   @override
   void dispose() {
-    _sub?.cancel();
     _sc.dispose();
     super.dispose();
+  }
+
+  void _toTop() {
+    if (_sc.hasClients) {
+      _sc.animateTo(0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
+    }
+  }
+
+  void _toBottom() {
+    if (_sc.hasClients) {
+      _sc.animateTo(_sc.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
+    }
   }
 
   Color _fansColor(int lv) {
@@ -659,12 +610,40 @@ class _DanmakuListState extends State<_DanmakuList> {
                 style: const TextStyle(color: Colors.white24)));
       }
       final list = c.danmakuList;
-      return ListView.builder(
-        controller: _sc,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: list.length,
-        itemBuilder: (_, i) => _item(c, list[i]),
-      );
+      return Stack(children: [
+        // ★ 滚动条（不再自动上拉）
+        Scrollbar(
+          controller: _sc,
+          thumbVisibility: true,
+          thickness: 4,
+          radius: const Radius.circular(4),
+          child: ListView.builder(
+            controller: _sc,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            itemCount: list.length,
+            itemBuilder: (_, i) => _item(c, list[i]),
+          ),
+        ),
+        // ★ 液态玻璃快速上/下按钮
+        Positioned(
+          right: 6,
+          bottom: 12,
+          child: Column(children: [
+            GlassIconButton(
+              icon: const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+              size: 40,
+              onPressed: _toTop,
+            ),
+            const SizedBox(height: 8),
+            GlassIconButton(
+              icon:
+                  const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+              size: 40,
+              onPressed: _toBottom,
+            ),
+          ]),
+        ),
+      ]);
     });
   }
 
@@ -716,10 +695,180 @@ class _DanmakuListState extends State<_DanmakuList> {
                         color: Color(m.fontColor),
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
-                ...buildEmoteSpans(m.content, fontSize: 14),
+                ..._contentSpans(m.content),
               ])),
             ]),
       ),
+    );
+  }
+
+  List<InlineSpan> _contentSpans(String text) {
+    final spans = <InlineSpan>[];
+    final reg = RegExp(r'\[([^\]]+)\]');
+    var last = 0;
+    for (final m in reg.allMatches(text)) {
+      if (m.start > last) {
+        spans.add(TextSpan(text: text.substring(last, m.start)));
+      }
+      final key = m.group(0)!;
+      final url = HuyaDanmakuClient.emoteRegistry[key];
+      if (url != null) {
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: Image.network(url, width: 18, height: 18,
+                errorBuilder: (_, __, ___) => Text(key,
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 14))),
+          ),
+        ));
+      } else {
+        spans.add(TextSpan(text: key));
+      }
+      last = m.end;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(text: text.substring(last)));
+    }
+    return spans;
+  }
+}
+
+// ================= 高能观众半屏 =================
+class _HighEnergySheet extends StatefulWidget {
+  final LivePlayController c;
+  const _HighEnergySheet({required this.c});
+  @override
+  State<_HighEnergySheet> createState() => _HighEnergySheetState();
+}
+
+class _HighEnergySheetState extends State<_HighEnergySheet>
+    with SingleTickerProviderStateMixin {
+  late TabController _tab;
+  List<VipUser> _guard = [];
+  List<VipUser> _vip = [];
+  StreamSubscription? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 3, vsync: this);
+    _guard = List.from(widget.c.client.guardList);
+    _vip = List.from(widget.c.client.vipList);
+    _sub = widget.c.client.vipStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _guard = List.from(widget.c.client.guardList);
+          _vip = List.from(widget.c.client.vipList);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _tab.dispose();
+    super.dispose();
+  }
+
+  Color _fansColor(int lv) {
+    if (lv <= 6) return const Color(0xFF59B4FF);
+    if (lv <= 12) return const Color(0xFF38C3FF);
+    if (lv <= 19) return const Color(0xFFFFB03A);
+    if (lv <= 25) return const Color(0xFFFF6B9C);
+    if (lv <= 31) return const Color(0xFFB46BFF);
+    if (lv <= 40) return const Color(0xFFFF8800);
+    return const Color(0xFFFF4040);
+  }
+
+  Widget _badgeImg(String url, {double size = 16}) => url.isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: Image.network(url, width: size, height: size,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+        );
+
+  Widget _row(VipUser u) {
+    final fc = _fansColor(u.fansLevel);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.white10,
+            backgroundImage:
+                u.avatar.isNotEmpty ? NetworkImage(u.avatar) : null,
+            child: u.avatar.isEmpty
+                ? const Icon(Icons.person, size: 18, color: Colors.white54)
+                : null),
+        const SizedBox(width: 8),
+        if (u.fansName.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    colors: [fc.withOpacity(0.3), fc.withOpacity(0.12)]),
+                border: Border.all(color: fc.withOpacity(0.55)),
+                borderRadius: BorderRadius.circular(8)),
+            child: Text('${u.fansLevel} ${u.fansName}',
+                style: TextStyle(
+                    color: fc, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+        _badgeImg(u.nobleIcon),
+        if (u.managerType > 0) _badgeImg(DanmakuMessage.kBadgeManager),
+        _badgeImg(u.guardIcon),
+        _badgeImg(u.pendantIcon),
+        Expanded(
+            child: Text(u.nickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 14))),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.of(context).size.height * 0.5;
+    return Container(
+      height: height,
+      decoration: const BoxDecoration(
+        color: Color(0xFF16161E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(children: [
+        TabBar(
+          controller: _tab,
+          labelColor: const Color(0xFF00D2FF),
+          unselectedLabelColor: Colors.white54,
+          indicatorColor: const Color(0xFF00D2FF),
+          tabs: const [
+            Tab(text: '在线榜'),
+            Tab(text: '守护'),
+            Tab(text: '贵宾'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tab,
+            children: [
+              ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [..._guard, ..._vip].map(_row).toList()),
+              ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: _guard.map(_row).toList()),
+              ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: _vip.map(_row).toList()),
+            ],
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -915,143 +1064,5 @@ class _DebugTab extends StatelessWidget {
                 style: const TextStyle(color: Colors.white38, fontSize: 12)),
           ],
         ));
-  }
-}
-
-// ================= 高能观众半屏面板 =================
-class _HighEnergySheet extends StatefulWidget {
-  final LivePlayController c;
-  const _HighEnergySheet({required this.c});
-  @override
-  State<_HighEnergySheet> createState() => _HighEnergySheetState();
-}
-
-class _HighEnergySheetState extends State<_HighEnergySheet>
-    with SingleTickerProviderStateMixin {
-  late TabController _tab;
-  List<VipUser> _guard = [];
-  List<VipUser> _vip = [];
-  StreamSubscription? _sub;
-
-  @override
-  void initState() {
-    super.initState();
-    _tab = TabController(length: 3, vsync: this);
-    _guard = List.from(widget.c.client.guardList);
-    _vip = List.from(widget.c.client.vipList);
-    _sub = widget.c.client.vipStream.listen((_) {
-      if (mounted) {
-        setState(() {
-          _guard = List.from(widget.c.client.guardList);
-          _vip = List.from(widget.c.client.vipList);
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    _tab.dispose();
-    super.dispose();
-  }
-
-  Color _fansColor(int lv) {
-    if (lv <= 6) return const Color(0xFF59B4FF);
-    if (lv <= 12) return const Color(0xFF38C3FF);
-    if (lv <= 19) return const Color(0xFFFFB03A);
-    if (lv <= 25) return const Color(0xFFFF6B9C);
-    if (lv <= 31) return const Color(0xFFB46BFF);
-    if (lv <= 40) return const Color(0xFFFF8800);
-    return const Color(0xFFFF4040);
-  }
-
-  Widget _badgeImg(String url, {double size = 16}) => url.isEmpty
-      ? const SizedBox.shrink()
-      : Padding(
-          padding: const EdgeInsets.only(right: 4),
-          child: Image.network(url, width: size, height: size,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-        );
-
-  Widget _row(VipUser u) {
-    final fc = _fansColor(u.fansLevel);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(children: [
-        CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.white10,
-            backgroundImage:
-                u.avatar.isNotEmpty ? NetworkImage(u.avatar) : null,
-            child: u.avatar.isEmpty
-                ? const Icon(Icons.person, size: 18, color: Colors.white54)
-                : null),
-        const SizedBox(width: 8),
-        if (u.fansName.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(right: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-                gradient: LinearGradient(
-                    colors: [fc.withOpacity(0.3), fc.withOpacity(0.12)]),
-                border: Border.all(color: fc.withOpacity(0.55)),
-                borderRadius: BorderRadius.circular(8)),
-            child: Text('${u.fansLevel} ${u.fansName}',
-                style: TextStyle(
-                    color: fc, fontSize: 10, fontWeight: FontWeight.w700)),
-          ),
-        _badgeImg(u.nobleIcon),
-        if (u.managerType > 0) _badgeImg(DanmakuMessage.kBadgeManager),
-        _badgeImg(u.guardIcon),
-        _badgeImg(u.pendantIcon),
-        Expanded(
-            child: Text(u.nickname,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 14))),
-      ]),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final height = MediaQuery.of(context).size.height * 0.5;
-    return Container(
-      height: height,
-      decoration: const BoxDecoration(
-        color: Color(0xFF16161E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(children: [
-        TabBar(
-          controller: _tab,
-          labelColor: const Color(0xFF00D2FF),
-          unselectedLabelColor: Colors.white54,
-          indicatorColor: const Color(0xFF00D2FF),
-          tabs: const [
-            Tab(text: '在线榜'),
-            Tab(text: '守护'),
-            Tab(text: '贵宾'),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _tab,
-            children: [
-              ListView(
-                  padding: const EdgeInsets.all(12),
-                  children: [..._guard, ..._vip].map(_row).toList()),
-              ListView(
-                  padding: const EdgeInsets.all(12),
-                  children: _guard.map(_row).toList()),
-              ListView(
-                  padding: const EdgeInsets.all(12),
-                  children: _vip.map(_row).toList()),
-            ],
-          ),
-        ),
-      ]),
-    );
   }
 }
