@@ -1,10 +1,13 @@
+import 'dart:convert';
+
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FollowItem {
   final String roomId;
   final String name;
   final String avatar;
-  final bool isLive; // ★ 补齐 isLive 字段，适配 Controller 传参
+  final bool isLive;
 
   FollowItem({
     required this.roomId,
@@ -12,47 +15,71 @@ class FollowItem {
     this.avatar = '',
     this.isLive = false,
   });
+
+  Map<String, dynamic> toJson() =>
+      {'roomId': roomId, 'name': name, 'avatar': avatar, 'isLive': isLive};
+
+  static FollowItem fromJson(Map<String, dynamic> j) => FollowItem(
+        roomId: '${j['roomId'] ?? ''}',
+        name: '${j['name'] ?? ''}',
+        avatar: '${j['avatar'] ?? ''}',
+        isLive: j['isLive'] == true,
+      );
 }
 
 class FollowStore extends GetxController {
-  static FollowStore get to => Get.find();
+  static FollowStore get to => Get.find<FollowStore>();
+  static const _key = 'huya_follow_list_v1';
 
   final items = <FollowItem>[].obs;
   final refreshing = false.obs;
 
-  /// 适配 main.dart 中的 await FollowStore.init();
+  /// 适配 main.dart 的 await FollowStore.init();
   static Future<void> init() async {
-    if (!Get.isRegistered<FollowStore>()) {
-      Get.put(FollowStore());
-    }
+    if (!Get.isRegistered<FollowStore>()) Get.put(FollowStore());
+    await to._load();
   }
 
-  static bool contains(String roomId) {
+  Future<void> _load() async {
     try {
-      return Get.find<FollowStore>().items.any((e) => e.roomId == roomId);
-    } catch (_) {
-      return false;
-    }
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key) ?? '';
+      if (raw.isEmpty) return;
+      final arr = jsonDecode(raw) as List;
+      items.assignAll(arr
+          .whereType<Map<String, dynamic>>()
+          .map((e) => FollowItem.fromJson(e))
+          .toList());
+    } catch (_) {}
   }
 
-  /// ★ 补齐 isFollowed 方法，适配 live_play_controller.dart 的调用
-  static Future<bool> isFollowed(String roomId) async {
-    return contains(roomId);
+  Future<void> _save() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _key, jsonEncode(items.map((e) => e.toJson()).toList()));
+    } catch (_) {}
   }
+
+  static bool contains(String roomId) =>
+      to.items.any((e) => e.roomId == roomId);
+
+  static Future<bool> isFollowed(String roomId) async => contains(roomId);
 
   static Future<void> add(FollowItem item) async {
-    final store = Get.find<FollowStore>();
-    if (!store.items.any((e) => e.roomId == item.roomId)) {
-      store.items.add(item);
-    }
+    final store = to;
+    if (store.items.any((e) => e.roomId == item.roomId)) return;
+    store.items.add(item);
+    await store._save();
   }
 
   static Future<void> remove(String roomId) async {
-    final store = Get.find<FollowStore>();
+    final store = to;
     store.items.removeWhere((e) => e.roomId == roomId);
+    await store._save();
   }
 
   Future<void> refresh() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 300));
   }
 }
