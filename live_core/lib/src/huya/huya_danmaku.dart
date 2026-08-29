@@ -721,6 +721,15 @@ void _sendRegister() {
     _dbgPush('贵宾 ${vipList.length} 人');
   }
 
+/// 判断是否为"垃圾字符串"（文件名/URL/数字/浮点/组名），不能作为昵称
+  static bool _isJunkStr(String s) {
+    if (s.isEmpty) return true;
+    if (s.startsWith('/') || s.startsWith('http') || s.startsWith('comm:')) return true;
+    if (s.contains('.mp4') || s.contains('.png') || s.contains('.gif')) return true;
+    if (RegExp(r'^-?\d+(\.\d+)?$').hasMatch(s)) return true; // 纯数字 / 浮点 (-1.000000)
+    return false;
+  }
+
   void _walkVip(Uint8List p, List<VipUser> list) {
     void walk(dynamic node, int depth) {
       if (depth > 12) return;
@@ -741,8 +750,8 @@ void _sendRegister() {
                 if (n.contains('guardrank') && gIcon.isEmpty) { gIcon = n; return; }
                 if ((n.contains('yepai') || n.contains('guiyepai')) && nIcon.isEmpty) { nIcon = n; return; }
                 if ((n.contains('Pendant') || n.contains('pendant') || n.contains('PendantInfoZip') || n.contains('fenzuan') || n.contains('diamond') || n.contains('file_')) && pIcon.isEmpty) { pIcon = n; return; }
-              } else if (n.isNotEmpty && !n.startsWith('/')) {
-                strPool.add(n);
+              } else if (!_isJunkStr(n)) {
+                strPool.add(n); // ★ 只收集合法昵称候选
               }
             } else if (n is Map<int, Object?>) {
               final n0 = n[0]; final n3 = n[3]; final n4 = n[4]; final n7 = n[7];
@@ -761,7 +770,11 @@ void _sendRegister() {
             }
           }
           scan(node, 0);
-          final nick = strPool.isNotEmpty ? strPool.last : '';
+          // ★ 取最长的合法候选作为昵称（真实昵称比粉丝牌名长）
+          String nick = '';
+          for (final s in strPool) {
+            if (s.length > nick.length) nick = s;
+          }
           int gl = 0;
           if (gIcon.contains('/1.png')) gl = 1;
           else if (gIcon.contains('/2.png')) gl = 2;
@@ -777,7 +790,7 @@ void _sendRegister() {
         }
         node.values.forEach((v) => walk(v, depth + 1));
       } else if (node is List) {
-        if (node.isNotEmpty && node.first is int) {
+        if (node.isNotEmpty && n_first_is_int(node)) {
           try {
             final parsed = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
             if (parsed.isNotEmpty) { walk(parsed, depth + 1); return; }
@@ -788,6 +801,8 @@ void _sendRegister() {
     }
     walk(_TarsReader(p).readFields(), 0);
   }
+
+  static bool n_first_is_int(List n) => n.isNotEmpty && n.first is int;
 
   Map<int, Object?> _readWupFields(List<int> bytes) {
     var start = 0;
