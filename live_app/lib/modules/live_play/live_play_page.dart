@@ -8,7 +8,8 @@ import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
 
 /// 表情内联：普通 22px，大表情 64px
-List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? textColor}) {
+List<InlineSpan> buildEmoteSpans(String text,
+    {double fontSize = 14, Color? textColor}) {
   final spans = <InlineSpan>[];
   final reg = RegExp(r'\[([^\]]+)\]');
   var last = 0;
@@ -25,7 +26,8 @@ List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? text
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: Image.network(url, width: size, height: size,
               errorBuilder: (_, __, ___) => Text(key,
-                  style: TextStyle(color: textColor ?? Colors.white70, fontSize: fontSize))),
+                  style: TextStyle(
+                      color: textColor ?? Colors.white70, fontSize: fontSize))),
         ),
       ));
     } else {
@@ -63,7 +65,8 @@ class _LivePlayPageState extends State<LivePlayPage>
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() => c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
+    return Obx(() =>
+        c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
   }
 
   Widget _buildFullscreen() {
@@ -107,19 +110,26 @@ class _LivePlayPageState extends State<LivePlayPage>
               radius: 20,
               backgroundColor: Colors.white10,
               backgroundImage: c.streamerAvatar.value.isNotEmpty
-                  ? NetworkImage(c.streamerAvatar.value) : null,
+                  ? NetworkImage(c.streamerAvatar.value)
+                  : null,
               child: c.streamerAvatar.value.isEmpty
-                  ? const Icon(Icons.person, size: 20, color: Colors.white54) : null,
+                  ? const Icon(Icons.person, size: 20, color: Colors.white54)
+                  : null,
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 Text('粉丝 ${_fmt(c.fansCount.value)}',
                     style: const TextStyle(color: Colors.white54, fontSize: 11),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
               ]),
             ),
             const SizedBox(width: 6),
@@ -127,11 +137,15 @@ class _LivePlayPageState extends State<LivePlayPage>
               onTap: _showHighEnergySheet,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0x33FFB25E), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                    color: const Color(0x33FFB25E),
+                    borderRadius: BorderRadius.circular(12)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 14),
+                  Icon(Icons.local_fire_department,
+                      color: Color(0xFFFFB25E), size: 14),
                   SizedBox(width: 3),
-                  Text('高能观众', style: TextStyle(color: Color(0xFFFFB25E), fontSize: 11)),
+                  Text('高能观众',
+                      style: TextStyle(color: Color(0xFFFFB25E), fontSize: 11)),
                 ]),
               ),
             ),
@@ -152,8 +166,10 @@ class _LivePlayPageState extends State<LivePlayPage>
             GestureDetector(
               onTap: () => Get.back(),
               child: Container(
-                width: 32, height: 32,
-                decoration: const BoxDecoration(color: Colors.white10, shape: BoxShape.circle),
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                    color: Colors.white10, shape: BoxShape.circle),
                 child: const Icon(Icons.close, color: Colors.white70, size: 18),
               ),
             ),
@@ -241,7 +257,7 @@ class _LivePlayPageState extends State<LivePlayPage>
           )),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: () => _showEmotePicker(),
+            onTap: _showEmotePicker,
             child: Container(
               width: 44, height: 44,
               decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
@@ -402,9 +418,11 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
           for (final it in _items)
             Positioned(left: it.x, top: it.y, child: Opacity(
               opacity: op,
-              child: Text(it.text, maxLines: 1,
-                  style: TextStyle(color: it.color, fontSize: fs, fontWeight: FontWeight.w600,
-                      shadows: const [Shadow(color: Colors.black87, blurRadius: 3)])),
+              child: Text.rich(
+                TextSpan(children: buildEmoteSpans(it.text, fontSize: fs, textColor: Colors.white)),
+                maxLines: 1,
+                style: TextStyle(color: Colors.white, fontSize: fs, fontWeight: FontWeight.w600, shadows: const [Shadow(color: Colors.black87, blurRadius: 3)]),
+              ),
             )),
         ]));
       }));
@@ -449,7 +467,8 @@ class _DanmakuListState extends State<_DanmakuList> {
   Widget _item(LivePlayController c, DanmakuMessage m) {
     final fc = _fansColor(m.fansLevel);
     final guard = c.client.guardList.isNotEmpty
-        ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname) : null;
+        ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname)
+        : null;
     final shownBadges = <String>[];
     bool mgrShown = false;
     for (final u in m.badgeUrls) {
@@ -474,17 +493,13 @@ class _DanmakuListState extends State<_DanmakuList> {
                     borderRadius: BorderRadius.circular(8)),
                 child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
           if (guard != null && guard.guardIcon.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(right: 4),
-                child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+            Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
           for (final url in shownBadges)
-            Padding(padding: const EdgeInsets.only(right: 4),
-                child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+            Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
           if (m.isGift) const Icon(Icons.card_giftcard, color: Color(0xFFFFB25E), size: 16),
           Text.rich(TextSpan(children: [
             TextSpan(text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
-                style: TextStyle(
-                    color: m.isGift ? const Color(0xFFFFB25E) : Color(m.fontColor),
-                    fontSize: 14, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: m.isGift ? const Color(0xFFFFB25E) : Color(m.fontColor), fontSize: 14, fontWeight: FontWeight.w600)),
             ...buildEmoteSpans(m.content),
           ])),
         ]),
@@ -598,8 +613,7 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
         if (u.nobleIcon.isNotEmpty) _img(u.nobleIcon),
         if (u.guardIcon.isNotEmpty) _img(u.guardIcon),
         if (u.managerType > 0) _img(DanmakuMessage.kBadgeManager),
-        Expanded(child: Text(u.nickname, maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 14))),
+        Expanded(child: Text(u.nickname, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14))),
       ]),
     );
   }
