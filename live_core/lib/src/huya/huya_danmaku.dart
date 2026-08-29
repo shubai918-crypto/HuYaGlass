@@ -79,8 +79,9 @@ class HuyaDanmakuClient {
   ];
 
   static const _LAUNCH_REQ =
-      '00031d00003b0000003b10032c3c400256066c61756e6368660a777354696d6553796e637d0000140800010604745265711d0000070a06001106b90b8c980ca80c2c3625353338336237376333313032386562353a353338336237376333313032386562353a303a304c5c66203234303062366437333638666631393331323664386365356237386230663433';
+      '00031d00005d0000005d10032c3c406d56066c61756e6368660a777354696d6553796e637d0000360800010604745265711d0000290a0620306138393865636435393832393236613539303236613766366237666338653712000cf04f0b8c980ca80c2c3625343637396266656464626536626666333a343637396266656464626536626666333a303a304c5c66203331366233336333306462323935313162363764663865653066396164396230';
 
+  // 内置表情兜底表
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -91,12 +92,38 @@ class HuyaDanmakuClient {
     '[狗头]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16164185817771_pic.png',
     '[震惊]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141737604305_pic.png',
     '[整不会了6]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/abee3a09a3ca49e4b4e567886eb0f5c9/expressconfig/steam_3.png',
+    '[你是我的哥]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/dda720298ab146419718397f97dcb2eb/expressconfig/steam_3.png',
+    '[盯]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27d952f79d2a48859eca9ebaf1146f09/expressconfig/steam_3.png',
+    '[不是哥们2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/809a798714164c70a3f24feb090043b4/expressconfig/steam_3.png',
+    '[婉拒了哈]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062162steam_3.png',
+    '[这不好吧]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062177steam_3.png',
+    '[他在CPU你]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/78f30039a103416cb7e2e5394138e0ea/expressconfig/steam_3.png',
+    '[注意看1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/88187b37451a4ab9a98eb3fba1fb3463/expressconfig/steam_3.png',
     '[厚礼蟹]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e9206baa27e341e0b556de168c6003d6/expressconfig/steam_3.png',
     '[真服了老六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/61d215d04b7145908d0af419f0111aec/expressconfig/steam_3.png',
+    '[泰酷辣]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e61973807356460a83adc9568799a938/expressconfig/steam_3.png',
+    '[几个菜啊]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/b638ab65dfad4a149e20feebda223ba7/expressconfig/steam_3.png',
+    '[街溜子]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c4586ceb173340a19ea86a64d11792cb/expressconfig/steam_3.png',
+    '[我是学生]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f1a8ec12f6a746a2ad4f4df389876d6b/expressconfig/steam_3.png',
+    '[兔个好运1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/937dc6416c574022bcfa8e5bca22518c/expressconfig/steam_3.png',
+    '[不会吧]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f9f7caf65ef9419f8ee967e01e6dccab/expressconfig/steam_3.png',
+    '[恭喜发财2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/58f65d52b10b4187815de239362565ba/expressconfig/steam_3.png',
+    '[指哪打哪]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdc237fe5f64411cbff3039933daa294/expressconfig/steam_3.png',
+    '[心里有数]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27ae54d51eba4f769bcbb51aa6ca3270/expressconfig/steam_3.png',
+    '[你应得的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5a63dc48a52a497d8410c86ed754592f/expressconfig/steam_3.png',
+    '[顶级]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdd03cdbd4f94cf7afe7077c07b9cea4/expressconfig/steam_3.png',
+    '[有实力的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c49b89484a1d4476b307fc163ff721a3/expressconfig/steam_3.png',
     '[蒜鸟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5293fc1adc0c4820aad8d2ce4eabc387/expressconfig/steam_3.png',
+    '[几个意思]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/a25c121f18114c8390f850669f9d8ea9/expressconfig/steam_3.png',
     '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282c72b257/expressconfig/steam_3.png',
+    '[包的兄弟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/883edb56e08b443cad098a8173b0f80d/expressconfig/steam_3.png',
     '[真的六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/023c6ec6575c4952ae77c4bd74d2a72f/expressconfig/steam_3.png',
+    '[白子说话]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/202eb7ce3c5742c194a95fc0ddd94584/expressconfig/steam_3.png',
+    '[黑子说话3]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/24f3300a0a964b7fb87da623893bc753/expressconfig/steam_3.png',
     '[俺不中嘞]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c0a00ac14515474f8f65101132964e76/expressconfig/steam_3.png',
+    '[这瓜保熟吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978877steam_3.png',
+    '[我不理解]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978857steam_3.png',
+    '[你好有本领啊]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1633760698steam_3.png',
   };
 
   static final Map<String, String> emoteRegistry = {};
@@ -112,10 +139,6 @@ class HuyaDanmakuClient {
     if (url.endsWith(bad)) return url.substring(0, url.length - bad.length) + 'steam_3.png';
     return url;
   }
-
-  /// ★ 大表情：非官方小表情(web_base_material/expressconfig)即大表情
-  static bool isBigEmote(String url) =>
-      !url.contains('web_base_material') && !url.contains('expressconfig');
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -137,9 +160,6 @@ class HuyaDanmakuClient {
   String _guid = '';
   String _cookie = '';
   List<String> _dynamicHosts = [];
-
-  String _lastKey = '';
-  int _lastAt = 0;
 
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
@@ -168,14 +188,6 @@ class HuyaDanmakuClient {
 
   String _randHex(int n) =>
       List.generate(n, (_) => '0123456789abcdef'[Random().nextInt(16)]).join();
-
-  List<int> _hexToBytes(String hex) {
-    final out = <int>[];
-    for (var i = 0; i + 1 < hex.length; i += 2) {
-      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
-    }
-    return out;
-  }
 
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
@@ -214,8 +226,6 @@ class HuyaDanmakuClient {
     _registered = false;
     _rctOk = false;
     _cmdSeq = 0;
-    _lastKey = '';
-    _lastAt = 0;
     guardList.clear();
     vipList.clear();
 
@@ -281,9 +291,6 @@ class HuyaDanmakuClient {
     Timer(const Duration(milliseconds: 1500), () {
       if (!_closed) _sendRctTimedMessage();
     });
-    Timer(const Duration(milliseconds: 1800), () {
-      if (!_closed) _sendVipbarRegister();
-    });
     Timer(const Duration(milliseconds: 4500), () {
       if (!_closed && !_rctOk) _sendRctTimedMessage();
     });
@@ -293,6 +300,14 @@ class HuyaDanmakuClient {
       _sendUserHeartBeat();
       _sendHeartbeat();
     });
+  }
+
+  List<int> _hexToBytes(String hex) {
+    final out = <int>[];
+    for (var i = 0; i + 1 < hex.length; i += 2) {
+      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return out;
   }
 
   void _sendRegister() {
@@ -306,30 +321,6 @@ class HuyaDanmakuClient {
     _send(cmd.toBytes());
     _registered = true;
     _dbgPush('Register(16) 已发');
-  }
-
-  void _sendVipbarRegister() {
-    final val = _TarsWriter();
-    val.writeIntIntMap(1, {66: 2});
-    final body = _TarsWriter();
-    body.writeString(0, 'HUYA&ZH&2052');
-    body.writeString(1, _guid);
-    body.writeInt(2, 0);
-    body.writeInt(3, 0);
-    body.writeStructMap(6, {'comm:vipbar_$_ayyuid': val});
-    body.writeInt(7, 0);
-    body.writeInt(8, 0);
-    body.writeInt(2, 0);
-    body.writeString(3, '');
-    body.writeInt(4, 0);
-    body.writeInt(5, 0);
-    body.writeString(6, '');
-    final cmd = _TarsWriter();
-    cmd.writeInt(0, 33);
-    cmd.writeBytes(1, body.toBytes());
-    cmd.writeInt(2, ++_reqId);
-    _send(cmd.toBytes());
-    _dbgPush('Register(vipbar) 已发');
   }
 
   String _buildBaseinfo() {
@@ -351,23 +342,40 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  Uint8List _buildVerifyCookie() {
-    final req = _TarsWriter();
-    req.writeInt(0, _loginUid);
-    req.writeString(1, _sendHuYaUA);
-    req.writeString(2, _cookie);
-    req.writeString(3, _guid);
-    req.writeInt(4, 1);
-    req.writeString(5, 'HUYA&ZH&2052');
+  // ★ 订阅：用抓包的完整频道 id 映射
+  void _sendSubscribeHistory() {
+    _sendSub33Groups({
+      'live:$_ayyuid': const {
+        6111: 12, 6479: 1, 6480: 1, 6481: 1, 6892: 6,
+        6973: 1, 6974: 1, 6975: 1, 8006: 2,
+      },
+      'chat:$_ayyuid': const {6110: 2, 66: 1, 67: 5, 69: 5},
+    });
+    _sendSub33Groups({
+      'comm:vipbar_${_ayyuid}': const {66: 2, 6509: 1},
+    });
+  }
+
+  void _sendSub33Groups(Map<String, Map<int, int>> groups) {
+    final body = _TarsWriter();
+    body.writeString(0, 'HUYA&ZH&2052');
+    body.writeString(1, _guid);
+    body.writeInt(2, 0);
+    body.writeInt(3, 0);
+    body.writeGroupMap(6, groups);
+    body.writeInt(7, 0);
+    body.writeInt(8, 0);
+    body.writeInt(2, 0);
+    body.writeString(3, '');
+    body.writeInt(4, 0);
+    body.writeInt(5, 0);
+    body.writeString(6, '');
     final cmd = _TarsWriter();
-    cmd.writeInt(0, 10);
-    cmd.writeBytes(1, req.toBytes());
-    cmd.writeInt(2, 0);
-    cmd.writeString(3, '');
-    cmd.writeInt(4, 0);
-    cmd.writeInt(5, 0);
-    cmd.writeString(6, '');
-    return cmd.toBytes();
+    cmd.writeInt(0, 33);
+    cmd.writeBytes(1, body.toBytes());
+    cmd.writeInt(2, ++_reqId);
+    _send(cmd.toBytes());
+    _dbgPush('订阅33 已发');
   }
 
   void _sendHeartbeat() {
@@ -395,41 +403,6 @@ class HuyaDanmakuClient {
           _wupBody('onlineui', 'OnUserHeartBeat', {'tReq': _treq(req.toBytes())});
       _send(_wrapWsCmd(_withPrefix(body), 3));
     } catch (_) {}
-  }
-
-  void _sendSubscribeHistory() {
-    _sendSub33(_buildSub33Body('chat:', const [6211]));
-    _sendSub33(_buildSub33Body(
-        'live:', const [6291, 6479, 6481, 6483, 7107, 7108, 7109, 7114]));
-  }
-
-  Uint8List _buildSub33Body(String group, List<int> ids) {
-    final val = _TarsWriter();
-    val.writeIntIntMap(1, {for (final i in ids) i: 1});
-    val.writeInt(3, 1);
-    final body = _TarsWriter();
-    body.writeString(0, 'HUYA&ZH&2052');
-    body.writeString(1, _guid);
-    body.writeInt(2, 0);
-    body.writeInt(3, 0);
-    body.writeStructMap(6, {'$group$_ayyuid': val});
-    body.writeInt(7, 0);
-    body.writeInt(8, 0);
-    body.writeInt(2, 0);
-    body.writeString(3, '');
-    body.writeInt(4, 0);
-    body.writeInt(5, 0);
-    body.writeString(6, '');
-    return body.toBytes();
-  }
-
-  void _sendSub33(Uint8List body) {
-    final cmd = _TarsWriter();
-    cmd.writeInt(0, 33);
-    cmd.writeBytes(1, body);
-    cmd.writeInt(2, ++_reqId);
-    _send(cmd.toBytes());
-    _dbgPush('订阅33 已发');
   }
 
   void _fetchEmoticonPackage() {
@@ -671,16 +644,14 @@ class HuyaDanmakuClient {
         _handleWupRsp(payload);
       } else if (cmdType == 21) {
         // 心跳回执
-      } else if (cmdType == 22) {
-        final s = utf8.decode(payload.sublist(0, min(64, payload.length)),
-            allowMalformed: true);
+      } else if (cmdType == 22 || cmdType == 7) {
+        // ★ 扫描整包判断 vipbar（守护包头、贵宾包尾都含），普通弹幕不含
+        final s = utf8.decode(payload, allowMalformed: true);
         if (s.contains('vipbar')) {
-          _parseGuardPush(payload);
+          if (cmdType == 22) _parseGuardPush(payload); else _parseVipPush(payload);
         } else {
           _handleMsgPushUnified(payload);
         }
-      } else if (cmdType == 7) {
-        _parseVipPush(payload);
       } else {
         _handleMsgPushUnified(payload);
       }
@@ -693,55 +664,20 @@ class HuyaDanmakuClient {
     _walkVip(p, temp);
     guardList.clear();
     guardList.addAll(temp.where((e) => e.guardIcon.isNotEmpty));
-    for (final n in temp.where((e) => e.nobleIcon.isNotEmpty)) {
-      if (!vipList.any((v) => v.nickname == n.nickname)) vipList.add(n);
-    }
-    _vipController.add(List.from(vipList));
+    _vipController.add(List.from(guardList));
     _dbgPush('守护 ${guardList.length} 人');
   }
 
   void _parseVipPush(Uint8List p) {
     final temp = <VipUser>[];
     _walkVip(p, temp);
-    for (final n in temp) {
-      if (!vipList.any((v) => v.nickname == n.nickname)) vipList.add(n);
-    }
+    vipList.clear();
+    vipList.addAll(temp);
     _vipController.add(List.from(vipList));
     _dbgPush('贵宾 ${vipList.length} 人');
   }
 
   void _walkVip(Uint8List p, List<VipUser> list) {
-    void scanInto(dynamic root, int maxD, void Function(String) onStr,
-        void Function(String) onUrl) {
-      void rec(dynamic n, int d) {
-        if (d > maxD) return;
-        if (n is String) {
-          if (n.startsWith('http')) {
-            onUrl(n);
-          } else {
-            onStr(n);
-          }
-        } else if (n is Map<int, Object?>) {
-          n.values.forEach((v) => rec(v, d + 1));
-        } else if (n is List) {
-          if (n.isNotEmpty && n.first is int) {
-            try {
-              final parsed =
-                  _TarsReader(Uint8List.fromList(n.cast<int>())).readFields();
-              if (parsed.isNotEmpty) {
-                rec(parsed, d + 1);
-                return;
-              }
-            } catch (_) {}
-          }
-          n.forEach((v) => rec(v, d + 1));
-        }
-      }
-      rec(root, 0);
-    }
-
-    bool isBytes(List n) => n.isNotEmpty && n.first is int;
-
     void walk(dynamic node, int depth) {
       if (depth > 12) return;
       if (node is Map<int, Object?>) {
@@ -756,38 +692,41 @@ class HuyaDanmakuClient {
           final strPool = <String>[];
           String avatar = '', gIcon = '', nIcon = '', pIcon = '', fansName = '';
           int uid = 0, fansLevel = 0, managerType = 0;
-          scanInto(node, 6, (s) {
-            if (s.isEmpty || s.startsWith('/') || s.contains('.mp4') ||
-                s.contains('.png') || s.contains('http')) return;
-            strPool.add(s);
-          }, (u) {
-            if (avatar.isEmpty && u.contains('avatar')) { avatar = u; return; }
-            if (u.contains('guardrank') && gIcon.isEmpty) { gIcon = u; return; }
-            if ((u.contains('yepai') || u.contains('guiyepai')) && nIcon.isEmpty) { nIcon = u; return; }
-            if ((u.contains('Pendant') || u.contains('pendant') ||
-                u.contains('PendantInfoZip') || u.contains('fenzuan') ||
-                u.contains('diamond') || u.contains('file_')) && pIcon.isEmpty) { pIcon = u; return; }
-          });
-          final nick = strPool.isNotEmpty ? strPool.last : '';
-          void rec2(dynamic n, int d) {
+          void scan(dynamic n, int d) {
             if (d > 6) return;
-            if (n is Map<int, Object?>) {
+            if (n is String) {
+              if (n.startsWith('http')) {
+                if (avatar.isEmpty && n.contains('avatar')) { avatar = n; return; }
+                if (n.contains('guardrank') && gIcon.isEmpty) { gIcon = n; return; }
+                if ((n.contains('yepai') || n.contains('guiyepai')) && nIcon.isEmpty) { nIcon = n; return; }
+                if ((n.contains('Pendant') || n.contains('pendant') || n.contains('PendantInfoZip') || n.contains('fenzuan') || n.contains('diamond') || n.contains('file_')) && pIcon.isEmpty) { pIcon = n; return; }
+              } else if (n.isNotEmpty && !n.startsWith('/')) {
+                strPool.add(n);
+              }
+            } else if (n is Map<int, Object?>) {
               final n0 = n[0]; final n3 = n[3]; final n4 = n[4]; final n7 = n[7];
               if (n0 is int && n0 > 100000 && uid == 0) uid = n0;
-              if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99 &&
-                  fansName.isEmpty && n3 != nick) { fansName = n3; fansLevel = n4; }
+              if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99 && fansName.isEmpty) { fansName = n3; fansLevel = n4; }
               if (n7 is int && n7 > 0 && n7 <= 3 && managerType == 0) managerType = n7;
-              n.values.forEach((v) => rec2(v, d + 1));
+              n.values.forEach((v) => scan(v, d + 1));
             } else if (n is List) {
-              n.forEach((v) => rec2(v, d + 1));
+              if (n.isNotEmpty && n.first is int) {
+                try {
+                  final parsed = _TarsReader(Uint8List.fromList(n.cast<int>())).readFields();
+                  if (parsed.isNotEmpty) { scan(parsed, d + 1); return; }
+                } catch (_) {}
+              }
+              n.forEach((v) => scan(v, d + 1));
             }
           }
-          rec2(node, 0);
+          scan(node, 0);
+          final nick = strPool.isNotEmpty ? strPool.last : '';
           int gl = 0;
           if (gIcon.contains('/1.png')) gl = 1;
           else if (gIcon.contains('/2.png')) gl = 2;
           else if (gIcon.contains('/3.png')) gl = 3;
-          if (nick.isNotEmpty && !list.any((e) => e.nickname == nick)) {
+          if (nick.isNotEmpty && avatar.isNotEmpty &&
+              !list.any((e) => e.nickname == nick)) {
             list.add(VipUser(
                 nickname: nick, avatar: avatar, uid: uid,
                 guardLevel: gl, guardIcon: gIcon,
@@ -798,17 +737,15 @@ class HuyaDanmakuClient {
         }
         node.values.forEach((v) => walk(v, depth + 1));
       } else if (node is List) {
-        if (isBytes(node)) {
+        if (node.isNotEmpty && node.first is int) {
           try {
-            final parsed =
-                _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
+            final parsed = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
             if (parsed.isNotEmpty) { walk(parsed, depth + 1); return; }
           } catch (_) {}
         }
         node.forEach((v) => walk(v, depth + 1));
       }
     }
-
     walk(_TarsReader(p).readFields(), 0);
   }
 
@@ -947,11 +884,7 @@ class HuyaDanmakuClient {
               final uri = uriRaw is int ? uriRaw : 1400;
               final raw = item[1];
               if (raw is List) {
-                if (uri == 1420 || uri == 1421 || uri == 1423) {
-                  _parseGiftPush(raw.map((e) => (e as int) & 0xFF).toList());
-                } else {
-                  _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
-                }
+                _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
               } else if (raw is Uint8List) {
                 _routePush(uri, raw);
               }
@@ -967,42 +900,6 @@ class HuyaDanmakuClient {
       else if (raw is Uint8List) { _routePush(uri, raw); return; }
       final f3 = f[3]; final f0 = f[0];
       if (f3 is String || f0 is Map<int, Object?>) _decodeDanmaku(payload);
-    } catch (_) {}
-  }
-
-  void _parseGiftPush(List<int> payload) {
-    try {
-      final f = _TarsReader(Uint8List.fromList(payload)).readFields();
-      String sender = '', gift = '';
-      int count = 1, combo = 0;
-      void walk(dynamic node, int d) {
-        if (d > 8) return;
-        if (node is Map<int, Object?>) {
-          final n0 = node[0];
-          if (n0 is Map<int, Object?>) {
-            for (final v in n0.values) {
-              if (v is String && !v.startsWith('http') && sender.isEmpty) sender = v;
-            }
-          }
-          for (final v in node.values) {
-            if (v is String && !v.startsWith('http') && v != sender &&
-                gift.isEmpty && v.length <= 12) gift = v;
-          }
-          final c1 = node[1];
-          if (c1 is int && c1 > 0 && count == 1 && d > 0) count = c1;
-          final c2 = node[2];
-          if (c2 is int && c2 > 1) combo = c2;
-          node.values.forEach((v) => walk(v, d + 1));
-        } else if (node is List) {
-          node.forEach((v) => walk(v, d + 1));
-        }
-      }
-      walk(f, 0);
-      if (sender.isEmpty) return;
-      final text = '送出 [${gift.isEmpty ? '礼物' : gift}] x$count'
-          '${combo > 1 ? ' ($combo连击)' : ''}';
-      _controller.add(DanmakuMessage(
-          nickname: sender, content: text, fontColor: 0xFFFFB25E, isGift: true));
     } catch (_) {}
   }
 
@@ -1052,15 +949,6 @@ class HuyaDanmakuClient {
     }
     if (nick.isEmpty) return false;
 
-    final key = '$nick|$content';
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (key == _lastKey && now - _lastAt < 2500) {
-      _lastAt = now;
-      return true;
-    }
-    _lastKey = key;
-    _lastAt = now;
-
     int color = 0;
     for (final k in const [6, 5, 4]) {
       final cf = msg[k];
@@ -1107,9 +995,7 @@ class HuyaDanmakuClient {
           try { findBadges(_TarsReader(Uint8List.fromList(node.cast<int>())).readFields(), depth + 1); } catch (_) {}
         } else node.forEach((v) => findBadges(v, depth + 1));
       } else if (node is String && node.startsWith('http')) {
-        if (node.contains('guiyepai') || node.contains('Pendant') || node.contains('pendant') ||
-            node.contains('PendantInfoZip') || node.contains('fenzuan') || node.contains('fengzuan') ||
-            node.contains('fangguan') || node.contains('diamond') || node.contains('file_')) {
+        if (node.contains('guiyepai') || node.contains('Pendant') || node.contains('pendant') || node.contains('PendantInfoZip') || node.contains('fenzuan') || node.contains('fengzuan') || node.contains('fangguan') || node.contains('diamond') || node.contains('file_')) {
           if (!badges.contains(node)) badges.add(node);
         }
       }
@@ -1121,8 +1007,7 @@ class HuyaDanmakuClient {
       if (u.contains('guiyepai')) ordered.add(u.contains('_3.png') ? u : u.replaceAll('guiyepai.png', 'guiyepai_3.png'));
     }
     for (final u in badges) {
-      if (u.contains('Pendant') || u.contains('pendant') || u.contains('fenzuan') ||
-          u.contains('fengzuan') || u.contains('diamond') || u.contains('file_')) ordered.add(u);
+      if (u.contains('Pendant') || u.contains('pendant') || u.contains('fenzuan') || u.contains('fengzuan') || u.contains('diamond') || u.contains('file_')) ordered.add(u);
     }
     for (final u in badges) {
       if (u.contains('fangguan')) ordered.add(u);
@@ -1177,13 +1062,21 @@ class _TarsWriter {
   void writeInt(int tag, int v) { final t = _intType(v); _head(tag, t); if (t == 12) return; _add(v, [1, 2, 4, 8][t]); }
   void writeString(int tag, String s) {
     final b = utf8.encode(s);
-    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); } else { _head(tag, 7); _add(b.length, 4); }
+    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); }
+    else { _head(tag, 7); _add(b.length, 4); }
     _b.add(b);
   }
   void writeStringList(int tag, List<String> items) { _head(tag, 9); _intValue(items.length); for (final s in items) writeString(0, s); }
   void writeListInt(int tag, List<int> items) { _head(tag, 9); _intValue(items.length); for (final v in items) writeInt(0, v); }
   void writeIntIntMap(int tag, Map<int, int> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeInt(0, k); writeInt(1, v); }); }
-  void writeStructMap(int tag, Map<String, _TarsWriter> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeString(0, k); _head(1, 10); _b.add(v._b.toBytes()); _b.addByte(0x0B); }); }
+  void writeGroupMap(int tag, Map<String, Map<int, int>> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((group, ids) {
+      writeString(0, group);
+      writeIntIntMap(1, ids);
+    });
+  }
   void writeBytes(int tag, List<int> bytes) { _head(tag, 13); _head(0, 0); _intValue(bytes.length); _b.add(bytes); }
   void writeMap(int tag, Map<String, String> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeString(1, v); }); }
   void writeBytesMap(int tag, Map<String, List<int>> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeBytes(1, v); }); }
