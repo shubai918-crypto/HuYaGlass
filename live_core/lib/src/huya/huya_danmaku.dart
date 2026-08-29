@@ -78,7 +78,6 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  // 内置表情兜底表
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -137,7 +136,6 @@ class HuyaDanmakuClient {
     return url;
   }
 
-  /// 大表情：非官方小表情即大表情
   static bool isBigEmote(String url) =>
       !url.contains('web_base_material') && !url.contains('expressconfig');
 
@@ -161,6 +159,8 @@ class HuyaDanmakuClient {
   String _guid = '';
   String _cookie = '';
   List<String> _dynamicHosts = [];
+
+  final Map<String, int> _recentKeys = {};
 
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
@@ -237,6 +237,7 @@ class HuyaDanmakuClient {
     _cmdSeq = 0;
     guardList.clear();
     vipList.clear();
+    _recentKeys.clear();
 
     _seedBuiltinEmotes();
     if (emoteRegistry.isNotEmpty) {
@@ -371,20 +372,26 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  // ★ 订阅：live + vipbar(6210/6893) + chat
   void _sendSubscribeHistory() {
     _sendSub33Groups({
       'live:$_ayyuid': const {
         6111: 12, 6479: 1, 6480: 1, 6481: 1, 6892: 6,
         6973: 1, 6974: 1, 6975: 1, 8006: 2,
       },
-      'comm:vipbar_${_ayyuid}': const {6210: 2, 6893: 1},
       'chat:$_ayyuid': const {6110: 2, 66: 1, 67: 5, 69: 5},
     });
     _sendSub33Groups({
       'live:$_ayyuid': const {6111: 28, 6483: 1},
       'chat:$_ayyuid': const {6110: 1, 67: 5, 69: 2},
     });
+    _sendVipbarRegister();
+  }
+
+  void _sendVipbarRegister() {
+    _sendSub33Groups({
+      'comm:vipbar_${_ayyuid}': const {6210: 2, 6893: 1},
+    });
+    _dbgPush('Register(vipbar) 已发');
   }
 
   void _sendSub33Groups(Map<String, Map<int, int>> groups) {
@@ -641,7 +648,7 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  void _onData(dynamic data) {
+ void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
@@ -674,7 +681,6 @@ class HuyaDanmakuClient {
       } else if (cmdType == 4) {
         _handleWupRsp(payload);
       } else if (cmdType == 21) {
-        // 心跳回执
       } else if (cmdType == 22 || cmdType == 7) {
         final s = utf8.decode(payload, allowMalformed: true);
         if (s.contains('vipbar')) {
@@ -713,10 +719,7 @@ class HuyaDanmakuClient {
       if (node is Map<int, Object?>) {
         bool hasAvatar = false;
         for (final v in node.values) {
-          if (v is String && v.startsWith('http') && v.contains('avatar')) {
-            hasAvatar = true;
-            break;
-          }
+          if (v is String && v.startsWith('http') && v.contains('avatar')) { hasAvatar = true; break; }
         }
         if (hasAvatar) {
           final strPool = <String>[];
@@ -755,8 +758,7 @@ class HuyaDanmakuClient {
           if (gIcon.contains('/1.png')) gl = 1;
           else if (gIcon.contains('/2.png')) gl = 2;
           else if (gIcon.contains('/3.png')) gl = 3;
-          if (nick.isNotEmpty && avatar.isNotEmpty &&
-              !list.any((e) => e.nickname == nick)) {
+          if (nick.isNotEmpty && avatar.isNotEmpty && !list.any((e) => e.nickname == nick)) {
             list.add(VipUser(
                 nickname: nick, avatar: avatar, uid: uid,
                 guardLevel: gl, guardIcon: gIcon,
@@ -799,19 +801,14 @@ class HuyaDanmakuClient {
         void walk(dynamic node, int depth) {
           if (depth > 14) return;
           if (node is Map<int, Object?>) {
-            String? name;
-            String? url;
+            String? name; String? url;
             for (final v in node.values) {
               if (v is String) {
                 if (name == null && v.startsWith('[')) name = v;
                 else if (url == null && v.startsWith('http')) url = v;
               }
             }
-            if (name != null && url != null) {
-              emoteRegistry[name] = _fixEmoteUrl(url);
-              cnt++;
-              return;
-            }
+            if (name != null && url != null) { emoteRegistry[name] = _fixEmoteUrl(url); cnt++; return; }
             node.values.forEach((v) => walk(v, depth + 1));
           } else if (node is List) {
             if (node.isNotEmpty && node.first is int) {
@@ -913,11 +910,8 @@ class HuyaDanmakuClient {
               final uriRaw = item[0];
               final uri = uriRaw is int ? uriRaw : 1400;
               final raw = item[1];
-              if (raw is List) {
-                _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
-              } else if (raw is Uint8List) {
-                _routePush(uri, raw);
-              }
+              if (raw is List) _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+              else if (raw is Uint8List) _routePush(uri, raw);
             }
           }
           return;
@@ -978,6 +972,13 @@ class HuyaDanmakuClient {
       }
     }
     if (nick.isEmpty) return false;
+
+    // ★ 8秒去重窗口，压掉重复刷屏
+    final key = '$nick|$content';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _recentKeys.removeWhere((k, t) => now - t > 8000);
+    if (_recentKeys.containsKey(key)) return true;
+    _recentKeys[key] = now;
 
     int color = 0;
     for (final k in const [6, 5, 4]) {
@@ -1076,10 +1077,16 @@ class HuyaDanmakuClient {
 
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
+
   void _head(int tag, int type) {
-    if (tag < 15) _b.addByte((tag << 4) | type);
-    else { _b.addByte(0xF0 | type); _b.addByte(tag); }
+    if (tag < 15) {
+      _b.addByte((tag << 4) | type);
+    } else {
+      _b.addByte(0xF0 | type);
+      _b.addByte(tag);
+    }
   }
+
   int _intType(int v) {
     if (v == 0) return 12;
     if (v >= -128 && v <= 127) return 0;
@@ -1087,18 +1094,67 @@ class _TarsWriter {
     if (v >= -2147483648 && v <= 2147483647) return 2;
     return 3;
   }
-  void _add(int v, int n) { for (var i = n - 1; i >= 0; i--) _b.addByte((v >> (8 * i)) & 0xFF); }
-  void _intValue(int v) { final t = _intType(v); if (t == 12) { _b.addByte(0x0C); return; } _b.addByte(t); _add(v, [1, 2, 4, 8][t]); }
-  void writeInt(int tag, int v) { final t = _intType(v); _head(tag, t); if (t == 12) return; _add(v, [1, 2, 4, 8][t]); }
+
+  void _add(int v, int n) {
+    for (var i = n - 1; i >= 0; i--) {
+      _b.addByte((v >> (8 * i)) & 0xFF);
+    }
+  }
+
+  void _intValue(int v) {
+    final t = _intType(v);
+    if (t == 12) {
+      _b.addByte(0x0C);
+      return;
+    }
+    _b.addByte(t);
+    _add(v, [1, 2, 4, 8][t]);
+  }
+
+  void writeInt(int tag, int v) {
+    final t = _intType(v);
+    _head(tag, t);
+    if (t == 12) return;
+    _add(v, [1, 2, 4, 8][t]);
+  }
+
   void writeString(int tag, String s) {
     final b = utf8.encode(s);
-    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); }
-    else { _head(tag, 7); _add(b.length, 4); }
+    if (b.length < 256) {
+      _head(tag, 6);
+      _b.addByte(b.length);
+    } else {
+      _head(tag, 7);
+      _add(b.length, 4);
+    }
     _b.add(b);
   }
-  void writeStringList(int tag, List<String> items) { _head(tag, 9); _intValue(items.length); for (final s in items) writeString(0, s); }
-  void writeListInt(int tag, List<int> items) { _head(tag, 9); _intValue(items.length); for (final v in items) writeInt(0, v); }
-  void writeIntIntMap(int tag, Map<int, int> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeInt(0, k); writeInt(1, v); }); }
+
+  void writeStringList(int tag, List<String> items) {
+    _head(tag, 9);
+    _intValue(items.length);
+    for (final s in items) {
+      writeString(0, s);
+    }
+  }
+
+  void writeListInt(int tag, List<int> items) {
+    _head(tag, 9);
+    _intValue(items.length);
+    for (final v in items) {
+      writeInt(0, v);
+    }
+  }
+
+  void writeIntIntMap(int tag, Map<int, int> m) {
+    _head(tag, 8);
+    _intValue(m.length);
+    m.forEach((k, v) {
+      writeInt(0, k);
+      writeInt(1, v);
+    });
+  }
+
   void writeGroupMap(int tag, Map<String, Map<int, int>> m) {
     _head(tag, 8);
     _intValue(m.length);
@@ -1107,39 +1163,151 @@ class _TarsWriter {
       writeIntIntMap(1, ids);
     });
   }
-  void writeBytes(int tag, List<int> bytes) { _head(tag, 13); _head(0, 0); _intValue(bytes.length); _b.add(bytes); }
-  void writeMap(int tag, Map<String, String> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeString(1, v); }); }
-  void writeBytesMap(int tag, Map<String, List<int>> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeBytes(1, v); }); }
-  void writeStruct(int tag, _TarsWriter inner) { _head(tag, 10); _b.add(inner._b.toBytes()); _b.addByte(0x0B); }
+
+  void writeBytes(int tag, List<int> bytes) {
+    _head(tag, 13);
+    _head(0, 0);
+    _intValue(bytes.length);
+    _b.add(bytes);
+  }
+
+  void writeMap(int tag, Map<String, String> entries) {
+    _head(tag, 8);
+    _intValue(entries.length);
+    entries.forEach((k, v) {
+      writeString(0, k);
+      writeString(1, v);
+    });
+  }
+
+  void writeBytesMap(int tag, Map<String, List<int>> entries) {
+    _head(tag, 8);
+    _intValue(entries.length);
+    entries.forEach((k, v) {
+      writeString(0, k);
+      writeBytes(1, v);
+    });
+  }
+
+  void writeStruct(int tag, _TarsWriter inner) {
+    _head(tag, 10);
+    _b.add(inner._b.toBytes());
+    _b.addByte(0x0B);
+  }
+
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
 }
 
 class _TarsReader {
-  final Uint8List _d; int _pos = 0;
+  final Uint8List _d;
+  int _pos = 0;
+
   _TarsReader(this._d);
+
   bool get hasMore => _pos < _d.length;
+
   int _byte() => _d[_pos++];
-  int _readIntN(int n) { var v = 0; for (var i = 0; i < n; i++) v = (v << 8) | _d[_pos++]; return (v << (64 - 8 * n)) >> (64 - 8 * n); }
-  int _readValueInt() { final t = _byte(); if (t == 12) return 0; return _readIntN([1, 2, 4, 8][t]); }
+
+  int _readIntN(int n) {
+    var v = 0;
+    for (var i = 0; i < n; i++) {
+      v = (v << 8) | _d[_pos++];
+    }
+    final shift = 64 - 8 * n;
+    return (v << shift) >> shift;
+  }
+
+  int _readValueInt() {
+    final t = _byte();
+    switch (t) {
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
+      default:
+        throw FormatException('tars: not an int, type=$t');
+    }
+  }
+
   Map<int, Object?> readFields() {
     final m = <int, Object?>{};
     while (hasMore) {
-      final h = _byte(); final type = h & 0x0F;
+      final h = _byte();
+      final type = h & 0x0F;
       if (type == 11) return m;
-      var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte();
+      var tag = (h >> 4) & 0x0F;
+      if (tag == 15) tag = _byte();
       m[tag] = _readValue(type);
     }
     return m;
   }
+
   Object? _readValue(int type) {
-    if (type <= 3) return _readIntN([1, 2, 4, 8][type]);
-    if (type == 12) return 0;
-    if (type == 6) { final n = _byte(); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
-    if (type == 7) { final n = _readIntN(4); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
-    if (type == 13) { _byte(); final n = _readValueInt(); final b = _d.sublist(_pos, _pos + n); _pos += n; return b; }
-    if (type == 9) { final size = _readValueInt(); final l = <Object?>[]; for (var i = 0; i < size; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); l.add(_readValue(h & 0x0F)); } return l; }
-    if (type == 8) { final size = _readValueInt(); final l = <Object?>[]; for (var i = 0; i < size * 2; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); l.add(_readValue(h & 0x0F)); } return l; }
-    if (type == 10) return readFields();
-    return null;
+    switch (type) {
+      case 0:
+        return _readIntN(1);
+      case 1:
+        return _readIntN(2);
+      case 2:
+        return _readIntN(4);
+      case 3:
+        return _readIntN(8);
+      case 12:
+        return 0;
+      case 4:
+        final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
+        _pos += 4;
+        return v;
+      case 5:
+        final v = ByteData.sublistView(_d, _pos, _pos + 8).getFloat64(0);
+        _pos += 8;
+        return v;
+      case 6:
+        final n = _byte();
+        final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
+        _pos += n;
+        return s;
+      case 7:
+        final n = _readIntN(4);
+        final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
+        _pos += n;
+        return s;
+      case 13:
+        _byte();
+        final n = _readValueInt();
+        final b = _d.sublist(_pos, _pos + n);
+        _pos += n;
+        return b;
+      case 9:
+        final size = _readValueInt();
+        final l = <Object?>[];
+        for (var i = 0; i < size; i++) {
+          final h = _byte();
+          var tag = (h >> 4) & 0x0F;
+          if (tag == 15) tag = _byte();
+          l.add(_readValue(h & 0x0F));
+        }
+        return l;
+      case 8:
+        final size = _readValueInt();
+        final l = <Object?>[];
+        for (var i = 0; i < size * 2; i++) {
+          final h = _byte();
+          var tag = (h >> 4) & 0x0F;
+          if (tag == 15) tag = _byte();
+          l.add(_readValue(h & 0x0F));
+        }
+        return l;
+      case 10:
+        return readFields();
+      default:
+        throw FormatException('tars: unknown type $type');
+    }
   }
 }
