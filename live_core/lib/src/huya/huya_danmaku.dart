@@ -18,6 +18,9 @@ class DanmakuMessage {
   final List<String> badgeUrls;
   final bool isHistory;
   final bool isGift;
+  final String giftName;
+  final int giftCount;
+  final int comboCount;
 
   DanmakuMessage({
     required this.nickname,
@@ -31,10 +34,20 @@ class DanmakuMessage {
     this.badgeUrls = const [],
     this.isHistory = false,
     this.isGift = false,
+    this.giftName = '',
+    this.giftCount = 1,
+    this.comboCount = 0,
   });
 
   static const kBadgeManager =
       'https://livewebbs2.msstatic.com/newfangguan_3.png';
+
+  static const Map<String, String> kGiftIcons = {
+    '虎粮': 'https://fileserver.cdn.huya.com/admin_gift_merge/e05e0b09162a4e6c9e4ea484e180d600/36.png',
+    '热火': 'https://fileserver.cdn.huya.com/admin_gift_merge/0fdaa91cab6249699d816a4e4d1b2ebb/36.png',
+    '超粉虎粮': 'https://fileserver.cdn.huya.com/admin_gift_merge/9041bf229f8d4218aac391987d3854d8/36.png',
+    '小月亮': 'https://fileserver.cdn.huya.com/admin_gift_merge/05fd9e5045f24cbb8ac813c31a8f4e0b/36.png',
+  };
 }
 
 class VipUser {
@@ -101,21 +114,11 @@ class HuyaDanmakuClient {
     '[几个菜啊]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/b638ab65dfad4a149e20feebda223ba7/expressconfig/steam_3.png',
     '[街溜子]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c4586ceb173340a19ea86a64d11792cb/expressconfig/steam_3.png',
     '[我是学生]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f1a8ec12f6a746a2ad4f4df389876d6b/expressconfig/steam_3.png',
-    '[兔个好运1]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/937dc6416c574022bcfa8e5bca22518c/expressconfig/steam_3.png',
     '[不会吧]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f9f7caf65ef9419f8ee967e01e6dccab/expressconfig/steam_3.png',
     '[恭喜发财2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/58f65d52b10b4187815de239362565ba/expressconfig/steam_3.png',
-    '[指哪打哪]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdc237fe5f64411cbff3039933daa294/expressconfig/steam_3.png',
-    '[心里有数]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27ae54d51eba4f769bcbb51aa6ca3270/expressconfig/steam_3.png',
-    '[你应得的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5a63dc48a52a497d8410c86ed754592f/expressconfig/steam_3.png',
-    '[顶级]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/bdd03cdbd4f94cf7afe7077c07b9cea4/expressconfig/steam_3.png',
-    '[有实力的]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c49b89484a1d4476b307fc163ff721a3/expressconfig/steam_3.png',
     '[蒜鸟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5293fc1adc0c4820aad8d2ce4eabc387/expressconfig/steam_3.png',
-    '[几个意思]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/a25c121f18114c8390f850669f9d8ea9/expressconfig/steam_3.png',
     '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282c72b257/expressconfig/steam_3.png',
-    '[包的兄弟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/883edb56e08b443cad098a8173b0f80d/expressconfig/steam_3.png',
     '[真的六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/023c6ec6575c4952ae77c4bd74d2a72f/expressconfig/steam_3.png',
-    '[白子说话]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/202eb7ce3c5742c194a95fc0ddd94584/expressconfig/steam_3.png',
-    '[黑子说话3]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/24f3300a0a964b7fb87da623893bc753/expressconfig/steam_3.png',
     '[俺不中嘞]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c0a00ac14515474f8f65101132964e76/expressconfig/steam_3.png',
     '[这瓜保熟吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978877steam_3.png',
     '[我不理解]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978857steam_3.png',
@@ -161,6 +164,8 @@ class HuyaDanmakuClient {
   List<String> _dynamicHosts = [];
 
   final Map<String, int> _recentKeys = {};
+  final Map<String, int> _comboCount = {};
+  final Map<String, int> _comboTime = {};
 
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
@@ -189,14 +194,6 @@ class HuyaDanmakuClient {
 
   String _randHex(int n) =>
       List.generate(n, (_) => '0123456789abcdef'[Random().nextInt(16)]).join();
-
-  List<int> _hexToBytes(String hex) {
-    final out = <int>[];
-    for (var i = 0; i + 1 < hex.length; i += 2) {
-      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
-    }
-    return out;
-  }
 
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
@@ -238,6 +235,8 @@ class HuyaDanmakuClient {
     guardList.clear();
     vipList.clear();
     _recentKeys.clear();
+    _comboCount.clear();
+    _comboTime.clear();
 
     _seedBuiltinEmotes();
     if (emoteRegistry.isNotEmpty) {
@@ -340,14 +339,9 @@ class HuyaDanmakuClient {
     return cmd.toBytes();
   }
 
-void _sendRegister() {
+  void _sendRegister() {
     final req = _TarsWriter();
-    // ★ 关键：把 comm:vipbar 也加入 cmd=16 的注册列表，服务器才会路由推送
-    req.writeStringList(0, [
-      'live:$_ayyuid', 
-      'chat:$_ayyuid', 
-      'comm:vipbar_$_ayyuid'
-    ]);
+    req.writeStringList(0, ['live:$_ayyuid', 'chat:$_ayyuid', 'comm:vipbar_$_ayyuid']);
     req.writeString(1, '');
     final cmd = _TarsWriter();
     cmd.writeInt(0, 16);
@@ -355,8 +349,8 @@ void _sendRegister() {
     cmd.writeInt(2, ++_reqId);
     _send(cmd.toBytes());
     _registered = true;
-    _dbgPush('Register(16) 已发(含vipbar)');
-}
+    _dbgPush('Register(16) 已发');
+  }
 
   String _buildBaseinfo() {
     final r = Random();
@@ -378,7 +372,6 @@ void _sendRegister() {
   }
 
   void _sendSubscribeHistory() {
-    // ★ 包1：live + vipbar + chat 三组同包（与网页抓包顺序一致）
     _sendSub33Groups({
       'live:$_ayyuid': const {
         6111: 12, 6479: 1, 6480: 1, 6481: 1, 6892: 6,
@@ -387,17 +380,9 @@ void _sendRegister() {
       'comm:vipbar_${_ayyuid}': const {6210: 2, 6893: 1},
       'chat:$_ayyuid': const {6110: 2, 66: 1, 67: 5, 69: 5},
     });
-    // 包2：live + chat（抓包第3个包）
     _sendSub33Groups({
       'live:$_ayyuid': const {6111: 28, 6483: 1},
       'chat:$_ayyuid': const {6110: 1, 67: 5, 69: 2},
-    });
-    _dbgPush('Register(vipbar) 已发(同包)');
-  }
-
-  void _sendVipbarRegister() {
-    _sendSub33Groups({
-      'comm:vipbar_${_ayyuid}': const {6210: 2, 6893: 1},
     });
     _dbgPush('Register(vipbar) 已发');
   }
@@ -530,36 +515,18 @@ void _sendRegister() {
     user.writeString(6, 'edg');
     user.writeString(7, '');
     final cf = _TarsWriter();
-    cf.writeInt(0, -1);
-    cf.writeInt(1, 4);
-    cf.writeInt(2, 0);
-    cf.writeInt(3, -1);
-    cf.writeInt(4, -1);
-    cf.writeInt(5, -1);
+    cf.writeInt(0, -1); cf.writeInt(1, 4); cf.writeInt(2, 0);
+    cf.writeInt(3, -1); cf.writeInt(4, -1); cf.writeInt(5, -1);
     final border = _TarsWriter();
-    border.writeInt(0, 0);
-    border.writeInt(1, 0);
-    border.writeInt(2, -1);
-    border.writeInt(3, 100);
-    border.writeInt(4, -1);
-    border.writeInt(5, 100);
-    border.writeString(6, '');
-    border.writeInt(7, -1);
-    border.writeInt(8, -1);
+    border.writeInt(0, 0); border.writeInt(1, 0); border.writeInt(2, -1);
+    border.writeInt(3, 100); border.writeInt(4, -1); border.writeInt(5, 100);
+    border.writeString(6, ''); border.writeInt(7, -1); border.writeInt(8, -1);
     final bf = _TarsWriter();
-    bf.writeInt(0, -1);
-    bf.writeInt(1, 4);
-    bf.writeInt(2, 0);
-    bf.writeInt(3, 1);
-    bf.writeInt(4, 0);
-    bf.writeStruct(5, border);
-    bf.writeListInt(6, const []);
-    bf.writeInt(7, 0);
-    bf.writeInt(8, -1);
+    bf.writeInt(0, -1); bf.writeInt(1, 4); bf.writeInt(2, 0); bf.writeInt(3, 1);
+    bf.writeInt(4, 0); bf.writeStruct(5, border); bf.writeListInt(6, const []);
+    bf.writeInt(7, 0); bf.writeInt(8, -1);
     final sence = _TarsWriter();
-    sence.writeInt(0, 0);
-    sence.writeInt(1, 0);
-    sence.writeInt(2, 0);
+    sence.writeInt(0, 0); sence.writeInt(1, 0); sence.writeInt(2, 0);
     final req = _TarsWriter();
     req.writeStruct(0, user);
     req.writeInt(1, _topSid);
@@ -578,9 +545,7 @@ void _sendRegister() {
 
   Uint8List _treq(Uint8List s) {
     final o = BytesBuilder();
-    o.addByte(0x0A);
-    o.add(s);
-    o.addByte(0x0B);
+    o.addByte(0x0A); o.add(s); o.addByte(0x0B);
     return o.toBytes();
   }
 
@@ -588,9 +553,7 @@ void _sendRegister() {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
     final wup = _TarsWriter();
-    wup.writeInt(1, 3);
-    wup.writeInt(2, 0);
-    wup.writeInt(3, 0);
+    wup.writeInt(1, 3); wup.writeInt(2, 0); wup.writeInt(3, 0);
     wup.writeInt(4, ++_reqId);
     wup.writeString(5, servant);
     wup.writeString(6, func);
@@ -650,13 +613,11 @@ void _sendRegister() {
     _closed = true;
     _heartTimer?.cancel();
     _reconnectTimer?.cancel();
-    try {
-      _ws?.close();
-    } catch (_) {}
+    try { _ws?.close(); } catch (_) {}
     _ws = null;
   }
 
- void _onData(dynamic data) {
+  void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
@@ -721,14 +682,15 @@ void _sendRegister() {
     _dbgPush('贵宾 ${vipList.length} 人');
   }
 
-/// 判断是否为"垃圾字符串"（文件名/URL/数字/浮点/组名），不能作为昵称
   static bool _isJunkStr(String s) {
     if (s.isEmpty) return true;
     if (s.startsWith('/') || s.startsWith('http') || s.startsWith('comm:')) return true;
     if (s.contains('.mp4') || s.contains('.png') || s.contains('.gif')) return true;
-    if (RegExp(r'^-?\d+(\.\d+)?$').hasMatch(s)) return true; // 纯数字 / 浮点 (-1.000000)
+    if (RegExp(r'^-?\d+(\.\d+)?$').hasMatch(s)) return true;
     return false;
   }
+
+  static bool _isGuardTitle(String s) => s == '剑士' || s == '骑士' || s == '领主';
 
   void _walkVip(Uint8List p, List<VipUser> list) {
     void walk(dynamic node, int depth) {
@@ -750,13 +712,13 @@ void _sendRegister() {
                 if (n.contains('guardrank') && gIcon.isEmpty) { gIcon = n; return; }
                 if ((n.contains('yepai') || n.contains('guiyepai')) && nIcon.isEmpty) { nIcon = n; return; }
                 if ((n.contains('Pendant') || n.contains('pendant') || n.contains('PendantInfoZip') || n.contains('fenzuan') || n.contains('diamond') || n.contains('file_')) && pIcon.isEmpty) { pIcon = n; return; }
-              } else if (!_isJunkStr(n)) {
-                strPool.add(n); // ★ 只收集合法昵称候选
+              } else if (!_isJunkStr(n) && !_isGuardTitle(n)) {
+                strPool.add(n);
               }
             } else if (n is Map<int, Object?>) {
               final n0 = n[0]; final n3 = n[3]; final n4 = n[4]; final n7 = n[7];
               if (n0 is int && n0 > 100000 && uid == 0) uid = n0;
-              if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99 && fansName.isEmpty) { fansName = n3; fansLevel = n4; }
+              if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99 && fansName.isEmpty && !_isGuardTitle(n3)) { fansName = n3; fansLevel = n4; }
               if (n7 is int && n7 > 0 && n7 <= 3 && managerType == 0) managerType = n7;
               n.values.forEach((v) => scan(v, d + 1));
             } else if (n is List) {
@@ -770,11 +732,8 @@ void _sendRegister() {
             }
           }
           scan(node, 0);
-          // ★ 取最长的合法候选作为昵称（真实昵称比粉丝牌名长）
           String nick = '';
-          for (final s in strPool) {
-            if (s.length > nick.length) nick = s;
-          }
+          for (final s in strPool) { if (s.length > nick.length) nick = s; }
           int gl = 0;
           if (gIcon.contains('/1.png')) gl = 1;
           else if (gIcon.contains('/2.png')) gl = 2;
@@ -790,7 +749,7 @@ void _sendRegister() {
         }
         node.values.forEach((v) => walk(v, depth + 1));
       } else if (node is List) {
-        if (node.isNotEmpty && n_first_is_int(node)) {
+        if (node.isNotEmpty && node.first is int) {
           try {
             final parsed = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
             if (parsed.isNotEmpty) { walk(parsed, depth + 1); return; }
@@ -801,8 +760,6 @@ void _sendRegister() {
     }
     walk(_TarsReader(p).readFields(), 0);
   }
-
-  static bool n_first_is_int(List n) => n.isNotEmpty && n.first is int;
 
   Map<int, Object?> _readWupFields(List<int> bytes) {
     var start = 0;
@@ -952,15 +909,58 @@ void _sendRegister() {
 
   void _routePush(int uri, List<int> payload) {
     if (uri == 1400) _decodeDanmaku(payload);
-    else if (uri == 6500 || uri == 6501 || uri == 6502) {
-      if (!_decodeDanmaku(payload)) _decodeHistoryDanmaku(payload);
-    } else if (uri == 8006) {
+    else if (uri == 6500 || uri == 6501 || uri == 6502) _parseGiftPush(payload);
+    else if (uri == 8006) {
       try {
         final f = _TarsReader(Uint8List.fromList(payload)).readFields();
         final pop = f[0];
         if (pop is int && pop > 0) onPopularity?.call(pop);
       } catch (_) {}
     }
+  }
+
+  void _parseGiftPush(List<int> payload) {
+    try {
+      final f = _TarsReader(Uint8List.fromList(payload)).readFields();
+      final strs = <String>[];
+      void walk(dynamic n, int d) {
+        if (d > 8) return;
+        if (n is String) {
+          if (!n.startsWith('http')) strs.add(n);
+        } else if (n is Map<int, Object?>) {
+          n.values.forEach((v) => walk(v, d + 1));
+        } else if (n is List) {
+          if (n.isNotEmpty && n.first is int) {
+            try {
+              final p = _TarsReader(Uint8List.fromList(n.cast<int>())).readFields();
+              if (p.isNotEmpty) { walk(p, d + 1); return; }
+            } catch (_) {}
+          }
+          n.forEach((v) => walk(v, d + 1));
+        }
+      }
+      walk(f, 0);
+      if (strs.isEmpty) return;
+      String giftName = '';
+      for (final s in strs) {
+        if (DanmakuMessage.kGiftIcons.containsKey(s)) { giftName = s; break; }
+      }
+      if (giftName.isEmpty && strs.length > 2) giftName = strs[2];
+      if (giftName.isEmpty) return;
+      final sender = strs.length > 1 ? strs[1] : strs[0];
+      final key = '$sender|$giftName';
+      final now = DateTime.now().millisecondsSinceEpoch;
+      int combo = 1;
+      if (_comboTime[key] != null && now - _comboTime[key]! < 10000) {
+        combo = (_comboCount[key] ?? 1) + 1;
+      }
+      _comboCount[key] = combo;
+      _comboTime[key] = now;
+      _controller.add(DanmakuMessage(
+        nickname: sender, content: '', fontColor: 0xFFFFB25E,
+        isGift: true, giftName: giftName, giftCount: 1, comboCount: combo,
+      ));
+    } catch (_) {}
   }
 
   bool _decodeDanmaku(List<int> payload) {
@@ -971,7 +971,7 @@ void _sendRegister() {
     }
   }
 
-  bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
+bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
     final f3 = fields[3]; final f0 = fields[0];
     if (f3 is! String && f0 is Map<int, Object?>) {
@@ -996,7 +996,6 @@ void _sendRegister() {
     }
     if (nick.isEmpty) return false;
 
-    // ★ 8秒去重窗口，压掉重复刷屏
     final key = '$nick|$content';
     final now = DateTime.now().millisecondsSinceEpoch;
     _recentKeys.removeWhere((k, t) => now - t > 8000);
@@ -1021,7 +1020,7 @@ void _sendRegister() {
     if (mt is int && mt > 0 && mt <= 3) managerType = mt;
 
     String fansName = ''; int fansLevel = 0;
-    bool isName(dynamic s) => s is String && s.isNotEmpty && !s.startsWith('http') && s.length <= 12 && s != nick && s != content;
+    bool isName(dynamic s) => s is String && s.isNotEmpty && !s.startsWith('http') && s.length <= 12 && s != nick && s != content && !_isGuardTitle(s);
     void findFans(dynamic node, int depth) {
       if (fansName.isNotEmpty || depth > 8) return;
       if (node is Map<int, Object?>) {
@@ -1035,7 +1034,9 @@ void _sendRegister() {
             final inner = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
             if (inner.isNotEmpty) findFans(inner, depth + 1);
           } catch (_) {}
-        } else node.forEach((v) => findFans(v, depth + 1));
+        } else {
+          node.forEach((v) => findFans(v, depth + 1));
+        }
       }
     }
     findFans(msg, 0);
@@ -1043,11 +1044,14 @@ void _sendRegister() {
     final badges = <String>[];
     void findBadges(dynamic node, int depth) {
       if (depth > 8) return;
-      if (node is Map<int, Object?>) node.values.forEach((v) => findBadges(v, depth + 1));
-      else if (node is List) {
+      if (node is Map<int, Object?>) {
+        node.values.forEach((v) => findBadges(v, depth + 1));
+      } else if (node is List) {
         if (node.isNotEmpty && node.first is int) {
           try { findBadges(_TarsReader(Uint8List.fromList(node.cast<int>())).readFields(), depth + 1); } catch (_) {}
-        } else node.forEach((v) => findBadges(v, depth + 1));
+        } else {
+          node.forEach((v) => findBadges(v, depth + 1));
+        }
       } else if (node is String && node.startsWith('http')) {
         if (node.contains('guiyepai') || node.contains('Pendant') || node.contains('pendant') || node.contains('PendantInfoZip') || node.contains('fenzuan') || node.contains('fengzuan') || node.contains('fangguan') || node.contains('diamond') || node.contains('file_')) {
           if (!badges.contains(node)) badges.add(node);
@@ -1100,16 +1104,10 @@ void _sendRegister() {
 
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
-
   void _head(int tag, int type) {
-    if (tag < 15) {
-      _b.addByte((tag << 4) | type);
-    } else {
-      _b.addByte(0xF0 | type);
-      _b.addByte(tag);
-    }
+    if (tag < 15) { _b.addByte((tag << 4) | type); }
+    else { _b.addByte(0xF0 | type); _b.addByte(tag); }
   }
-
   int _intType(int v) {
     if (v == 0) return 12;
     if (v >= -128 && v <= 127) return 0;
@@ -1117,67 +1115,18 @@ class _TarsWriter {
     if (v >= -2147483648 && v <= 2147483647) return 2;
     return 3;
   }
-
-  void _add(int v, int n) {
-    for (var i = n - 1; i >= 0; i--) {
-      _b.addByte((v >> (8 * i)) & 0xFF);
-    }
-  }
-
-  void _intValue(int v) {
-    final t = _intType(v);
-    if (t == 12) {
-      _b.addByte(0x0C);
-      return;
-    }
-    _b.addByte(t);
-    _add(v, [1, 2, 4, 8][t]);
-  }
-
-  void writeInt(int tag, int v) {
-    final t = _intType(v);
-    _head(tag, t);
-    if (t == 12) return;
-    _add(v, [1, 2, 4, 8][t]);
-  }
-
+  void _add(int v, int n) { for (var i = n - 1; i >= 0; i--) _b.addByte((v >> (8 * i)) & 0xFF); }
+  void _intValue(int v) { final t = _intType(v); if (t == 12) { _b.addByte(0x0C); return; } _b.addByte(t); _add(v, [1, 2, 4, 8][t]); }
+  void writeInt(int tag, int v) { final t = _intType(v); _head(tag, t); if (t == 12) return; _add(v, [1, 2, 4, 8][t]); }
   void writeString(int tag, String s) {
     final b = utf8.encode(s);
-    if (b.length < 256) {
-      _head(tag, 6);
-      _b.addByte(b.length);
-    } else {
-      _head(tag, 7);
-      _add(b.length, 4);
-    }
+    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); }
+    else { _head(tag, 7); _add(b.length, 4); }
     _b.add(b);
   }
-
-  void writeStringList(int tag, List<String> items) {
-    _head(tag, 9);
-    _intValue(items.length);
-    for (final s in items) {
-      writeString(0, s);
-    }
-  }
-
-  void writeListInt(int tag, List<int> items) {
-    _head(tag, 9);
-    _intValue(items.length);
-    for (final v in items) {
-      writeInt(0, v);
-    }
-  }
-
-  void writeIntIntMap(int tag, Map<int, int> m) {
-    _head(tag, 8);
-    _intValue(m.length);
-    m.forEach((k, v) {
-      writeInt(0, k);
-      writeInt(1, v);
-    });
-  }
-
+  void writeStringList(int tag, List<String> items) { _head(tag, 9); _intValue(items.length); for (final s in items) writeString(0, s); }
+  void writeListInt(int tag, List<int> items) { _head(tag, 9); _intValue(items.length); for (final v in items) writeInt(0, v); }
+  void writeIntIntMap(int tag, Map<int, int> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeInt(0, k); writeInt(1, v); }); }
   void writeGroupMap(int tag, Map<String, Map<int, int>> m) {
     _head(tag, 8);
     _intValue(m.length);
@@ -1186,151 +1135,39 @@ class _TarsWriter {
       writeIntIntMap(1, ids);
     });
   }
-
-  void writeBytes(int tag, List<int> bytes) {
-    _head(tag, 13);
-    _head(0, 0);
-    _intValue(bytes.length);
-    _b.add(bytes);
-  }
-
-  void writeMap(int tag, Map<String, String> entries) {
-    _head(tag, 8);
-    _intValue(entries.length);
-    entries.forEach((k, v) {
-      writeString(0, k);
-      writeString(1, v);
-    });
-  }
-
-  void writeBytesMap(int tag, Map<String, List<int>> entries) {
-    _head(tag, 8);
-    _intValue(entries.length);
-    entries.forEach((k, v) {
-      writeString(0, k);
-      writeBytes(1, v);
-    });
-  }
-
-  void writeStruct(int tag, _TarsWriter inner) {
-    _head(tag, 10);
-    _b.add(inner._b.toBytes());
-    _b.addByte(0x0B);
-  }
-
+  void writeBytes(int tag, List<int> bytes) { _head(tag, 13); _head(0, 0); _intValue(bytes.length); _b.add(bytes); }
+  void writeMap(int tag, Map<String, String> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeString(1, v); }); }
+  void writeBytesMap(int tag, Map<String, List<int>> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeBytes(1, v); }); }
+  void writeStruct(int tag, _TarsWriter inner) { _head(tag, 10); _b.add(inner._b.toBytes()); _b.addByte(0x0B); }
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
 }
 
 class _TarsReader {
-  final Uint8List _d;
-  int _pos = 0;
-
+  final Uint8List _d; int _pos = 0;
   _TarsReader(this._d);
-
   bool get hasMore => _pos < _d.length;
-
   int _byte() => _d[_pos++];
-
-  int _readIntN(int n) {
-    var v = 0;
-    for (var i = 0; i < n; i++) {
-      v = (v << 8) | _d[_pos++];
-    }
-    final shift = 64 - 8 * n;
-    return (v << shift) >> shift;
-  }
-
-  int _readValueInt() {
-    final t = _byte();
-    switch (t) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
-      default:
-        throw FormatException('tars: not an int, type=$t');
-    }
-  }
-
+  int _readIntN(int n) { var v = 0; for (var i = 0; i < n; i++) v = (v << 8) | _d[_pos++]; return (v << (64 - 8 * n)) >> (64 - 8 * n); }
+  int _readValueInt() { final t = _byte(); if (t == 12) return 0; return _readIntN([1, 2, 4, 8][t]); }
   Map<int, Object?> readFields() {
     final m = <int, Object?>{};
     while (hasMore) {
-      final h = _byte();
-      final type = h & 0x0F;
+      final h = _byte(); final type = h & 0x0F;
       if (type == 11) return m;
-      var tag = (h >> 4) & 0x0F;
-      if (tag == 15) tag = _byte();
+      var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte();
       m[tag] = _readValue(type);
     }
     return m;
   }
-
   Object? _readValue(int type) {
-    switch (type) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
-      case 4:
-        final v = ByteData.sublistView(_d, _pos, _pos + 4).getFloat32(0);
-        _pos += 4;
-        return v;
-      case 5:
-        final v = ByteData.sublistView(_d, _pos, _pos + 8).getFloat64(0);
-        _pos += 8;
-        return v;
-      case 6:
-        final n = _byte();
-        final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
-        _pos += n;
-        return s;
-      case 7:
-        final n = _readIntN(4);
-        final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
-        _pos += n;
-        return s;
-      case 13:
-        _byte();
-        final n = _readValueInt();
-        final b = _d.sublist(_pos, _pos + n);
-        _pos += n;
-        return b;
-      case 9:
-        final size = _readValueInt();
-        final l = <Object?>[];
-        for (var i = 0; i < size; i++) {
-          final h = _byte();
-          var tag = (h >> 4) & 0x0F;
-          if (tag == 15) tag = _byte();
-          l.add(_readValue(h & 0x0F));
-        }
-        return l;
-      case 8:
-        final size = _readValueInt();
-        final l = <Object?>[];
-        for (var i = 0; i < size * 2; i++) {
-          final h = _byte();
-          var tag = (h >> 4) & 0x0F;
-          if (tag == 15) tag = _byte();
-          l.add(_readValue(h & 0x0F));
-        }
-        return l;
-      case 10:
-        return readFields();
-      default:
-        throw FormatException('tars: unknown type $type');
-    }
+    if (type <= 3) return _readIntN([1, 2, 4, 8][type]);
+    if (type == 12) return 0;
+    if (type == 6) { final n = _byte(); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
+    if (type == 7) { final n = _readIntN(4); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
+    if (type == 13) { _byte(); final n = _readValueInt(); final b = _d.sublist(_pos, _pos + n); _pos += n; return b; }
+    if (type == 9) { final size = _readValueInt(); final l = <Object?>[]; for (var i = 0; i < size; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); l.add(_readValue(h & 0x0F)); } return l; }
+    if (type == 8) { final size = _readValueInt(); final l = <Object?>[]; for (var i = 0; i < size * 2; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); l.add(_readValue(h & 0x0F)); } return l; }
+    if (type == 10) return readFields();
+    return null;
   }
 }
