@@ -373,18 +373,21 @@ class HuyaDanmakuClient {
   }
 
   void _sendSubscribeHistory() {
+    // ★ 包1：live + vipbar + chat 三组同包（与网页抓包顺序一致）
     _sendSub33Groups({
       'live:$_ayyuid': const {
         6111: 12, 6479: 1, 6480: 1, 6481: 1, 6892: 6,
         6973: 1, 6974: 1, 6975: 1, 8006: 2,
       },
+      'comm:vipbar_${_ayyuid}': const {6210: 2, 6893: 1},
       'chat:$_ayyuid': const {6110: 2, 66: 1, 67: 5, 69: 5},
     });
+    // 包2：live + chat（抓包第3个包）
     _sendSub33Groups({
       'live:$_ayyuid': const {6111: 28, 6483: 1},
       'chat:$_ayyuid': const {6110: 1, 67: 5, 69: 2},
     });
-    _sendVipbarRegister();
+    _dbgPush('Register(vipbar) 已发(同包)');
   }
 
   void _sendVipbarRegister() {
