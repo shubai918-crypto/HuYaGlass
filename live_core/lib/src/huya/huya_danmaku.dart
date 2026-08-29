@@ -340,9 +340,14 @@ class HuyaDanmakuClient {
     return cmd.toBytes();
   }
 
-  void _sendRegister() {
+void _sendRegister() {
     final req = _TarsWriter();
-    req.writeStringList(0, ['live:$_ayyuid', 'chat:$_ayyuid']);
+    // ★ 关键：把 comm:vipbar 也加入 cmd=16 的注册列表，服务器才会路由推送
+    req.writeStringList(0, [
+      'live:$_ayyuid', 
+      'chat:$_ayyuid', 
+      'comm:vipbar_$_ayyuid'
+    ]);
     req.writeString(1, '');
     final cmd = _TarsWriter();
     cmd.writeInt(0, 16);
@@ -350,8 +355,8 @@ class HuyaDanmakuClient {
     cmd.writeInt(2, ++_reqId);
     _send(cmd.toBytes());
     _registered = true;
-    _dbgPush('Register(16) 已发');
-  }
+    _dbgPush('Register(16) 已发(含vipbar)');
+}
 
   String _buildBaseinfo() {
     final r = Random();
