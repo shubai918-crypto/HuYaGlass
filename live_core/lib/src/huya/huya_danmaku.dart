@@ -81,7 +81,6 @@ class HuyaDanmakuClient {
   static const _LAUNCH_REQ =
       '00031d00005d0000005d10032c3c406d56066c61756e6368660a777354696d6553796e637d0000360800010604745265711d0000290a0620306138393865636435393832393236613539303236613766366237666338653712000cf04f0b8c980ca80c2c3625343637396266656464626536626666333a343637396266656464626536626666333a303a304c5c66203331366233336333306462323935313162363764663865653066396164396230';
 
-  // 内置表情兜底表
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -139,6 +138,10 @@ class HuyaDanmakuClient {
     if (url.endsWith(bad)) return url.substring(0, url.length - bad.length) + 'steam_3.png';
     return url;
   }
+
+  /// ★ 大表情：非官方小表情(web_base_material/expressconfig)即大表情
+  static bool isBigEmote(String url) =>
+      !url.contains('web_base_material') && !url.contains('expressconfig');
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -310,6 +313,25 @@ class HuyaDanmakuClient {
     return out;
   }
 
+  Uint8List _buildVerifyCookie() {
+    final req = _TarsWriter();
+    req.writeInt(0, _loginUid);
+    req.writeString(1, _sendHuYaUA);
+    req.writeString(2, _cookie);
+    req.writeString(3, _guid);
+    req.writeInt(4, 1);
+    req.writeString(5, 'HUYA&ZH&2052');
+    final cmd = _TarsWriter();
+    cmd.writeInt(0, 10);
+    cmd.writeBytes(1, req.toBytes());
+    cmd.writeInt(2, 0);
+    cmd.writeString(3, '');
+    cmd.writeInt(4, 0);
+    cmd.writeInt(5, 0);
+    cmd.writeString(6, '');
+    return cmd.toBytes();
+  }
+
   void _sendRegister() {
     final req = _TarsWriter();
     req.writeStringList(0, ['live:$_ayyuid', 'chat:$_ayyuid']);
@@ -342,7 +364,6 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
-  // ★ 订阅：用抓包的完整频道 id 映射
   void _sendSubscribeHistory() {
     _sendSub33Groups({
       'live:$_ayyuid': const {
@@ -645,7 +666,6 @@ class HuyaDanmakuClient {
       } else if (cmdType == 21) {
         // 心跳回执
       } else if (cmdType == 22 || cmdType == 7) {
-        // ★ 扫描整包判断 vipbar（守护包头、贵宾包尾都含），普通弹幕不含
         final s = utf8.decode(payload, allowMalformed: true);
         if (s.contains('vipbar')) {
           if (cmdType == 22) _parseGuardPush(payload); else _parseVipPush(payload);
