@@ -782,20 +782,35 @@ class HuyaDanmakuClient {
       if (servant == 'wupui' && func == 'getExpressionEmoticonPackage') {
         int cnt = 0;
         void walk(dynamic node, int depth) {
-          if (depth > 12) return;
+          if (depth > 14) return;
           if (node is Map<int, Object?>) {
-            final name = node[1];
+            // 不依赖固定 tag：第一个 [xxx] 串当名字，第一个 http 串当 URL
+            String? name;
             String? url;
-            final u3 = node[3];
-            final u4 = node[4];
-            if (u3 is String && u3.startsWith('http')) url = u3;
-            else if (u4 is String && u4.startsWith('http')) url = u4;
-            if (name is String && name.startsWith('[') && url != null) {
-              emoteRegistry[name] = _fixEmoteUrl(url);
+            for (final v in node.values) {
+              if (v is String) {
+                if (name == null && v.startsWith('[')) name = v;
+                else if (url == null && v.startsWith('http')) url = v;
+              }
+            }
+            if (name != null && url != null) {
+              emoteRegistry[name] = _fixEmoteUrl(url); // steam.png -> steam_3.png
               cnt++;
+              return;
             }
             node.values.forEach((v) => walk(v, depth + 1));
           } else if (node is List) {
+            // ★ 关键：原始字节块 → 先按 TARS 解析再递归（表情条目在 tRsp 字节块里）
+            if (node.isNotEmpty && node.first is int) {
+              try {
+                final parsed =
+                    _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
+                if (parsed.isNotEmpty) {
+                  walk(parsed, depth + 1);
+                  return;
+                }
+              } catch (_) {}
+            }
             node.forEach((v) => walk(v, depth + 1));
           }
         }
