@@ -113,9 +113,9 @@ class HuyaDanmakuClient {
     return url;
   }
 
-  /// ★ 大表情判定（diy/udiy/gif 渲染更大）
+  /// ★ 大表情：非官方小表情(web_base_material/expressconfig)即大表情
   static bool isBigEmote(String url) =>
-      url.contains('udiy') || url.contains('diy') || url.endsWith('.gif');
+      !url.contains('web_base_material') && !url.contains('expressconfig');
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -138,7 +138,6 @@ class HuyaDanmakuClient {
   String _cookie = '';
   List<String> _dynamicHosts = [];
 
-  // ★ 弹幕去重（2.5s 内完全相同视为重复，礼物连击除外）
   String _lastKey = '';
   int _lastAt = 0;
 
@@ -766,7 +765,8 @@ class HuyaDanmakuClient {
             if (u.contains('guardrank') && gIcon.isEmpty) { gIcon = u; return; }
             if ((u.contains('yepai') || u.contains('guiyepai')) && nIcon.isEmpty) { nIcon = u; return; }
             if ((u.contains('Pendant') || u.contains('pendant') ||
-                u.contains('fenzuan') || u.contains('diamond')) && pIcon.isEmpty) { pIcon = u; return; }
+                u.contains('PendantInfoZip') || u.contains('fenzuan') ||
+                u.contains('diamond') || u.contains('file_')) && pIcon.isEmpty) { pIcon = u; return; }
           });
           final nick = strPool.isNotEmpty ? strPool.last : '';
           void rec2(dynamic n, int d) {
@@ -947,7 +947,6 @@ class HuyaDanmakuClient {
               final uri = uriRaw is int ? uriRaw : 1400;
               final raw = item[1];
               if (raw is List) {
-                // ★ 礼物推送单独解析，不再混入聊天
                 if (uri == 1420 || uri == 1421 || uri == 1423) {
                   _parseGiftPush(raw.map((e) => (e as int) & 0xFF).toList());
                 } else {
@@ -971,7 +970,6 @@ class HuyaDanmakuClient {
     } catch (_) {}
   }
 
-  /// ★ 礼物推送 → 礼物行
   void _parseGiftPush(List<int> payload) {
     try {
       final f = _TarsReader(Uint8List.fromList(payload)).readFields();
@@ -1054,7 +1052,6 @@ class HuyaDanmakuClient {
     }
     if (nick.isEmpty) return false;
 
-    // ★ 2.5s 内完全相同视为重复（礼物连击走 isGift 不受影响）
     final key = '$nick|$content';
     final now = DateTime.now().millisecondsSinceEpoch;
     if (key == _lastKey && now - _lastAt < 2500) {
@@ -1111,8 +1108,8 @@ class HuyaDanmakuClient {
         } else node.forEach((v) => findBadges(v, depth + 1));
       } else if (node is String && node.startsWith('http')) {
         if (node.contains('guiyepai') || node.contains('Pendant') || node.contains('pendant') ||
-            node.contains('fenzuan') || node.contains('fengzuan') || node.contains('fangguan') ||
-            node.contains('diamond')) {
+            node.contains('PendantInfoZip') || node.contains('fenzuan') || node.contains('fengzuan') ||
+            node.contains('fangguan') || node.contains('diamond') || node.contains('file_')) {
           if (!badges.contains(node)) badges.add(node);
         }
       }
@@ -1125,7 +1122,7 @@ class HuyaDanmakuClient {
     }
     for (final u in badges) {
       if (u.contains('Pendant') || u.contains('pendant') || u.contains('fenzuan') ||
-          u.contains('fengzuan') || u.contains('diamond')) ordered.add(u);
+          u.contains('fengzuan') || u.contains('diamond') || u.contains('file_')) ordered.add(u);
     }
     for (final u in badges) {
       if (u.contains('fangguan')) ordered.add(u);
