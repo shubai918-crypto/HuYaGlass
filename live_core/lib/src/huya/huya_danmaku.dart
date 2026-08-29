@@ -78,9 +78,7 @@ class HuyaDanmakuClient {
     'cdnws.api.huya.com',
   ];
 
-  static const _LAUNCH_REQ =
-      '00031d00005d0000005d10032c3c406d56066c61756e6368660a777354696d6553796e637d0000360800010604745265711d0000290a0620306138393865636435393832393236613539303236613766366237666338653712000cf04f0b8c980ca80c2c3625343637396266656464626536626666333a343637396266656464626536626666333a303a304c5c66203331366233336333306462323935313162363764663865653066396164396230';
-
+  // 内置表情兜底表
   static const Map<String, String> _builtinEmotes = {
     '[666]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141729267685_pic.png',
     '[打呼]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141739514550_pic.png',
@@ -139,7 +137,7 @@ class HuyaDanmakuClient {
     return url;
   }
 
-  /// ★ 大表情：非官方小表情(web_base_material/expressconfig)即大表情
+  /// 大表情：非官方小表情即大表情
   static bool isBigEmote(String url) =>
       !url.contains('web_base_material') && !url.contains('expressconfig');
 
@@ -191,6 +189,14 @@ class HuyaDanmakuClient {
 
   String _randHex(int n) =>
       List.generate(n, (_) => '0123456789abcdef'[Random().nextInt(16)]).join();
+
+  List<int> _hexToBytes(String hex) {
+    final out = <int>[];
+    for (var i = 0; i + 1 < hex.length; i += 2) {
+      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return out;
+  }
 
   Future<List<String>> _preferredHosts() async {
     final hosts = _dynamicHosts.isNotEmpty ? _dynamicHosts : _wsHosts;
@@ -280,7 +286,7 @@ class HuyaDanmakuClient {
 
     _send(_buildVerifyCookie());
     Timer(const Duration(milliseconds: 300), () {
-      if (!_closed) _send(_hexToBytes(_LAUNCH_REQ));
+      if (!_closed) _sendLaunch();
     });
     Timer(const Duration(milliseconds: 600), () {
       if (!_closed) _sendRegister();
@@ -305,12 +311,13 @@ class HuyaDanmakuClient {
     });
   }
 
-  List<int> _hexToBytes(String hex) {
-    final out = <int>[];
-    for (var i = 0; i + 1 < hex.length; i += 2) {
-      out.add(int.parse(hex.substring(i, i + 2), radix: 16));
-    }
-    return out;
+  void _sendLaunch() {
+    final li = _TarsWriter();
+    li.writeString(0, _guid);
+    li.writeInt(1, 0);
+    li.writeString(3, '${_randHex(16)}:${_randHex(16)}:0:0');
+    final body = _wupBody('launch', 'wsTimeSync', {'tReq': _treq(li.toBytes())});
+    _send(_wrapWsCmd(_withPrefix(body), 3));
   }
 
   Uint8List _buildVerifyCookie() {
@@ -364,16 +371,19 @@ class HuyaDanmakuClient {
     return base64Encode(info.toBytes());
   }
 
+  // ★ 订阅：live + vipbar(6210/6893) + chat
   void _sendSubscribeHistory() {
     _sendSub33Groups({
       'live:$_ayyuid': const {
         6111: 12, 6479: 1, 6480: 1, 6481: 1, 6892: 6,
         6973: 1, 6974: 1, 6975: 1, 8006: 2,
       },
+      'comm:vipbar_${_ayyuid}': const {6210: 2, 6893: 1},
       'chat:$_ayyuid': const {6110: 2, 66: 1, 67: 5, 69: 5},
     });
     _sendSub33Groups({
-      'comm:vipbar_${_ayyuid}': const {66: 2, 6509: 1},
+      'live:$_ayyuid': const {6111: 28, 6483: 1},
+      'chat:$_ayyuid': const {6110: 1, 67: 5, 69: 2},
     });
   }
 
