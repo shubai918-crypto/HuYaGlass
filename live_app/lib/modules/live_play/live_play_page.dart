@@ -7,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
 
+/// ★ 表情内联：普通 22px，大表情(diy/udiy/gif) 56px
 List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? textColor}) {
   final spans = <InlineSpan>[];
   final reg = RegExp(r'\[([^\]]+)\]');
@@ -16,11 +17,13 @@ List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? text
     final key = m.group(0)!;
     final url = HuyaDanmakuClient.emoteRegistry[key];
     if (url != null) {
+      final big = HuyaDanmakuClient.isBigEmote(url);
+      final size = big ? 56.0 : 22.0;
       spans.add(WidgetSpan(
         alignment: PlaceholderAlignment.middle,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: Image.network(url, width: fontSize + 4, height: fontSize + 4,
+          child: Image.network(url, width: size, height: size,
               errorBuilder: (_, __, ___) => Text(key,
                   style: TextStyle(color: textColor ?? Colors.white70, fontSize: fontSize))),
         ),
@@ -476,9 +479,13 @@ class _DanmakuListState extends State<_DanmakuList> {
           for (final url in shownBadges)
             Padding(padding: const EdgeInsets.only(right: 4),
                 child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+          // ★ 礼物行橙色+礼物图标
+          if (m.isGift) const Icon(Icons.card_giftcard, color: Color(0xFFFFB25E), size: 16),
           Text.rich(TextSpan(children: [
             TextSpan(text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
-                style: TextStyle(color: Color(m.fontColor), fontSize: 14, fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    color: m.isGift ? const Color(0xFFFFB25E) : Color(m.fontColor),
+                    fontSize: 14, fontWeight: FontWeight.w600)),
             ...buildEmoteSpans(m.content),
           ])),
         ]),
@@ -516,7 +523,6 @@ class _DanmakuListState extends State<_DanmakuList> {
   }
 }
 
-// ================= 高能观众半屏（Tab 带人数括号） =================
 class _HighEnergySheet extends StatefulWidget {
   final LivePlayController c;
   const _HighEnergySheet({required this.c});
@@ -620,7 +626,6 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
         child: Column(children: [
           Container(margin: const EdgeInsets.only(top: 8), width: 40, height: 4,
               decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          // ★ Tab 标题带人数括号
           TabBar(
             controller: _tab,
             labelColor: const Color(0xFF00D2FF),
