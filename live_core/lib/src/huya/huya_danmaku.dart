@@ -706,65 +706,110 @@ void _onData(dynamic data) {
   }
 
   void _walkVip(Uint8List p, List<VipUser> list) {
-    void walk(dynamic node, int depth) {
-      if (depth > 10) return;
-      if (node is Map<int, Object?>) {
-        String nick = '';
-        String avatar = '';
-        for (final v in node.values) {
-          if (v is String && v.isNotEmpty && !v.startsWith('http') && nick.isEmpty) nick = v;
-          if (v is String && v.startsWith('http') && v.contains('avatar') && avatar.isEmpty) avatar = v;
-        }
-        if (nick.isNotEmpty && avatar.isNotEmpty) {
-          String gIcon = '', nIcon = '', pIcon = '';
-          int uid = 0, fansLevel = 0, managerType = 0;
-          String fansName = '';
-          void scan(dynamic n, int d) {
-            if (d > 6) return;
-            if (n is String && n.startsWith('http')) {
-              if (n.contains('guardrank') && gIcon.isEmpty) gIcon = n;
-              else if (n.contains('yepai') && nIcon.isEmpty) nIcon = n;
-              else if (n.contains('Pendant') && pIcon.isEmpty) pIcon = n;
-            } else if (n is Map<int, Object?>) {
-              final n0 = n[0];
-              final n3 = n[3];
-              final n4 = n[4];
-              final n7 = n[7];
-              if (n0 is int && n0 > 100000 && uid == 0) uid = n0;
-              if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99 && fansName.isEmpty && n3 != nick) {
-                fansName = n3;
-                fansLevel = n4;
+    // 在子树里收集字符串/URL
+    void scanInto(dynamic root, int maxD,
+        void Function(String) onStr, void Function(String) onUrl) {
+      void rec(dynamic n, int d) {
+        if (d > maxD) return;
+        if (n is String) {
+          if (n.startsWith('http')) {
+            onUrl(n);
+          } else {
+            onStr(n);
+          }
+        } else if (n is Map<int, Object?>) {
+          n.values.forEach((v) => rec(v, d + 1));
+        } else if (n is List) {
+          if (node0IsBytes(n)) {
+            try {
+              final parsed =
+                  _TarsReader(Uint8List.fromList(n.cast<int>())).readFields();
+              if (parsed.isNotEmpty) {
+                rec(parsed, d + 1);
+                return;
               }
+            } catch (_) {}
+          }
+          n.forEach((v) => rec(v, d + 1));
+        }
+      }
+      rec(root, 0);
+    }
+
+    bool node0IsBytes(List n) => n.isNotEmpty && n.first is int;
+
+    void walk(dynamic node, int depth) {
+      if (depth > 12) return;
+      if (node is Map<int, Object?>) {
+        // ★ 锚点：当前 Map 直接含 avatar URL => 用户条目
+        bool hasAvatar = false;
+        for (final v in node.values) {
+          if (v is String && v.startsWith('http') && v.contains('avatar')) {
+            hasAvatar = true;
+            break;
+          }
+        }
+        if (hasAvatar) {
+          final strPool = <String>[];
+          String avatar = '', gIcon = '', nIcon = '', pIcon = '', fansName = '';
+          int uid = 0, fansLevel = 0, managerType = 0;
+
+          scanInto(node, 6, (s) {
+            if (s.isEmpty || s.startsWith('/') || s.contains('.mp4') ||
+                s.contains('.png') || s.contains('http')) return;
+            strPool.add(s);
+          }, (u) {
+            if (avatar.isEmpty && u.contains('avatar')) { avatar = u; return; }
+            if (u.contains('guardrank') && gIcon.isEmpty) { gIcon = u; return; }
+            if (u.contains('yepai') && nIcon.isEmpty) { nIcon = u; return; }
+            if (u.contains('Pendant') && pIcon.isEmpty) { pIcon = u; return; }
+          });
+
+          // 昵称取最后一个有效串（徽章/粉丝牌名在前，昵称在后）
+          final nick = strPool.isNotEmpty ? strPool.last : '';
+
+          void rec2(dynamic n, int d) {
+            if (d > 6) return;
+            if (n is Map<int, Object?>) {
+              final n0 = n[0]; final n3 = n[3]; final n4 = n[4]; final n7 = n[7];
+              if (n0 is int && n0 > 100000 && uid == 0) uid = n0;
+              if (n3 is String && n4 is int && n4 >= 1 && n4 <= 99 &&
+                  fansName.isEmpty && n3 != nick) { fansName = n3; fansLevel = n4; }
               if (n7 is int && n7 > 0 && n7 <= 3 && managerType == 0) managerType = n7;
-              n.values.forEach((v) => scan(v, d + 1));
+              n.values.forEach((v) => rec2(v, d + 1));
             } else if (n is List) {
-              n.forEach((v) => scan(v, d + 1));
+              n.forEach((v) => rec2(v, d + 1));
             }
           }
-          scan(node, 0);
+          rec2(node, 0);
+
           int gl = 0;
           if (gIcon.contains('/1.png')) gl = 1;
           else if (gIcon.contains('/2.png')) gl = 2;
           else if (gIcon.contains('/3.png')) gl = 3;
-          list.add(VipUser(
-              nickname: nick, avatar: avatar, uid: uid,
-              guardLevel: gl, guardIcon: gIcon,
-              nobleIcon: nIcon, fansName: fansName, fansLevel: fansLevel,
-              managerType: managerType, pendantIcon: pIcon));
+
+          if (nick.isNotEmpty && !list.any((e) => e.nickname == nick)) {
+            list.add(VipUser(
+                nickname: nick, avatar: avatar, uid: uid,
+                guardLevel: gl, guardIcon: gIcon,
+                nobleIcon: nIcon, fansName: fansName, fansLevel: fansLevel,
+                managerType: managerType, pendantIcon: pIcon));
+          }
           return;
         }
         node.values.forEach((v) => walk(v, depth + 1));
       } else if (node is List) {
-        if (node.isNotEmpty && node.first is int) {
+        if (node0IsBytes(node)) {
           try {
-            final parsed = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
-            if (parsed.isNotEmpty) walk(parsed, depth + 1);
+            final parsed =
+                _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
+            if (parsed.isNotEmpty) { walk(parsed, depth + 1); return; }
           } catch (_) {}
-          return;
         }
         node.forEach((v) => walk(v, depth + 1));
       }
     }
+
     walk(_TarsReader(p).readFields(), 0);
   }
 
