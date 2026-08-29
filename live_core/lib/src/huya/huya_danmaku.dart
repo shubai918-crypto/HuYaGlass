@@ -17,6 +17,7 @@ class DanmakuMessage {
   final int managerType;
   final List<String> badgeUrls;
   final bool isHistory;
+  final bool isGift;
 
   DanmakuMessage({
     required this.nickname,
@@ -29,6 +30,7 @@ class DanmakuMessage {
     this.managerType = 0,
     this.badgeUrls = const [],
     this.isHistory = false,
+    this.isGift = false,
   });
 
   static const kBadgeManager =
@@ -89,14 +91,10 @@ class HuyaDanmakuClient {
     '[狗头]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16164185817771_pic.png',
     '[震惊]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141737604305_pic.png',
     '[整不会了6]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/abee3a09a3ca49e4b4e567886eb0f5c9/expressconfig/steam_3.png',
-    '[你是我的哥]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/dda720298ab146419718397f97dcb2eb/expressconfig/steam_3.png',
-    '[盯]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27d952f79d2a48859eca9ebaf1146f09/expressconfig/steam_3.png',
     '[厚礼蟹]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e9206baa27e341e0b556de168c6003d6/expressconfig/steam_3.png',
     '[真服了老六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/61d215d04b7145908d0af419f0111aec/expressconfig/steam_3.png',
-    '[泰酷辣]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e61973807356460a83adc9568799a938/expressconfig/steam_3.png',
     '[蒜鸟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5293fc1adc0c4820aad8d2ce4eabc387/expressconfig/steam_3.png',
     '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282c72b257/expressconfig/steam_3.png',
-    '[包的兄弟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/883edb56e08b443cad098a8173b0f80d/expressconfig/steam_3.png',
     '[真的六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/023c6ec6575c4952ae77c4bd74d2a72f/expressconfig/steam_3.png',
     '[俺不中嘞]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c0a00ac14515474f8f65101132964e76/expressconfig/steam_3.png',
   };
@@ -114,6 +112,10 @@ class HuyaDanmakuClient {
     if (url.endsWith(bad)) return url.substring(0, url.length - bad.length) + 'steam_3.png';
     return url;
   }
+
+  /// ★ 大表情判定（diy/udiy/gif 渲染更大）
+  static bool isBigEmote(String url) =>
+      url.contains('udiy') || url.contains('diy') || url.endsWith('.gif');
 
   WebSocket? _ws;
   Timer? _heartTimer;
@@ -135,6 +137,10 @@ class HuyaDanmakuClient {
   String _guid = '';
   String _cookie = '';
   List<String> _dynamicHosts = [];
+
+  // ★ 弹幕去重（2.5s 内完全相同视为重复，礼物连击除外）
+  String _lastKey = '';
+  int _lastAt = 0;
 
   void Function(String)? onStatus;
   void Function(int)? onPopularity;
@@ -209,6 +215,8 @@ class HuyaDanmakuClient {
     _registered = false;
     _rctOk = false;
     _cmdSeq = 0;
+    _lastKey = '';
+    _lastAt = 0;
     guardList.clear();
     vipList.clear();
 
@@ -558,7 +566,6 @@ class HuyaDanmakuClient {
     return o.toBytes();
   }
 
-  /// ★ 恢复完整 WUP 头（tag2/3/8/9/10 不可省，否则服务器丢弃请求）
   Uint8List _wupBody(String servant, String func, Map<String, List<int>> buffers) {
     final inner = _TarsWriter();
     inner.writeBytesMap(0, buffers);
@@ -631,7 +638,7 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-void _onData(dynamic data) {
+  void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
@@ -666,15 +673,14 @@ void _onData(dynamic data) {
       } else if (cmdType == 21) {
         // 心跳回执
       } else if (cmdType == 22) {
-        // ★ cmd 22 可能是守护推送或普通弹幕/进场特效，用 'vipbar' 区分
-        final s = utf8.decode(payload.sublist(0, min(64, payload.length)), allowMalformed: true);
+        final s = utf8.decode(payload.sublist(0, min(64, payload.length)),
+            allowMalformed: true);
         if (s.contains('vipbar')) {
           _parseGuardPush(payload);
         } else {
           _handleMsgPushUnified(payload);
         }
       } else if (cmdType == 7) {
-        // ★ cmd 7 是贵宾推送，开头无 'vipbar' 前缀，直接按贵宾解析
         _parseVipPush(payload);
       } else {
         _handleMsgPushUnified(payload);
@@ -706,9 +712,8 @@ void _onData(dynamic data) {
   }
 
   void _walkVip(Uint8List p, List<VipUser> list) {
-    // 在子树里收集字符串/URL
-    void scanInto(dynamic root, int maxD,
-        void Function(String) onStr, void Function(String) onUrl) {
+    void scanInto(dynamic root, int maxD, void Function(String) onStr,
+        void Function(String) onUrl) {
       void rec(dynamic n, int d) {
         if (d > maxD) return;
         if (n is String) {
@@ -720,7 +725,7 @@ void _onData(dynamic data) {
         } else if (n is Map<int, Object?>) {
           n.values.forEach((v) => rec(v, d + 1));
         } else if (n is List) {
-          if (node0IsBytes(n)) {
+          if (n.isNotEmpty && n.first is int) {
             try {
               final parsed =
                   _TarsReader(Uint8List.fromList(n.cast<int>())).readFields();
@@ -736,12 +741,11 @@ void _onData(dynamic data) {
       rec(root, 0);
     }
 
-    bool node0IsBytes(List n) => n.isNotEmpty && n.first is int;
+    bool isBytes(List n) => n.isNotEmpty && n.first is int;
 
     void walk(dynamic node, int depth) {
       if (depth > 12) return;
       if (node is Map<int, Object?>) {
-        // ★ 锚点：当前 Map 直接含 avatar URL => 用户条目
         bool hasAvatar = false;
         for (final v in node.values) {
           if (v is String && v.startsWith('http') && v.contains('avatar')) {
@@ -753,7 +757,6 @@ void _onData(dynamic data) {
           final strPool = <String>[];
           String avatar = '', gIcon = '', nIcon = '', pIcon = '', fansName = '';
           int uid = 0, fansLevel = 0, managerType = 0;
-
           scanInto(node, 6, (s) {
             if (s.isEmpty || s.startsWith('/') || s.contains('.mp4') ||
                 s.contains('.png') || s.contains('http')) return;
@@ -761,13 +764,11 @@ void _onData(dynamic data) {
           }, (u) {
             if (avatar.isEmpty && u.contains('avatar')) { avatar = u; return; }
             if (u.contains('guardrank') && gIcon.isEmpty) { gIcon = u; return; }
-            if (u.contains('yepai') && nIcon.isEmpty) { nIcon = u; return; }
-            if (u.contains('Pendant') && pIcon.isEmpty) { pIcon = u; return; }
+            if ((u.contains('yepai') || u.contains('guiyepai')) && nIcon.isEmpty) { nIcon = u; return; }
+            if ((u.contains('Pendant') || u.contains('pendant') ||
+                u.contains('fenzuan') || u.contains('diamond')) && pIcon.isEmpty) { pIcon = u; return; }
           });
-
-          // 昵称取最后一个有效串（徽章/粉丝牌名在前，昵称在后）
           final nick = strPool.isNotEmpty ? strPool.last : '';
-
           void rec2(dynamic n, int d) {
             if (d > 6) return;
             if (n is Map<int, Object?>) {
@@ -782,12 +783,10 @@ void _onData(dynamic data) {
             }
           }
           rec2(node, 0);
-
           int gl = 0;
           if (gIcon.contains('/1.png')) gl = 1;
           else if (gIcon.contains('/2.png')) gl = 2;
           else if (gIcon.contains('/3.png')) gl = 3;
-
           if (nick.isNotEmpty && !list.any((e) => e.nickname == nick)) {
             list.add(VipUser(
                 nickname: nick, avatar: avatar, uid: uid,
@@ -799,7 +798,7 @@ void _onData(dynamic data) {
         }
         node.values.forEach((v) => walk(v, depth + 1));
       } else if (node is List) {
-        if (node0IsBytes(node)) {
+        if (isBytes(node)) {
           try {
             final parsed =
                 _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
@@ -833,7 +832,6 @@ void _onData(dynamic data) {
         void walk(dynamic node, int depth) {
           if (depth > 14) return;
           if (node is Map<int, Object?>) {
-            // 不依赖固定 tag：第一个 [xxx] 串当名字，第一个 http 串当 URL
             String? name;
             String? url;
             for (final v in node.values) {
@@ -843,21 +841,16 @@ void _onData(dynamic data) {
               }
             }
             if (name != null && url != null) {
-              emoteRegistry[name] = _fixEmoteUrl(url); // steam.png -> steam_3.png
+              emoteRegistry[name] = _fixEmoteUrl(url);
               cnt++;
               return;
             }
             node.values.forEach((v) => walk(v, depth + 1));
           } else if (node is List) {
-            // ★ 关键：原始字节块 → 先按 TARS 解析再递归（表情条目在 tRsp 字节块里）
             if (node.isNotEmpty && node.first is int) {
               try {
-                final parsed =
-                    _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
-                if (parsed.isNotEmpty) {
-                  walk(parsed, depth + 1);
-                  return;
-                }
+                final parsed = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
+                if (parsed.isNotEmpty) { walk(parsed, depth + 1); return; }
               } catch (_) {}
             }
             node.forEach((v) => walk(v, depth + 1));
@@ -875,17 +868,13 @@ void _onData(dynamic data) {
           if (depth > 14 || n > 60) return;
           if (node is Map<int, Object?>) {
             Map<int, Object?>? msgNode;
-            final n3 = node[3];
-            final n0 = node[0];
+            final n3 = node[3]; final n0 = node[0];
             if (n3 is String && n0 is Map<int, Object?>) msgNode = node;
             else if (n0 is Map<int, Object?>) {
               final n03 = n0[3];
               if (n03 is String) msgNode = n0;
             }
-            if (msgNode != null && _emitFromFields(msgNode, history: true)) {
-              n++;
-              return;
-            }
+            if (msgNode != null && _emitFromFields(msgNode, history: true)) { n++; return; }
             node.values.forEach((v) => collect(v, depth + 1));
           } else if (node is List) {
             if (node.isNotEmpty && node.first is int) {
@@ -957,8 +946,16 @@ void _onData(dynamic data) {
               final uriRaw = item[0];
               final uri = uriRaw is int ? uriRaw : 1400;
               final raw = item[1];
-              if (raw is List) _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
-              else if (raw is Uint8List) _routePush(uri, raw);
+              if (raw is List) {
+                // ★ 礼物推送单独解析，不再混入聊天
+                if (uri == 1420 || uri == 1421 || uri == 1423) {
+                  _parseGiftPush(raw.map((e) => (e as int) & 0xFF).toList());
+                } else {
+                  _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
+                }
+              } else if (raw is Uint8List) {
+                _routePush(uri, raw);
+              }
             }
           }
           return;
@@ -967,16 +964,47 @@ void _onData(dynamic data) {
       final uriRaw = f[1];
       final uri = uriRaw is int ? uriRaw : 1400;
       final raw = f[2];
-      if (raw is List) {
-        _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList());
-        return;
-      } else if (raw is Uint8List) {
-        _routePush(uri, raw);
-        return;
-      }
-      final f3 = f[3];
-      final f0 = f[0];
+      if (raw is List) { _routePush(uri, raw.map((e) => (e as int) & 0xFF).toList()); return; }
+      else if (raw is Uint8List) { _routePush(uri, raw); return; }
+      final f3 = f[3]; final f0 = f[0];
       if (f3 is String || f0 is Map<int, Object?>) _decodeDanmaku(payload);
+    } catch (_) {}
+  }
+
+  /// ★ 礼物推送 → 礼物行
+  void _parseGiftPush(List<int> payload) {
+    try {
+      final f = _TarsReader(Uint8List.fromList(payload)).readFields();
+      String sender = '', gift = '';
+      int count = 1, combo = 0;
+      void walk(dynamic node, int d) {
+        if (d > 8) return;
+        if (node is Map<int, Object?>) {
+          final n0 = node[0];
+          if (n0 is Map<int, Object?>) {
+            for (final v in n0.values) {
+              if (v is String && !v.startsWith('http') && sender.isEmpty) sender = v;
+            }
+          }
+          for (final v in node.values) {
+            if (v is String && !v.startsWith('http') && v != sender &&
+                gift.isEmpty && v.length <= 12) gift = v;
+          }
+          final c1 = node[1];
+          if (c1 is int && c1 > 0 && count == 1 && d > 0) count = c1;
+          final c2 = node[2];
+          if (c2 is int && c2 > 1) combo = c2;
+          node.values.forEach((v) => walk(v, d + 1));
+        } else if (node is List) {
+          node.forEach((v) => walk(v, d + 1));
+        }
+      }
+      walk(f, 0);
+      if (sender.isEmpty) return;
+      final text = '送出 [${gift.isEmpty ? '礼物' : gift}] x$count'
+          '${combo > 1 ? ' ($combo连击)' : ''}';
+      _controller.add(DanmakuMessage(
+          nickname: sender, content: text, fontColor: 0xFFFFB25E, isGift: true));
     } catch (_) {}
   }
 
@@ -1003,8 +1031,7 @@ void _onData(dynamic data) {
 
   bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
-    final f3 = fields[3];
-    final f0 = fields[0];
+    final f3 = fields[3]; final f0 = fields[0];
     if (f3 is! String && f0 is Map<int, Object?>) {
       final f03 = f0[3];
       if (f03 is String) msg = f0;
@@ -1018,8 +1045,7 @@ void _onData(dynamic data) {
     final uidVal = sender[0];
     if (uidVal is! int) return false;
 
-    String nick = '';
-    String avatar = '';
+    String nick = ''; String avatar = '';
     for (final v in sender.values) {
       if (v is String) {
         if (v.startsWith('http') && avatar.isEmpty) avatar = v;
@@ -1028,20 +1054,24 @@ void _onData(dynamic data) {
     }
     if (nick.isEmpty) return false;
 
+    // ★ 2.5s 内完全相同视为重复（礼物连击走 isGift 不受影响）
+    final key = '$nick|$content';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (key == _lastKey && now - _lastAt < 2500) {
+      _lastAt = now;
+      return true;
+    }
+    _lastKey = key;
+    _lastAt = now;
+
     int color = 0;
     for (final k in const [6, 5, 4]) {
       final cf = msg[k];
       if (cf is Map<int, Object?>) {
         final cf0 = cf[0];
-        if (cf0 is int && cf0 >= 0x10000 && cf0 <= 0xFFFFFF) {
-          color = cf0;
-          break;
-        }
+        if (cf0 is int && cf0 >= 0x10000 && cf0 <= 0xFFFFFF) { color = cf0; break; }
         for (final v in cf.values) {
-          if (v is int && v >= 0x10000 && v <= 0xFFFFFF) {
-            color = v;
-            break;
-          }
+          if (v is int && v >= 0x10000 && v <= 0xFFFFFF) { color = v; break; }
         }
       }
       if (color != 0) break;
@@ -1051,26 +1081,14 @@ void _onData(dynamic data) {
     final mt = msg[7];
     if (mt is int && mt > 0 && mt <= 3) managerType = mt;
 
-    String fansName = '';
-    int fansLevel = 0;
+    String fansName = ''; int fansLevel = 0;
     bool isName(dynamic s) => s is String && s.isNotEmpty && !s.startsWith('http') && s.length <= 12 && s != nick && s != content;
     void findFans(dynamic node, int depth) {
       if (fansName.isNotEmpty || depth > 8) return;
       if (node is Map<int, Object?>) {
-        final n3 = node[3];
-        final n4 = node[4];
-        final n2 = node[2];
-        final n0 = node[0];
-        if (isName(n3) && n4 is int && n4 >= 1 && n4 <= 99) {
-          fansName = n3 as String;
-          fansLevel = n4;
-          return;
-        }
-        if (isName(n2) && n3 is int && n3 >= 1 && n3 <= 99 && n0 is int) {
-          fansName = n2 as String;
-          fansLevel = n3;
-          return;
-        }
+        final n3 = node[3]; final n4 = node[4]; final n2 = node[2]; final n0 = node[0];
+        if (isName(n3) && n4 is int && n4 >= 1 && n4 <= 99) { fansName = n3 as String; fansLevel = n4; return; }
+        if (isName(n2) && n3 is int && n3 >= 1 && n3 <= 99 && n0 is int) { fansName = n2 as String; fansLevel = n3; return; }
         node.values.forEach((v) => findFans(v, depth + 1));
       } else if (node is List) {
         if (node.isNotEmpty && node.first is int) {
@@ -1078,9 +1096,7 @@ void _onData(dynamic data) {
             final inner = _TarsReader(Uint8List.fromList(node.cast<int>())).readFields();
             if (inner.isNotEmpty) findFans(inner, depth + 1);
           } catch (_) {}
-        } else {
-          node.forEach((v) => findFans(v, depth + 1));
-        }
+        } else node.forEach((v) => findFans(v, depth + 1));
       }
     }
     findFans(msg, 0);
@@ -1088,18 +1104,15 @@ void _onData(dynamic data) {
     final badges = <String>[];
     void findBadges(dynamic node, int depth) {
       if (depth > 8) return;
-      if (node is Map<int, Object?>) {
-        node.values.forEach((v) => findBadges(v, depth + 1));
-      } else if (node is List) {
+      if (node is Map<int, Object?>) node.values.forEach((v) => findBadges(v, depth + 1));
+      else if (node is List) {
         if (node.isNotEmpty && node.first is int) {
-          try {
-            findBadges(_TarsReader(Uint8List.fromList(node.cast<int>())).readFields(), depth + 1);
-          } catch (_) {}
-        } else {
-          node.forEach((v) => findBadges(v, depth + 1));
-        }
+          try { findBadges(_TarsReader(Uint8List.fromList(node.cast<int>())).readFields(), depth + 1); } catch (_) {}
+        } else node.forEach((v) => findBadges(v, depth + 1));
       } else if (node is String && node.startsWith('http')) {
-        if (node.contains('guiyepai') || node.contains('PendantInfoZip') || node.contains('fenzuan') || node.contains('fengzuan') || node.contains('fangguan')) {
+        if (node.contains('guiyepai') || node.contains('Pendant') || node.contains('pendant') ||
+            node.contains('fenzuan') || node.contains('fengzuan') || node.contains('fangguan') ||
+            node.contains('diamond')) {
           if (!badges.contains(node)) badges.add(node);
         }
       }
@@ -1111,22 +1124,19 @@ void _onData(dynamic data) {
       if (u.contains('guiyepai')) ordered.add(u.contains('_3.png') ? u : u.replaceAll('guiyepai.png', 'guiyepai_3.png'));
     }
     for (final u in badges) {
-      if (u.contains('PendantInfoZip') || u.contains('fenzuan') || u.contains('fengzuan')) ordered.add(u);
+      if (u.contains('Pendant') || u.contains('pendant') || u.contains('fenzuan') ||
+          u.contains('fengzuan') || u.contains('diamond')) ordered.add(u);
     }
     for (final u in badges) {
       if (u.contains('fangguan')) ordered.add(u);
     }
 
     _controller.add(DanmakuMessage(
-      nickname: nick,
-      content: content,
+      nickname: nick, content: content,
       fontColor: color <= 0 ? 0xFFFFFFFF : (color | 0xFF000000),
-      avatar: avatar,
-      uid: uidVal,
-      fansName: fansName,
-      fansLevel: fansLevel,
-      managerType: managerType,
-      badgeUrls: ordered,
+      avatar: avatar, uid: uidVal,
+      fansName: fansName, fansLevel: fansLevel,
+      managerType: managerType, badgeUrls: ordered,
       isHistory: history,
     ));
     if (_pendingDanmaku != null && content == _pendingDanmaku) {
@@ -1139,17 +1149,13 @@ void _onData(dynamic data) {
   void _decodeHistoryDanmaku(List<int> payload) {
     try {
       final fields = _TarsReader(Uint8List.fromList(payload)).readFields();
-      final n5 = fields[5];
-      final n6 = fields[6];
+      final n5 = fields[5]; final n6 = fields[6];
       final nick = n5 is String ? n5 : '';
       final content = n6 is String ? n6 : '';
       if (nick.isEmpty || content.isEmpty || content == nick) return;
       String avatar = '';
       for (final v in fields.values) {
-        if (v is String && v.startsWith('http')) {
-          avatar = v;
-          break;
-        }
+        if (v is String && v.startsWith('http')) { avatar = v; break; }
       }
       _controller.add(DanmakuMessage(nickname: nick, content: content, avatar: avatar, isHistory: true));
     } catch (_) {}
@@ -1158,16 +1164,10 @@ void _onData(dynamic data) {
 
 class _TarsWriter {
   final BytesBuilder _b = BytesBuilder();
-
   void _head(int tag, int type) {
-    if (tag < 15) {
-      _b.addByte((tag << 4) | type);
-    } else {
-      _b.addByte(0xF0 | type);
-      _b.addByte(tag);
-    }
+    if (tag < 15) _b.addByte((tag << 4) | type);
+    else { _b.addByte(0xF0 | type); _b.addByte(tag); }
   }
-
   int _intType(int v) {
     if (v == 0) return 12;
     if (v >= -128 && v <= 127) return 0;
@@ -1175,204 +1175,50 @@ class _TarsWriter {
     if (v >= -2147483648 && v <= 2147483647) return 2;
     return 3;
   }
-
-  void _add(int v, int n) {
-    for (var i = n - 1; i >= 0; i--) {
-      _b.addByte((v >> (8 * i)) & 0xFF);
-    }
-  }
-
-  void _intValue(int v) {
-    final t = _intType(v);
-    if (t == 12) {
-      _b.addByte(0x0C);
-      return;
-    }
-    _b.addByte(t);
-    _add(v, [1, 2, 4, 8][t]);
-  }
-
-  void writeInt(int tag, int v) {
-    final t = _intType(v);
-    _head(tag, t);
-    if (t == 12) return;
-    _add(v, [1, 2, 4, 8][t]);
-  }
-
+  void _add(int v, int n) { for (var i = n - 1; i >= 0; i--) _b.addByte((v >> (8 * i)) & 0xFF); }
+  void _intValue(int v) { final t = _intType(v); if (t == 12) { _b.addByte(0x0C); return; } _b.addByte(t); _add(v, [1, 2, 4, 8][t]); }
+  void writeInt(int tag, int v) { final t = _intType(v); _head(tag, t); if (t == 12) return; _add(v, [1, 2, 4, 8][t]); }
   void writeString(int tag, String s) {
     final b = utf8.encode(s);
-    if (b.length < 256) {
-      _head(tag, 6);
-      _b.addByte(b.length);
-    } else {
-      _head(tag, 7);
-      _add(b.length, 4);
-    }
+    if (b.length < 256) { _head(tag, 6); _b.addByte(b.length); } else { _head(tag, 7); _add(b.length, 4); }
     _b.add(b);
   }
-
-  void writeStringList(int tag, List<String> items) {
-    _head(tag, 9);
-    _intValue(items.length);
-    for (final s in items) {
-      writeString(0, s);
-    }
-  }
-
-  void writeListInt(int tag, List<int> items) {
-    _head(tag, 9);
-    _intValue(items.length);
-    for (final v in items) {
-      writeInt(0, v);
-    }
-  }
-
-  void writeIntIntMap(int tag, Map<int, int> m) {
-    _head(tag, 8);
-    _intValue(m.length);
-    m.forEach((k, v) {
-      writeInt(0, k);
-      writeInt(1, v);
-    });
-  }
-
-  void writeStructMap(int tag, Map<String, _TarsWriter> m) {
-    _head(tag, 8);
-    _intValue(m.length);
-    m.forEach((k, v) {
-      writeString(0, k);
-      _head(1, 10);
-      _b.add(v._b.toBytes());
-      _b.addByte(0x0B);
-    });
-  }
-
-  void writeBytes(int tag, List<int> bytes) {
-    _head(tag, 13);
-    _head(0, 0);
-    _intValue(bytes.length);
-    _b.add(bytes);
-  }
-
-  void writeMap(int tag, Map<String, String> entries) {
-    _head(tag, 8);
-    _intValue(entries.length);
-    entries.forEach((k, v) {
-      writeString(0, k);
-      writeString(1, v);
-    });
-  }
-
-  void writeBytesMap(int tag, Map<String, List<int>> entries) {
-    _head(tag, 8);
-    _intValue(entries.length);
-    entries.forEach((k, v) {
-      writeString(0, k);
-      writeBytes(1, v);
-    });
-  }
-
-  void writeStruct(int tag, _TarsWriter inner) {
-    _head(tag, 10);
-    _b.add(inner._b.toBytes());
-    _b.addByte(0x0B);
-  }
-
+  void writeStringList(int tag, List<String> items) { _head(tag, 9); _intValue(items.length); for (final s in items) writeString(0, s); }
+  void writeListInt(int tag, List<int> items) { _head(tag, 9); _intValue(items.length); for (final v in items) writeInt(0, v); }
+  void writeIntIntMap(int tag, Map<int, int> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeInt(0, k); writeInt(1, v); }); }
+  void writeStructMap(int tag, Map<String, _TarsWriter> m) { _head(tag, 8); _intValue(m.length); m.forEach((k, v) { writeString(0, k); _head(1, 10); _b.add(v._b.toBytes()); _b.addByte(0x0B); }); }
+  void writeBytes(int tag, List<int> bytes) { _head(tag, 13); _head(0, 0); _intValue(bytes.length); _b.add(bytes); }
+  void writeMap(int tag, Map<String, String> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeString(1, v); }); }
+  void writeBytesMap(int tag, Map<String, List<int>> entries) { _head(tag, 8); _intValue(entries.length); entries.forEach((k, v) { writeString(0, k); writeBytes(1, v); }); }
+  void writeStruct(int tag, _TarsWriter inner) { _head(tag, 10); _b.add(inner._b.toBytes()); _b.addByte(0x0B); }
   Uint8List toBytes() => Uint8List.fromList(_b.toBytes());
 }
 
 class _TarsReader {
-  final Uint8List _d;
-  int _pos = 0;
+  final Uint8List _d; int _pos = 0;
   _TarsReader(this._d);
-
   bool get hasMore => _pos < _d.length;
   int _byte() => _d[_pos++];
-
-  int _readIntN(int n) {
-    var v = 0;
-    for (var i = 0; i < n; i++) {
-      v = (v << 8) | _d[_pos++];
-    }
-    final shift = 64 - 8 * n;
-    return (v << shift) >> shift;
-  }
-
-  int _readValueInt() {
-    final t = _byte();
-    switch (t) {
-      case 0:
-        return _readIntN(1);
-      case 1:
-        return _readIntN(2);
-      case 2:
-        return _readIntN(4);
-      case 3:
-        return _readIntN(8);
-      case 12:
-        return 0;
-      default:
-        throw FormatException('tars: not an int, type=$t');
-    }
-  }
-
+  int _readIntN(int n) { var v = 0; for (var i = 0; i < n; i++) v = (v << 8) | _d[_pos++]; return (v << (64 - 8 * n)) >> (64 - 8 * n); }
+  int _readValueInt() { final t = _byte(); if (t == 12) return 0; return _readIntN([1, 2, 4, 8][t]); }
   Map<int, Object?> readFields() {
     final m = <int, Object?>{};
     while (hasMore) {
-      final h = _byte();
-      final type = h & 0x0F;
+      final h = _byte(); final type = h & 0x0F;
       if (type == 11) return m;
-      var tag = (h >> 4) & 0x0F;
-      if (tag == 15) tag = _byte();
+      var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte();
       m[tag] = _readValue(type);
     }
     return m;
   }
-
   Object? _readValue(int type) {
     if (type <= 3) return _readIntN([1, 2, 4, 8][type]);
     if (type == 12) return 0;
-    if (type == 6) {
-      final n = _byte();
-      final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
-      _pos += n;
-      return s;
-    }
-    if (type == 7) {
-      final n = _readIntN(4);
-      final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true);
-      _pos += n;
-      return s;
-    }
-    if (type == 13) {
-      _byte();
-      final n = _readValueInt();
-      final b = _d.sublist(_pos, _pos + n);
-      _pos += n;
-      return b;
-    }
-    if (type == 9) {
-      final size = _readValueInt();
-      final l = <Object?>[];
-      for (var i = 0; i < size; i++) {
-        final h = _byte();
-        var tag = (h >> 4) & 0x0F;
-        if (tag == 15) tag = _byte();
-        l.add(_readValue(h & 0x0F));
-      }
-      return l;
-    }
-    if (type == 8) {
-      final size = _readValueInt();
-      final l = <Object?>[];
-      for (var i = 0; i < size * 2; i++) {
-        final h = _byte();
-        var tag = (h >> 4) & 0x0F;
-        if (tag == 15) tag = _byte();
-        l.add(_readValue(h & 0x0F));
-      }
-      return l;
-    }
+    if (type == 6) { final n = _byte(); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
+    if (type == 7) { final n = _readIntN(4); final s = utf8.decode(_d.sublist(_pos, _pos + n), allowMalformed: true); _pos += n; return s; }
+    if (type == 13) { _byte(); final n = _readValueInt(); final b = _d.sublist(_pos, _pos + n); _pos += n; return b; }
+    if (type == 9) { final size = _readValueInt(); final l = <Object?>[]; for (var i = 0; i < size; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); l.add(_readValue(h & 0x0F)); } return l; }
+    if (type == 8) { final size = _readValueInt(); final l = <Object?>[]; for (var i = 0; i < size * 2; i++) { final h = _byte(); var tag = (h >> 4) & 0x0F; if (tag == 15) tag = _byte(); l.add(_readValue(h & 0x0F)); } return l; }
     if (type == 10) return readFields();
     return null;
   }
