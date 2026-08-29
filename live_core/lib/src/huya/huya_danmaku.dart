@@ -631,7 +631,7 @@ class HuyaDanmakuClient {
     _ws = null;
   }
 
-  void _onData(dynamic data) {
+void _onData(dynamic data) {
     try {
       _recvCount++;
       final bytes = Uint8List.fromList((data as List).cast<int>());
@@ -665,13 +665,17 @@ class HuyaDanmakuClient {
         _handleWupRsp(payload);
       } else if (cmdType == 21) {
         // 心跳回执
-      } else if (cmdType == 22 || cmdType == 7) {
-        final s = utf8.decode(payload.sublist(0, min(40, payload.length)), allowMalformed: true);
+      } else if (cmdType == 22) {
+        // ★ cmd 22 可能是守护推送或普通弹幕/进场特效，用 'vipbar' 区分
+        final s = utf8.decode(payload.sublist(0, min(64, payload.length)), allowMalformed: true);
         if (s.contains('vipbar')) {
-          if (cmdType == 22) _parseGuardPush(payload); else _parseVipPush(payload);
+          _parseGuardPush(payload);
         } else {
           _handleMsgPushUnified(payload);
         }
+      } else if (cmdType == 7) {
+        // ★ cmd 7 是贵宾推送，开头无 'vipbar' 前缀，直接按贵宾解析
+        _parseVipPush(payload);
       } else {
         _handleMsgPushUnified(payload);
       }
