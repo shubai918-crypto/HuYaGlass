@@ -7,9 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'live_play_controller.dart';
 
-/// 表情内联：普通 22px，大表情 64px
-List<InlineSpan> buildEmoteSpans(String text,
-    {double fontSize = 14, Color? textColor}) {
+List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? textColor}) {
   final spans = <InlineSpan>[];
   final reg = RegExp(r'\[([^\]]+)\]');
   var last = 0;
@@ -26,8 +24,7 @@ List<InlineSpan> buildEmoteSpans(String text,
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: Image.network(url, width: size, height: size,
               errorBuilder: (_, __, ___) => Text(key,
-                  style: TextStyle(
-                      color: textColor ?? Colors.white70, fontSize: fontSize))),
+                  style: TextStyle(color: textColor ?? Colors.white70, fontSize: fontSize))),
         ),
       ));
     } else {
@@ -65,8 +62,12 @@ class _LivePlayPageState extends State<LivePlayPage>
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() =>
-        c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context));
+    // ★ Material 包裹：杜绝黄色双下划线
+    return Material(
+      type: MaterialType.transparency,
+      child: Obx(() =>
+          c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context)),
+    );
   }
 
   Widget _buildFullscreen() {
@@ -84,7 +85,7 @@ class _LivePlayPageState extends State<LivePlayPage>
       backgroundColor: const Color(0xFF0B0B10),
       body: Column(children: [
         SizedBox(height: top),
-        _header(),
+        GlassMaterialize(child: _header()),
         AspectRatio(
           aspectRatio: 16 / 9,
           child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)]),
@@ -97,7 +98,7 @@ class _LivePlayPageState extends State<LivePlayPage>
             _DebugTab(c: c),
           ]),
         ),
-        _bottomBar(),
+        GlassMaterialize(child: _bottomBar()),
       ]),
     );
   }
@@ -110,26 +111,19 @@ class _LivePlayPageState extends State<LivePlayPage>
               radius: 20,
               backgroundColor: Colors.white10,
               backgroundImage: c.streamerAvatar.value.isNotEmpty
-                  ? NetworkImage(c.streamerAvatar.value)
-                  : null,
+                  ? NetworkImage(c.streamerAvatar.value) : null,
               child: c.streamerAvatar.value.isEmpty
-                  ? const Icon(Icons.person, size: 20, color: Colors.white54)
-                  : null,
+                  ? const Icon(Icons.person, size: 20, color: Colors.white54) : null,
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text('粉丝 ${_fmt(c.fansCount.value)}',
                     style: const TextStyle(color: Colors.white54, fontSize: 11),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
               ]),
             ),
             const SizedBox(width: 6),
@@ -137,15 +131,11 @@ class _LivePlayPageState extends State<LivePlayPage>
               onTap: _showHighEnergySheet,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                    color: const Color(0x33FFB25E),
-                    borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(color: const Color(0x33FFB25E), borderRadius: BorderRadius.circular(12)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.local_fire_department,
-                      color: Color(0xFFFFB25E), size: 14),
+                  Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 14),
                   SizedBox(width: 3),
-                  Text('高能观众',
-                      style: TextStyle(color: Color(0xFFFFB25E), fontSize: 11)),
+                  Text('高能观众', style: TextStyle(color: Color(0xFFFFB25E), fontSize: 11)),
                 ]),
               ),
             ),
@@ -166,10 +156,8 @@ class _LivePlayPageState extends State<LivePlayPage>
             GestureDetector(
               onTap: () => Get.back(),
               child: Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(
-                    color: Colors.white10, shape: BoxShape.circle),
+                width: 32, height: 32,
+                decoration: const BoxDecoration(color: Colors.white10, shape: BoxShape.circle),
                 child: const Icon(Icons.close, color: Colors.white70, size: 18),
               ),
             ),
@@ -465,10 +453,35 @@ class _DanmakuListState extends State<_DanmakuList> {
   }
 
   Widget _item(LivePlayController c, DanmakuMessage m) {
+    if (m.isGift) {
+      final icon = DanmakuMessage.kGiftIcons[m.giftName];
+      final fc = _fansColor(m.fansLevel);
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+          if (m.fansName.isNotEmpty)
+            Container(margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [fc.withOpacity(0.3), fc.withOpacity(0.12)]),
+                    border: Border.all(color: fc.withOpacity(0.55)),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+          Text('${m.nickname}: ', style: const TextStyle(color: Color(0xFFFFB25E), fontSize: 14, fontWeight: FontWeight.w600)),
+          const Text('送 ', style: TextStyle(color: Colors.white70, fontSize: 14)),
+          if (icon != null)
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Image.network(icon, width: 20, height: 20, errorBuilder: (_, __, ___) => Text(m.giftName, style: const TextStyle(color: Colors.white70, fontSize: 14))))
+          else
+            Text(m.giftName, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          Text(' ${m.giftCount}', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          if (m.comboCount > 1) Text(' ${m.comboCount}连击', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        ]),
+      );
+    }
     final fc = _fansColor(m.fansLevel);
     final guard = c.client.guardList.isNotEmpty
-        ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname)
-        : null;
+        ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname) : null;
     final shownBadges = <String>[];
     bool mgrShown = false;
     for (final u in m.badgeUrls) {
@@ -477,15 +490,13 @@ class _DanmakuListState extends State<_DanmakuList> {
       shownBadges.add(u);
     }
     if (m.managerType > 0 && !mgrShown) shownBadges.add(DanmakuMessage.kBadgeManager);
-
     return GestureDetector(
       onTap: () => c.showUserInfo(m),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
           if (m.fansName.isNotEmpty)
-            Container(
-                margin: const EdgeInsets.only(right: 6),
+            Container(margin: const EdgeInsets.only(right: 6),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                     gradient: LinearGradient(colors: [fc.withOpacity(0.3), fc.withOpacity(0.12)]),
@@ -496,10 +507,9 @@ class _DanmakuListState extends State<_DanmakuList> {
             Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
           for (final url in shownBadges)
             Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
-          if (m.isGift) const Icon(Icons.card_giftcard, color: Color(0xFFFFB25E), size: 16),
           Text.rich(TextSpan(children: [
             TextSpan(text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
-                style: TextStyle(color: m.isGift ? const Color(0xFFFFB25E) : Color(m.fontColor), fontSize: 14, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: Color(m.fontColor), fontSize: 14, fontWeight: FontWeight.w600)),
             ...buildEmoteSpans(m.content),
           ])),
         ]),
@@ -516,13 +526,19 @@ class _DanmakuListState extends State<_DanmakuList> {
       }
       final list = c.danmakuList;
       return Stack(children: [
-        Scrollbar(
-          controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
-          child: ListView.builder(
-            controller: _sc,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            itemCount: list.length,
-            itemBuilder: (_, i) => _item(c, list[i]),
+        // ★ 1.2.0 滚动边缘渐晕（渐进高斯磨砂）
+        GlassScrollEdgeEffect(
+          style: GlassScrollEdgeStyle.blur,
+          maxSigma: 18.0,
+          bottomEdgeFadeExtent: 20.0,
+          child: Scrollbar(
+            controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
+            child: ListView.builder(
+              controller: _sc,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              itemCount: list.length,
+              itemBuilder: (_, i) => _item(c, list[i]),
+            ),
           ),
         ),
         Positioned(right: 6, bottom: 12, child: Column(children: [
@@ -585,6 +601,9 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
     return const Color(0xFFFF4040);
   }
 
+  String _guardIconUrl(int lv) =>
+      'https://diy-assets.msstatic.com/hyys/guardgrade202211/guardrank/$lv.png';
+  bool _isGuardTitle(String s) => s == '剑士' || s == '骑士' || s == '领主';
   Widget _img(String url) => Padding(
         padding: const EdgeInsets.only(right: 4),
         child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
@@ -592,6 +611,7 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
 
   Widget _row(VipUser u, int index) {
     final fc = _fansColor(u.fansLevel);
+    final gIcon = u.guardIcon.isNotEmpty ? u.guardIcon : (u.guardLevel > 0 ? _guardIconUrl(u.guardLevel) : '');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(children: [
@@ -602,7 +622,7 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
             backgroundImage: u.avatar.isNotEmpty ? NetworkImage(u.avatar) : null,
             child: u.avatar.isEmpty ? const Icon(Icons.person, size: 22, color: Colors.white38) : null),
         const SizedBox(width: 10),
-        if (u.fansName.isNotEmpty)
+        if (u.fansName.isNotEmpty && !_isGuardTitle(u.fansName))
           Container(margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -610,8 +630,8 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
                   border: Border.all(color: fc.withOpacity(0.55)),
                   borderRadius: BorderRadius.circular(8)),
               child: Text('${u.fansLevel} ${u.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+        if (gIcon.isNotEmpty) _img(gIcon),
         if (u.nobleIcon.isNotEmpty) _img(u.nobleIcon),
-        if (u.guardIcon.isNotEmpty) _img(u.guardIcon),
         if (u.managerType > 0) _img(DanmakuMessage.kBadgeManager),
         Expanded(child: Text(u.nickname, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14))),
       ]),
@@ -639,16 +659,11 @@ class _HighEnergySheetState extends State<_HighEnergySheet> with SingleTickerPro
         child: Column(children: [
           Container(margin: const EdgeInsets.only(top: 8), width: 40, height: 4,
               decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          TabBar(
-            controller: _tab,
-            labelColor: const Color(0xFF00D2FF),
-            unselectedLabelColor: Colors.white54,
-            indicatorColor: const Color(0xFF00D2FF),
-            tabs: [
-              Tab(text: '守护 (${_guard.length})'),
-              Tab(text: '贵宾 (${_vip.length})'),
-            ],
-          ),
+          TabBar(controller: _tab,
+              labelColor: const Color(0xFF00D2FF),
+              unselectedLabelColor: Colors.white54,
+              indicatorColor: const Color(0xFF00D2FF),
+              tabs: [Tab(text: '守护 (${_guard.length})'), Tab(text: '贵宾 (${_vip.length})')]),
           Expanded(child: TabBarView(controller: _tab, children: [
             _list(_guard, '暂无守护'),
             _list(_vip, '暂无贵宾'),
