@@ -89,29 +89,38 @@ class _HomePageState extends State<HomePage> {
             _minController.handleNotification(n);
             return false;
           },
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: [
-              _HomeView(onOpenFollows: () => _select(2)),
-              SearchPage(
-                onOpenRoom: (roomId, nickname, avatarUrl) =>
-                    goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
-                isFollowed: (roomId) async => FollowStore.contains(roomId),
-                onToggleFollow: (roomId, follow, nickname, avatar) async {
-                  if (follow) {
-                    await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
-                  } else {
-                    await FollowStore.remove(roomId);
-                  }
-                },
-              ),
-              const FollowPage(),
-              const SettingsPage(),
-            ],
+          child: Padding(
+            // ★ 1.2.0 body edge-to-edge，让出 状态栏+标题栏 高度
+            padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _HomeView(onOpenFollows: () => _select(2)),
+                SearchPage(
+                  onOpenRoom: (roomId, nickname, avatarUrl) =>
+                      goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+                  isFollowed: (roomId) async => FollowStore.contains(roomId),
+                  onToggleFollow: (roomId, follow, nickname, avatar) async {
+                    if (follow) {
+                      await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
+                    } else {
+                      await FollowStore.remove(roomId);
+                    }
+                  },
+                ),
+                const FollowPage(),
+                const SettingsPage(),
+              ],
+            ),
           ),
         ),
         bottomBar: GlassTabBar.minimizable(
           minimizeController: _minController,
+          settings: LiquidGlassSettings(
+            blur: 24,
+            thickness: 30,
+            glassColor: Colors.black.withOpacity(0.45), // ★ 压深色，恢复质感
+          ),
           selectedIndex: _selectedIndex,
           onTabSelected: _select,
           selectedIconColor: const Color(0xFFFF8800),
@@ -299,10 +308,7 @@ class _HomeView extends StatelessWidget {
         actions: [
           TextButton(onPressed: () => Get.back(), child: const Text('取消', style: TextStyle(color: Colors.white54))),
           TextButton(
-            onPressed: () {
-              Get.back();
-              goLive(ctrl.text.trim());
-            },
+            onPressed: () { Get.back(); goLive(ctrl.text.trim()); },
             child: const Text('进入', style: TextStyle(color: Color(0xFFFF8800))),
           ),
         ],
