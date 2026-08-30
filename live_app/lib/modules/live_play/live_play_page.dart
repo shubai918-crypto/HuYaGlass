@@ -73,8 +73,7 @@ class _LivePlayPageState extends State<LivePlayPage>
   Widget build(BuildContext context) {
     return Material(
       type: MaterialType.transparency,
-      child: Obx(() =>
-          c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context)),
+      child: Obx(() => c.isFullscreen.value ? _buildFullscreen() : _buildPortrait(context)),
     );
   }
 
@@ -534,9 +533,9 @@ class _DanmakuListState extends State<_DanmakuList> {
       }
       final list = c.danmakuList;
       return Stack(children: [
+        // ★ 改回 soft 渐隐，去掉 blur 糊条
         GlassScrollEdgeEffect(
-          style: GlassScrollEdgeStyle.blur,
-          maxSigma: 18.0,
+          style: GlassScrollEdgeStyle.soft,
           child: Scrollbar(
             controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
             child: ListView.builder(
