@@ -46,6 +46,15 @@ class _LivePlayPageState extends State<LivePlayPage>
     with SingleTickerProviderStateMixin {
   late final LivePlayController c = Get.put(LivePlayController());
   late final TabController _tab = TabController(length: 3, vsync: this);
+  bool _chromeVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _chromeVisible = true);
+    });
+  }
 
   @override
   void dispose() {
@@ -62,7 +71,6 @@ class _LivePlayPageState extends State<LivePlayPage>
 
   @override
   Widget build(BuildContext context) {
-    // ★ Material 包裹：杜绝黄色双下划线
     return Material(
       type: MaterialType.transparency,
       child: Obx(() =>
@@ -85,7 +93,7 @@ class _LivePlayPageState extends State<LivePlayPage>
       backgroundColor: const Color(0xFF0B0B10),
       body: Column(children: [
         SizedBox(height: top),
-        GlassMaterialize(child: _header()),
+        GlassMaterialize(visible: _chromeVisible, child: _header()),
         AspectRatio(
           aspectRatio: 16 / 9,
           child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)]),
@@ -98,7 +106,7 @@ class _LivePlayPageState extends State<LivePlayPage>
             _DebugTab(c: c),
           ]),
         ),
-        GlassMaterialize(child: _bottomBar()),
+        GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
       ]),
     );
   }
@@ -526,11 +534,9 @@ class _DanmakuListState extends State<_DanmakuList> {
       }
       final list = c.danmakuList;
       return Stack(children: [
-        // ★ 1.2.0 滚动边缘渐晕（渐进高斯磨砂）
         GlassScrollEdgeEffect(
           style: GlassScrollEdgeStyle.blur,
           maxSigma: 18.0,
-          bottomEdgeFadeExtent: 20.0,
           child: Scrollbar(
             controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
             child: ListView.builder(
