@@ -13,7 +13,7 @@ dependencies:
     path: ../live_core
   get: ^4.6.6
   video_player: ^2.14.0
-  liquid_glass_widgets: ^1.1.0
+  liquid_glass_widgets: ^1.2.0
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.8
   http: ^1.2.0
