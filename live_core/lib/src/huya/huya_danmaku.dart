@@ -919,14 +919,17 @@ class HuyaDanmakuClient {
     }
   }
 
-  void _parseGiftPush(List<int> payload) {
+void _parseGiftPush(List<int> payload) {
     try {
       final f = _TarsReader(Uint8List.fromList(payload)).readFields();
+      final presenter = f[5] is String ? (f[5] as String) : ''; // 主播名
+      var sender = f[6] is String ? (f[6] as String) : '';       // ★ 送礼人=tag6
+
       final strs = <String>[];
       void walk(dynamic n, int d) {
         if (d > 8) return;
         if (n is String) {
-          if (!n.startsWith('http')) strs.add(n);
+          if (n.isNotEmpty && !n.startsWith('http')) strs.add(n);
         } else if (n is Map<int, Object?>) {
           n.values.forEach((v) => walk(v, d + 1));
         } else if (n is List) {
@@ -940,14 +943,28 @@ class HuyaDanmakuClient {
         }
       }
       walk(f, 0);
-      if (strs.isEmpty) return;
+
+      bool isId(String s) => s.length > 20 || RegExp(r'^[0-9A-F]{16,}$').hasMatch(s);
+
+      // sender 兜底：第一个 非主播、非长id 的串
+      if (sender.isEmpty || sender == presenter) {
+        for (final s in strs) {
+          if (s.isNotEmpty && s != presenter && !isId(s)) { sender = s; break; }
+        }
+      }
+
+      // 礼物名：优先命中内置图，否则取 非主播/非发送者/非id 的短串
       String giftName = '';
       for (final s in strs) {
         if (DanmakuMessage.kGiftIcons.containsKey(s)) { giftName = s; break; }
       }
-      if (giftName.isEmpty && strs.length > 2) giftName = strs[2];
-      if (giftName.isEmpty) return;
-      final sender = strs.length > 1 ? strs[1] : strs[0];
+      if (giftName.isEmpty) {
+        for (final s in strs) {
+          if (s.isNotEmpty && s != presenter && s != sender && !isId(s) && s.length <= 8) { giftName = s; break; }
+        }
+      }
+      if (giftName.isEmpty || sender.isEmpty) return;
+
       final key = '$sender|$giftName';
       final now = DateTime.now().millisecondsSinceEpoch;
       int combo = 1;
@@ -956,6 +973,7 @@ class HuyaDanmakuClient {
       }
       _comboCount[key] = combo;
       _comboTime[key] = now;
+
       _controller.add(DanmakuMessage(
         nickname: sender, content: '', fontColor: 0xFFFFB25E,
         isGift: true, giftName: giftName, giftCount: 1, comboCount: combo,
