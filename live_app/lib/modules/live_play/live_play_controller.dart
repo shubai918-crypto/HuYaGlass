@@ -50,6 +50,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final danmakuOpacity = 1.0.obs;
   final danmakuArea = 0.4.obs;
   final powerSave = false.obs;
+  // ★ 礼物弹幕显示开关：飘屏默认关（体验差），列表默认开
+  final RxBool showGiftOverlay = false.obs;
+  final RxBool showGiftList = true.obs;
 
   // ---------- 播放器控制层 ----------
   final showControls = false.obs;
