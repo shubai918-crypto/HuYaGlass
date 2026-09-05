@@ -1021,15 +1021,22 @@ bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     _recentKeys[key] = now;
 
     int color = 0;
-    for (final k in const [6, 5, 4]) {
-      final cf = msg[k];
-      if (cf is Map<int, Object?>) {
-        final cf0 = cf[0];
-        if (cf0 is int && cf0 >= 0x10000 && cf0 <= 0xFFFFFF) { color = cf0; break; }
-        for (final v in cf.values) {
-          if (v is int && v >= 0x10000 && v <= 0xFFFFFF) { color = v; break; }
+    int findColor(dynamic node, int depth) {
+      if (node == null || depth > 4) return 0;
+      if (node is Map<int, Object?>) {
+        final c0 = node[0];
+        if (c0 is int && c0 > 0 && c0 != 0xFFFFFF && c0 <= 0xFFFFFF && c0 >= 0x100) return c0;
+        for (final v in node.values) {
+          final c = findColor(v, depth + 1);
+          if (c != 0) return c;
         }
+      } else if (node is int) {
+        if (node >= 0x100 && node <= 0xFFFFFF && node != 0xFFFFFF) return node;
       }
+      return 0;
+    }
+    for (final k in const [6, 5]) {
+      color = findColor(msg[k], 0);
       if (color != 0) break;
     }
 
