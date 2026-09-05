@@ -417,9 +417,13 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
             Positioned(left: it.x, top: it.y, child: Opacity(
               opacity: op,
               child: Text.rich(
-                TextSpan(children: buildEmoteSpans(it.text, fontSize: fs, textColor: Colors.white)),
+                TextSpan(children: buildEmoteSpans(it.text, fontSize: fs, textColor: Color(it.fontColor))),
                 maxLines: 1,
-                style: TextStyle(color: Colors.white, fontSize: fs, fontWeight: FontWeight.w600, shadows: const [Shadow(color: Colors.black87, blurRadius: 3)]),
+                style: TextStyle(
+                    color: Color(it.fontColor),   // ★ 用消息自带颜色，不再写死白色
+                    fontSize: fs,
+                    fontWeight: FontWeight.w600,
+                    shadows: const [Shadow(color: Colors.black87, blurRadius: 3)]),
               ),
             )),
         ]));
@@ -437,20 +441,12 @@ class _DanmakuList extends StatefulWidget {
 
 class _DanmakuListState extends State<_DanmakuList> {
   final ScrollController _sc = ScrollController();
-  StreamSubscription? _sub;
 
   @override
-  void initState() {
-    super.initState();
-    _sub = widget.c.danmakuList.listen((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_sc.hasClients && _sc.position.maxScrollExtent > 0) _sc.jumpTo(_sc.position.maxScrollExtent);
-      });
-    });
+  void dispose() {
+    _sc.dispose();
+    super.dispose();
   }
-
-  @override
-  void dispose() { _sub?.cancel(); _sc.dispose(); super.dispose(); }
 
   Color _fansColor(int lv) {
     if (lv <= 6) return const Color(0xFF59B4FF);
@@ -462,7 +458,7 @@ class _DanmakuListState extends State<_DanmakuList> {
     return const Color(0xFFFF4040);
   }
 
-  /// ★ 点击弹幕：可自由复制 + "+1 复读"（纸飞机发送）
+  /// 点击弹幕：可自由复制 + "+1 复读"（纸飞机发送）
   void _showDanmakuActions(LivePlayController c, DanmakuMessage m) {
     showModalBottomSheet(
       context: context,
@@ -479,9 +475,8 @@ class _DanmakuListState extends State<_DanmakuList> {
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
             ),
-            // 内容可自由长按/选择复制
             SelectableText(
-              m.content,
+              m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content,
               style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
             ),
             const SizedBox(height: 8),
@@ -491,7 +486,7 @@ class _DanmakuListState extends State<_DanmakuList> {
             Row(children: [
               Expanded(child: TextButton.icon(
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: m.content));
+                  Clipboard.setData(ClipboardData(text: m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content));
                   Get.back();
                   Get.snackbar('提示', '已复制到剪贴板',
                       backgroundColor: const Color(0xFF1A1A2E),
@@ -502,14 +497,15 @@ class _DanmakuListState extends State<_DanmakuList> {
                 label: const Text('复制', style: TextStyle(color: Color(0xFF00D2FF))),
               )),
               const SizedBox(width: 12),
-              Expanded(child: TextButton.icon(
-                onPressed: () {
-                  Get.back();
-                  c.sendDanmaku(m.content); // 复读：发送相同弹幕
-                },
-                icon: const Icon(Icons.send, size: 18, color: Color(0xFFFF8800)),
-                label: const Text('+1 复读', style: TextStyle(color: Color(0xFFFF8800))),
-              )),
+              if (!m.isGift)
+                Expanded(child: TextButton.icon(
+                  onPressed: () {
+                    Get.back();
+                    c.sendDanmaku(m.content);
+                  },
+                  icon: const Icon(Icons.send, size: 18, color: Color(0xFFFF8800)),
+                  label: const Text('+1 复读', style: TextStyle(color: Color(0xFFFF8800))),
+                )),
             ]),
           ]),
         ),
