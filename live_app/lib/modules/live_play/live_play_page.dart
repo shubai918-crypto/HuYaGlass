@@ -417,10 +417,11 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
             Positioned(left: it.x, top: it.y, child: Opacity(
               opacity: op,
               child: Text.rich(
-                TextSpan(children: buildEmoteSpans(it.text, fontSize: fs, textColor: Color(it.fontColor))),
+                // ★ 修复：直接用 it.color，去掉 Color() 包装和 fontColor
+                TextSpan(children: buildEmoteSpans(it.text, fontSize: fs, textColor: it.color)),
                 maxLines: 1,
                 style: TextStyle(
-                    color: Color(it.fontColor),   // ★ 用消息自带颜色，不再写死白色
+                    color: it.color,   // ★ 修复：直接用 it.color
                     fontSize: fs,
                     fontWeight: FontWeight.w600,
                     shadows: const [Shadow(color: Colors.black87, blurRadius: 3)]),
