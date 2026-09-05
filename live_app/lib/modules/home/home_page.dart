@@ -90,7 +90,7 @@ class _HomePageState extends State<HomePage> {
             return false;
           },
           child: Padding(
-            // ★ 1.2.0 body edge-to-edge，让出 状态栏+标题栏 高度
+            // 1.2.0 body edge-to-edge，让出 状态栏+标题栏 高度
             padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60),
             child: IndexedStack(
               index: _selectedIndex,
@@ -119,7 +119,7 @@ class _HomePageState extends State<HomePage> {
           settings: LiquidGlassSettings(
             blur: 24,
             thickness: 30,
-            glassColor: Colors.black.withOpacity(0.45), // ★ 压深色，恢复质感
+            glassColor: Colors.black.withOpacity(0.45),
           ),
           selectedIndex: _selectedIndex,
           onTabSelected: _select,
@@ -129,6 +129,8 @@ class _HomePageState extends State<HomePage> {
           unselectedLabelColor: Colors.white.withOpacity(0.5),
           indicatorColor: const Color(0xFFFF8800).withOpacity(0.15),
           bottomAccessory: _buildMiniBar(),
+          // 强制展开状态下也显示 accessory
+          bottomAccessoryPlacement: GlassTabBarAccessoryPlacement.expanded,
           tabs: const [
             GlassTab(icon: Icon(Icons.home), label: '首页'),
             GlassTab(icon: Icon(Icons.search), label: '搜索'),
@@ -182,6 +184,13 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)),
               size: 36,
               onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
+            ),
+            const SizedBox(width: 4),
+            // 关闭/删除迷你条按钮
+            GlassIconButton(
+              icon: const Icon(Icons.close, color: Colors.white54),
+              size: 32,
+              onPressed: () => NowWatching.notifier.value = null,
             ),
           ]),
         );
