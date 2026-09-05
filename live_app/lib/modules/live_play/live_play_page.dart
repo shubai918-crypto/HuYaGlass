@@ -340,6 +340,8 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
   final List<_FloatItem> _items = [];
   final List<_PendingItem> _queue = [];
   final List<int> _laneFreeAt = [];
+  final Map<String, int> _recentEnqueue = {}; // ★ 内容去重窗口
+  DanmakuMessage? _lastSeen;                 // ★ 对象身份去重
   Ticker? _ticker; StreamSubscription? _sub;
   int _lastNow = 0; double _w = 0; double _h = 0;
 
@@ -348,12 +350,15 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
     super.initState();
     _ticker = createTicker(_tick)..start();
     _sub = widget.c.danmakuList.listen((_) {
-      if (widget.c.danmakuList.isNotEmpty) {
-        final m = widget.c.danmakuList.last;
-        if (m.isHistory) return;
-        if (m.isGift && !widget.c.showGiftOverlay.value) return;
-        _enqueue(m);
-      }
+      final list = widget.c.danmakuList;
+      if (list.isEmpty) return;
+      final m = list.last;
+      // ★ 只有"新的最后一条"才入队；列表裁剪(removeAt)不重复入队
+      if (identical(m, _lastSeen)) return;
+      _lastSeen = m;
+      if (m.isHistory) return;
+      if (m.isGift && !widget.c.showGiftOverlay.value) return;
+      _enqueue(m);
     });
   }
 
@@ -365,11 +370,20 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
     final n = max(1, (_h * widget.c.danmakuArea.value / _lineHeight()).floor());
     if (_laneFreeAt.length != n) { _laneFreeAt.clear(); _laneFreeAt.addAll(List.filled(n, 0)); }
   }
+
   void _enqueue(DanmakuMessage m) {
     if (!widget.c.showDanmaku.value || _w <= 0 || _h <= 0) return;
+    // ★ 同内容 5 秒内不重复上屏，防止单条铺满区域
+    final key = '${m.nickname}|${m.content}';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _recentEnqueue.removeWhere((k, t) => now - t > 5000);
+    if (_recentEnqueue.containsKey(key)) return;
+    _recentEnqueue[key] = now;
+
     if (_queue.length > 40) _queue.removeAt(0);
-    _queue.add(_PendingItem(m, DateTime.now().millisecondsSinceEpoch));
+    _queue.add(_PendingItem(m, now));
   }
+
   double _measure(String text, double fs) { double w = 8; for (final r in text.runes) w += r > 255 ? fs : fs * 0.62; return w; }
 
   void _flushQueue(int now) {
@@ -417,13 +431,9 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
             Positioned(left: it.x, top: it.y, child: Opacity(
               opacity: op,
               child: Text.rich(
-                // ★ 修复：直接用 it.color，去掉 Color() 包装和 fontColor
                 TextSpan(children: buildEmoteSpans(it.text, fontSize: fs, textColor: it.color)),
                 maxLines: 1,
-                style: TextStyle(
-                    color: it.color,   // ★ 修复：直接用 it.color
-                    fontSize: fs,
-                    fontWeight: FontWeight.w600,
+                style: TextStyle(color: it.color, fontSize: fs, fontWeight: FontWeight.w600,
                     shadows: const [Shadow(color: Colors.black87, blurRadius: 3)]),
               ),
             )),
