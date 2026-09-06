@@ -88,7 +88,6 @@ class _HomePageState extends State<HomePage> {
               useOwnLayer: true,
               // ★ 抗锯齿：premium 画质（SDF 平滑边缘）+ 高质量遮罩
               quality: GlassQuality.premium,
-              maskingQuality: MaskingQuality.high,
               settings: LiquidGlassSettings(blur: 8, thickness: 20),
               child: const Text('HuyaLive',
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
@@ -99,7 +98,6 @@ class _HomePageState extends State<HomePage> {
                 size: 44,
                 // ★ 抗锯齿：同上
                 quality: GlassQuality.premium,
-                maskingQuality: MaskingQuality.high,
                 onPressed: () => _select(3),
               ),
             ],
