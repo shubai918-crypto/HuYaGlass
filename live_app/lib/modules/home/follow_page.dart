@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -6,7 +9,6 @@ import 'package:live_core/live_core.dart';
 import '../live_play/live_play_page.dart';
 import 'follow_store.dart';
 
-/// 刷新时额外抓取的展示信息（封面/简介/粉丝数/预告），动态安全读取
 class _RoomExtra {
   final String screenshot;
   final String intro;
@@ -32,8 +34,66 @@ class _FollowPageState extends State<FollowPage> {
     _refresh();
   }
 
-  String _safeStr(dynamic v) => (v == null) ? '' : '$v';
+  // ---------- 网页元数据抓取（粉丝数/截图/简介/预告） ----------
+  String _unescape(String s) => s
+      .replaceAllMapped(RegExp(r'\\u([0-9a-fA-F]{4})'),
+          (m) => String.fromCharCode(int.parse(m.group(1)!, radix: 16)))
+      .replaceAll('\\"', '"')
+      .replaceAll('\\/', '/')
+      .replaceAll('\\\\', '\\');
 
+  Future<_RoomExtra> _fetchMeta(String roomId) async {
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
+      final req = await client
+          .getUrl(Uri.parse('https://www.huya.com/$roomId'))
+          .timeout(const Duration(seconds: 6));
+      req.headers.set('User-Agent',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
+      req.headers.set('Referer', 'https://www.huya.com/');
+      final resp = await req.close().timeout(const Duration(seconds: 6));
+      final body =
+          await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
+      client.close(force: true);
+
+      String? grab(String key) {
+        final m = RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')
+            .firstMatch(body);
+        return m == null ? null : _unescape(m.group(1)!);
+      }
+
+      int? grabInt(String key) {
+        final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+        return m == null ? null : int.tryParse(m.group(1)!);
+      }
+
+      String pick(List<String> keys) {
+        for (final k in keys) {
+          final v = grab(k);
+          if (v != null && v.isNotEmpty) return v;
+        }
+        return '';
+      }
+
+      int fans = 0;
+      for (final k in ['totalCount', 'fansCount', 'fans', 'lUserCount', 'userCount']) {
+        final v = grabInt(k);
+        if (v != null && v > 0) { fans = v; break; }
+      }
+
+      return _RoomExtra(
+        screenshot: pick(['screenshot', 'gameScreenshot']),
+        intro: pick(['introduction', 'intro']),
+        fans: fans,
+        preview: pick(['liveIntro', 'roomIntro', 'live_intro', 'broadcastNotice', 'welcomeText']),
+      );
+    } catch (_) {
+      return _RoomExtra();
+    }
+  }
+
+  // ---------- 刷新 ----------
   Future<void> _refresh() async {
     final store = FollowStore.to;
     if (store.refreshing.value) return;
@@ -42,9 +102,12 @@ class _FollowPageState extends State<FollowPage> {
       final snapshot = store.items.toList();
       for (final e in snapshot) {
         try {
-          final info = await _resolver
-              .resolveStream(e.roomId)
-              .timeout(const Duration(seconds: 6));
+          final results = await Future.wait([
+            _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6)),
+            _fetchMeta(e.roomId),
+          ]);
+          final info = results[0] as dynamic;
+          final meta = results[1] as _RoomExtra;
           if (info != null) {
             final idx = store.items.indexWhere((x) => x.roomId == e.roomId);
             if (idx >= 0) {
@@ -59,27 +122,8 @@ class _FollowPageState extends State<FollowPage> {
                 isLive: info.isLive,
               );
             }
-            // ★ 动态安全读取扩展字段（有则显示，无则降级）
-            String screenshot = '', intro = '', preview = '';
-            int fans = 0;
-            try {
-              final dynamic d = info;
-              final si = d.streamerInfo;
-              screenshot = _safeStr(si?.screenshot);
-              intro = _safeStr(si?.introduction);
-            } catch (_) {}
-            try {
-              final dynamic d = info;
-              final f = d.fansCount;
-              fans = (f is int) ? f : (int.tryParse(_safeStr(f)) ?? 0);
-            } catch (_) {}
-            try {
-              final dynamic d = info;
-              preview = _safeStr(d.livePreview ?? d.preview);
-            } catch (_) {}
-            _extras[e.roomId] = _RoomExtra(
-                screenshot: screenshot, intro: intro, fans: fans, preview: preview);
           }
+          _extras[e.roomId] = meta;
         } catch (_) {}
       }
       await store.save();
@@ -89,8 +133,8 @@ class _FollowPageState extends State<FollowPage> {
     if (mounted) setState(() {});
   }
 
-  void _open(FollowItem it) => Get.to(() => const LivePlayPage(),
-      arguments: {'roomId': it.roomId});
+  void _open(FollowItem it) =>
+      Get.to(() => const LivePlayPage(), arguments: {'roomId': it.roomId});
 
   Future<void> _unfollow(FollowItem it) async {
     final ok = await Get.dialog<bool>(
@@ -141,10 +185,17 @@ class _FollowPageState extends State<FollowPage> {
     );
   }
 
+  // ★ 封面占位：渐变 + 图标，不再用头像放大
   Widget _coverPh() => Container(
         width: double.infinity,
         height: 130,
-        color: Colors.white10,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF3A2A5E), Color(0xFF1A1A2E)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
         alignment: Alignment.center,
         child: const Icon(Icons.live_tv, color: Colors.white30, size: 40),
       );
@@ -152,14 +203,16 @@ class _FollowPageState extends State<FollowPage> {
   Widget _empty(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 18),
         child: Center(
-            child: Text(text, style: const TextStyle(color: Colors.white38, fontSize: 13))),
+            child:
+                Text(text, style: const TextStyle(color: Colors.white38, fontSize: 13))),
       );
 
-  // ★ 正在直播：封面大卡（截图封面 + 悬浮头像 + 昵称/简介）
+  // ★ 正在直播：封面大卡
   Widget _liveCard(FollowItem it) {
     final ex = _extras[it.roomId];
-    final cover = (ex?.screenshot ?? '').isNotEmpty ? ex!.screenshot : it.avatar;
+    final cover = ex?.screenshot ?? '';
     final intro = ex?.intro ?? '';
+    final fans = ex?.fans ?? 0;
     return GestureDetector(
       onTap: () => _open(it),
       onLongPress: () => _unfollow(it),
@@ -188,7 +241,10 @@ class _FollowPageState extends State<FollowPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text('直播中',
-                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700)),
                 ),
               ),
             ]),
@@ -201,7 +257,8 @@ class _FollowPageState extends State<FollowPage> {
                 child: CircleAvatar(
                   radius: 24,
                   backgroundColor: const Color(0xFF16161E),
-                  backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+                  backgroundImage:
+                      it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
                   child: it.avatar.isEmpty
                       ? const Icon(Icons.person, size: 22, color: Colors.white54)
                       : null,
@@ -214,11 +271,16 @@ class _FollowPageState extends State<FollowPage> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(it.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                    if (intro.isNotEmpty)
-                      Text(intro,
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600)),
+                    if (fans > 0 || intro.isNotEmpty)
+                      Text(
+                        fans > 0 ? '粉丝数: ${_fmtFans(fans)}' : intro,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
                   ]),
                 ),
               ),
@@ -260,7 +322,10 @@ class _FollowPageState extends State<FollowPage> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(it.name,
                     maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(
                   fans > 0 ? '粉丝数: ${_fmtFans(fans)}' : '房间 ${it.roomId}',
@@ -291,7 +356,8 @@ class _FollowPageState extends State<FollowPage> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(preview,
-                      style: const TextStyle(color: Color(0xFF7ECBFF), fontSize: 12, height: 1.4)),
+                      style: const TextStyle(
+                          color: Color(0xFF7ECBFF), fontSize: 12, height: 1.4)),
                 ),
               ]),
             ),
@@ -319,7 +385,10 @@ class _FollowPageState extends State<FollowPage> {
           children: [
             Row(children: [
               const Text('我的订阅',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800)),
               const Spacer(),
               GlassIconButton(
                 icon: const Icon(Icons.refresh, color: Color(0xFFFF8800)),
@@ -349,7 +418,9 @@ class _FollowPageState extends State<FollowPage> {
                   const Icon(Icons.sort, size: 14, color: Colors.white38),
                   Text(' 粉丝数量',
                       style: TextStyle(
-                          color: _offlineByFans ? const Color(0xFF4CB7FF) : Colors.white38,
+                          color: _offlineByFans
+                              ? const Color(0xFF4CB7FF)
+                              : Colors.white38,
                           fontSize: 12)),
                 ]),
               ),
