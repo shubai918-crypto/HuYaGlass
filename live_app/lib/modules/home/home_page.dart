@@ -38,13 +38,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  final GlassTabBarMinimizeController _minController = GlassTabBarMinimizeController();
-
-  @override
-  void dispose() {
-    _minController.dispose();
-    super.dispose();
-  }
 
   void _select(int i) => setState(() => _selectedIndex = i);
 
@@ -84,39 +77,33 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-        // ★ 迷你条改为悬浮层，不再依赖 bottomAccessory
         body: Stack(
           children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                _minController.handleNotification(n);
-                return false;
-              },
-              child: Padding(
-                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60),
-                child: IndexedStack(
-                  index: _selectedIndex,
-                  children: [
-                    _HomeView(onOpenFollows: () => _select(2)),
-                    SearchPage(
-                      onOpenRoom: (roomId, nickname, avatarUrl) =>
-                          goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
-                      isFollowed: (roomId) async => FollowStore.contains(roomId),
-                      onToggleFollow: (roomId, follow, nickname, avatar) async {
-                        if (follow) {
-                          await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
-                        } else {
-                          await FollowStore.remove(roomId);
-                        }
-                      },
-                    ),
-                    const FollowPage(),
-                    const SettingsPage(),
-                  ],
-                ),
+            Padding(
+              // 1.3.0 body edge-to-edge，让出 状态栏+标题栏 高度
+              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60),
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: [
+                  _HomeView(onOpenFollows: () => _select(2)),
+                  SearchPage(
+                    onOpenRoom: (roomId, nickname, avatarUrl) =>
+                        goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+                    isFollowed: (roomId) async => FollowStore.contains(roomId),
+                    onToggleFollow: (roomId, follow, nickname, avatar) async {
+                      if (follow) {
+                        await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
+                      } else {
+                        await FollowStore.remove(roomId);
+                      }
+                    },
+                  ),
+                  const FollowPage(),
+                  const SettingsPage(),
+                ],
               ),
             ),
-            // ★ 悬浮迷你播放条：贴在底栏上方
+            // 悬浮迷你播放条：贴在底栏上方，常驻显示
             Positioned(
               left: 12,
               right: 12,
@@ -126,7 +113,8 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         bottomBar: GlassTabBar.minimizable(
-          minimizeController: _minController,
+          // 1.3.0 规范：共享滚动控制器驱动 收拢/展开
+          scrollController: PrimaryScrollController.of(context),
           settings: LiquidGlassSettings(
             blur: 24,
             thickness: 30,
@@ -154,12 +142,12 @@ class _HomePageState extends State<HomePage> {
     return ValueListenableBuilder<NowRoom?>(
       valueListenable: NowWatching.notifier,
       builder: (context, room, _) {
-        // ★ 无房间时完全不占位
         if (room == null) return const SizedBox.shrink();
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
-          transitionBuilder: (child, anim) =>
-              SlideTransition(position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(anim), child: child),
+          transitionBuilder: (child, anim) => SlideTransition(
+              position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(anim),
+              child: child),
           child: GlassContainer(
             key: ValueKey(room.roomId),
             shape: const LiquidRoundedSuperellipse(borderRadius: 20),
@@ -229,7 +217,7 @@ class _HomeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 86), // ★ 底部留白给悬浮迷你条
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 86),
       children: [
         Container(
           padding: const EdgeInsets.all(24),
