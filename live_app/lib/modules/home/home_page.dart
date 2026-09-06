@@ -99,7 +99,7 @@ class _HomePageState extends State<HomePage> {
               Padding(
                 padding: EdgeInsets.only(
                   top: MediaQuery.of(context).padding.top + 60,
-                  bottom: 70, // 给悬浮迷你条留空间
+                  bottom: 170, // 给悬浮迷你条留空间
                 ),
                 child: IndexedStack(
                   index: _selectedIndex,
@@ -126,7 +126,7 @@ class _HomePageState extends State<HomePage> {
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: 12,
+                bottom: 96,
                 child: _buildMiniBar(),
               ),
             ],
