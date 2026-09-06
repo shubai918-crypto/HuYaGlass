@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../home/follow_store.dart';
 import 'background_play.dart';
+import '../home/home_page.dart'; // NowWatching / NowRoom
+
 
 class LivePlayController extends GetxController with WidgetsBindingObserver {
   final roomId = _readRoomId();
@@ -105,6 +107,16 @@ HuyaDanmakuClient? _danmakuClient;
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
 
+    ever(streamerName, (name) {
+  if (name.isNotEmpty) {
+    NowWatching.notifier.value = NowRoom(
+      roomId: '$roomId',
+      nickname: name,
+      avatarUrl: streamerAvatar.value,
+    );
+  }
+});
+    
     BackgroundPlayStore.onMediaAction = (action) {
       switch (action) {
         case 'pause':
