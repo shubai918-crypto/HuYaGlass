@@ -22,7 +22,6 @@ class NowWatching {
 
 void goLive(String roomId, {String nickname = '', String avatarUrl = ''}) {
   if (roomId.isEmpty) return;
-  // ★ 确保进入直播间时，迷你条数据被设置
   NowWatching.notifier.value = NowRoom(
     roomId: roomId,
     nickname: nickname.isEmpty ? '虎牙主播' : nickname,
@@ -39,43 +38,27 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  
-  // ★ 1.3.0 规范：手动控制最小化状态 + Controller 双保险
+
+  // ★ 只用受控属性驱动收拢，不传 minimizeController（避免被 controller 接管而失效）
   bool _isMinimized = false;
   double _lastScrollOffset = 0;
-  final GlassTabBarMinimizeController _minController = GlassTabBarMinimizeController();
-
-  @override
-  void dispose() {
-    _minController.dispose();
-    super.dispose();
-  }
 
   void _select(int i) => setState(() => _selectedIndex = i);
 
   @override
   Widget build(BuildContext context) {
-    // ★ 关键：在最外层拦截所有滚动事件
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        // 1. 喂给官方 Controller (尝试让其内部逻辑生效)
-        _minController.handleNotification(notification);
-
-        // 2. 手动控制最小化 (双保险，绝对生效)
         if (notification is ScrollUpdateNotification) {
-          final currentOffset = notification.metrics.pixels;
-          
-          // 向下滚动超过阈值 -> 最小化
-          if (currentOffset > _lastScrollOffset + 10 && currentOffset > 40) {
+          final cur = notification.metrics.pixels;
+          if (cur > _lastScrollOffset + 10 && cur > 40) {
             if (!_isMinimized) setState(() => _isMinimized = true);
-          } 
-          // 向上滚动或回到顶部 -> 展开
-          else if (currentOffset < _lastScrollOffset - 10 || currentOffset <= 0) {
+          } else if (cur < _lastScrollOffset - 10 || cur <= 0) {
             if (_isMinimized) setState(() => _isMinimized = false);
           }
-          _lastScrollOffset = currentOffset;
+          _lastScrollOffset = cur;
         }
-        return false; // 必须返回 false，让通知继续冒泡
+        return false;
       },
       child: Material(
         type: MaterialType.transparency,
@@ -114,10 +97,9 @@ class _HomePageState extends State<HomePage> {
           body: Stack(
             children: [
               Padding(
-                // 让出顶部状态栏+标题栏，以及底部迷你条的空间
                 padding: EdgeInsets.only(
                   top: MediaQuery.of(context).padding.top + 60,
-                  bottom: 80, // ★ 给悬浮迷你条留出足够空间，防止被底栏遮挡
+                  bottom: 70, // 给悬浮迷你条留空间
                 ),
                 child: IndexedStack(
                   index: _selectedIndex,
@@ -140,23 +122,19 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              // ★ 悬浮迷你播放条：固定在底栏上方 (bottom: 80)
+              // ★ 悬浮迷你条：贴在 body 底部（即底栏正上方）
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: 80, // ★ 关键：确保在底栏 (64px) 上方，不会被半透明玻璃挡住
+                bottom: 12,
                 child: _buildMiniBar(),
               ),
             ],
           ),
           bottomBar: GlassTabBar.minimizable(
-            // ★ 1.3.0 核心：强制传入手动计算的最小化状态
+            // ★ 只传受控 minimized，不传 minimizeController / scrollController
             minimized: _isMinimized,
-            minimizeController: _minController,
-            // ★ 点击最小化后的圆圈，展开底栏
-            onMinimizedTabTap: () {
-              setState(() => _isMinimized = false);
-            },
+            onMinimizedTabTap: () => setState(() => _isMinimized = false),
             settings: LiquidGlassSettings(
               blur: 24,
               thickness: 30,
