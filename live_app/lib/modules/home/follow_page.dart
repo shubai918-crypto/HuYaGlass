@@ -13,8 +13,14 @@ class _RoomExtra {
   final String screenshot;
   final String intro;
   final int fans;
+  final String fansText;
   final String preview;
-  _RoomExtra({this.screenshot = '', this.intro = '', this.fans = 0, this.preview = ''});
+  _RoomExtra(
+      {this.screenshot = '',
+      this.intro = '',
+      this.fans = 0,
+      this.fansText = '',
+      this.preview = ''});
 }
 
 class FollowPage extends StatefulWidget {
@@ -34,7 +40,7 @@ class _FollowPageState extends State<FollowPage> {
     _refresh();
   }
 
-  // ---------- 网页元数据抓取（粉丝数/截图/简介/预告） ----------
+  // ---------- 工具 ----------
   String _unescape(String s) => s
       .replaceAllMapped(RegExp(r'\\u([0-9a-fA-F]{4})'),
           (m) => String.fromCharCode(int.parse(m.group(1)!, radix: 16)))
@@ -42,6 +48,36 @@ class _FollowPageState extends State<FollowPage> {
       .replaceAll('\\/', '/')
       .replaceAll('\\\\', '\\');
 
+  String _decodeEntities(String s) => s
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&nbsp;', ' ');
+
+  int _parseFans(String s) {
+    s = s.trim();
+    if (s.isEmpty) return 0;
+    double ratio = 1;
+    if (s.contains('亿')) {
+      ratio = 100000000;
+      s = s.replaceAll('亿', '');
+    } else if (s.contains('万')) {
+      ratio = 10000;
+      s = s.replaceAll('万', '');
+    }
+    final v = double.tryParse(s.trim());
+    return v == null ? 0 : (v * ratio).round();
+  }
+
+  String _fmtFans(int v) {
+    if (v >= 100000000) return '${(v / 100000000).toStringAsFixed(1)}亿';
+    if (v >= 10000) return '${(v / 10000).toStringAsFixed(1)}万';
+    return '$v';
+  }
+
+  // ---------- 网页元数据抓取 ----------
   Future<_RoomExtra> _fetchMeta(String roomId) async {
     try {
       final client = HttpClient()
@@ -57,15 +93,21 @@ class _FollowPageState extends State<FollowPage> {
           await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
       client.close(force: true);
 
+      // 统一转义斜杠，方便匹配 URL
+      final nbody = body.replaceAll('\\/', '/');
+
       String? grab(String key) {
-        final m = RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')
-            .firstMatch(body);
+        final m =
+            RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').firstMatch(body);
         return m == null ? null : _unescape(m.group(1)!);
       }
 
-      int? grabInt(String key) {
-        final m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
-        return m == null ? null : int.tryParse(m.group(1)!);
+      int grabInt(String key) {
+        var m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+        if (m != null) return int.tryParse(m.group(1)!) ?? 0;
+        m = RegExp('"$key"\\s*:\\s*"(\\d+)"').firstMatch(body);
+        if (m != null) return int.tryParse(m.group(1)!) ?? 0;
+        return 0;
       }
 
       String pick(List<String> keys) {
@@ -76,17 +118,58 @@ class _FollowPageState extends State<FollowPage> {
         return '';
       }
 
-      int fans = 0;
-      for (final k in ['totalCount', 'fansCount', 'fans', 'lUserCount', 'userCount']) {
-        final v = grabInt(k);
-        if (v != null && v > 0) { fans = v; break; }
+      // ★ 封面：检索 live-cover.msstatic.com 的 .jpg
+      String cover = '';
+      final cm =
+          RegExp(r'https?://live-cover\.msstatic\.com[^"\'\s<>]+?\.jpg')
+              .firstMatch(nbody);
+      if (cm != null) cover = _decodeEntities(cm.group(0)!);
+      if (cover.isEmpty) {
+        cover = pick(['screenshot', 'sScreenshot', 'gameScreenshot']);
+      }
+
+      // ★ 粉丝数：优先 activityCount 节点（如 348.1万）
+      String fansText = '';
+      final fm =
+          RegExp(r'id="activityCount"[^>]*>([^<]+)<').firstMatch(body);
+      if (fm != null) fansText = _decodeEntities(fm.group(1)!).trim();
+      int fans = _parseFans(fansText);
+      if (fans <= 0) {
+        for (final k in [
+          'totalCount',
+          'fansCount',
+          'fans',
+          'followerCount',
+          'lUserCount'
+        ]) {
+          final v = grabInt(k);
+          if (v > 0) {
+            fans = v;
+            break;
+          }
+        }
+      }
+
+      // ★ 直播预告：读 recommend-live-forenotice 节点
+      String preview = '';
+      final fi = body.indexOf('recommend-live-forenotice');
+      if (fi >= 0) {
+        final pStart = body.indexOf('<p>', fi);
+        final pEnd = pStart >= 0 ? body.indexOf('</p>', pStart) : -1;
+        if (pStart >= 0 && pEnd > pStart) {
+          preview = _decodeEntities(body.substring(pStart + 3, pEnd))
+              .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+              .replaceFirst(RegExp(r'^直播预告[：:]\s*'), '')
+              .trim();
+        }
       }
 
       return _RoomExtra(
-        screenshot: pick(['screenshot', 'gameScreenshot']),
-        intro: pick(['introduction', 'intro']),
+        screenshot: cover,
+        intro: pick(['introduction', 'roomIntro', 'intro']),
         fans: fans,
-        preview: pick(['liveIntro', 'roomIntro', 'live_intro', 'broadcastNotice', 'welcomeText']),
+        fansText: fansText,
+        preview: preview,
       );
     } catch (_) {
       return _RoomExtra();
@@ -102,24 +185,27 @@ class _FollowPageState extends State<FollowPage> {
       final snapshot = store.items.toList();
       for (final e in snapshot) {
         try {
-          final results = await Future.wait([
-            _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6)),
+          final results = await Future.wait<Object?>([
+            _resolver
+                .resolveStream(e.roomId)
+                .timeout(const Duration(seconds: 6)),
             _fetchMeta(e.roomId),
           ]);
-          final info = results[0] as dynamic;
+          final info = results[0];
           final meta = results[1] as _RoomExtra;
           if (info != null) {
+            final d = info as dynamic;
             final idx = store.items.indexWhere((x) => x.roomId == e.roomId);
             if (idx >= 0) {
               store.items[idx] = FollowItem(
                 roomId: e.roomId,
-                name: info.streamerInfo.nickname.isNotEmpty
-                    ? info.streamerInfo.nickname
+                name: d.streamerInfo.nickname.isNotEmpty
+                    ? d.streamerInfo.nickname
                     : e.name,
-                avatar: info.streamerInfo.avatar.isNotEmpty
-                    ? info.streamerInfo.avatar
+                avatar: d.streamerInfo.avatar.isNotEmpty
+                    ? d.streamerInfo.avatar
                     : e.avatar,
-                isLive: info.isLive,
+                isLive: d.isLive,
               );
             }
           }
@@ -146,7 +232,8 @@ class _FollowPageState extends State<FollowPage> {
             actions: [
               TextButton(
                   onPressed: () => Get.back(result: false),
-                  child: const Text('保留', style: TextStyle(color: Colors.white54))),
+                  child: const Text('保留',
+                      style: TextStyle(color: Colors.white54))),
               TextButton(
                   onPressed: () => Get.back(result: true),
                   child: const Text('取消订阅',
@@ -158,12 +245,7 @@ class _FollowPageState extends State<FollowPage> {
     if (ok) await FollowStore.remove(it.roomId);
   }
 
-  String _fmtFans(int v) {
-    if (v >= 100000000) return '${(v / 100000000).toStringAsFixed(1)}亿';
-    if (v >= 10000) return '${(v / 10000).toStringAsFixed(1)}万';
-    return '$v';
-  }
-
+  // ---------- UI ----------
   Widget _sectionHeader({
     required IconData icon,
     required Color iconColor,
@@ -178,14 +260,15 @@ class _FollowPageState extends State<FollowPage> {
         const SizedBox(width: 6),
         Text('$title ($count)',
             style: const TextStyle(
-                color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+                color: Colors.white70,
+                fontSize: 14,
+                fontWeight: FontWeight.w700)),
         const Spacer(),
         if (right != null) right,
       ]),
     );
   }
 
-  // ★ 封面占位：渐变 + 图标，不再用头像放大
   Widget _coverPh() => Container(
         width: double.infinity,
         height: 130,
@@ -203,16 +286,23 @@ class _FollowPageState extends State<FollowPage> {
   Widget _empty(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 18),
         child: Center(
-            child:
-                Text(text, style: const TextStyle(color: Colors.white38, fontSize: 13))),
+            child: Text(text,
+                style: const TextStyle(color: Colors.white38, fontSize: 13))),
       );
+
+  String _fansLabel(_RoomExtra? ex) {
+    if (ex == null) return '';
+    if (ex.fansText.isNotEmpty) return ex.fansText;
+    if (ex.fans > 0) return _fmtFans(ex.fans);
+    return '';
+  }
 
   // ★ 正在直播：封面大卡
   Widget _liveCard(FollowItem it) {
     final ex = _extras[it.roomId];
     final cover = ex?.screenshot ?? '';
     final intro = ex?.intro ?? '';
-    final fans = ex?.fans ?? 0;
+    final fansLabel = _fansLabel(ex);
     return GestureDetector(
       onTap: () => _open(it),
       onLongPress: () => _unfollow(it),
@@ -225,17 +315,22 @@ class _FollowPageState extends State<FollowPage> {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(18)),
             child: Stack(children: [
               cover.isNotEmpty
                   ? Image.network(cover,
-                      width: double.infinity, height: 130, fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: 130,
+                      fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _coverPh())
                   : _coverPh(),
               Positioned(
-                left: 8, top: 8,
+                left: 8,
+                top: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE5484D).withOpacity(0.85),
                     borderRadius: BorderRadius.circular(8),
@@ -260,7 +355,8 @@ class _FollowPageState extends State<FollowPage> {
                   backgroundImage:
                       it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
                   child: it.avatar.isEmpty
-                      ? const Icon(Icons.person, size: 22, color: Colors.white54)
+                      ? const Icon(Icons.person,
+                          size: 22, color: Colors.white54)
                       : null,
                 ),
               ),
@@ -268,20 +364,27 @@ class _FollowPageState extends State<FollowPage> {
               Expanded(
                 child: Transform.translate(
                   offset: const Offset(0, -6),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(it.name,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600)),
-                    if (fans > 0 || intro.isNotEmpty)
-                      Text(
-                        fans > 0 ? '粉丝数: ${_fmtFans(fans)}' : intro,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                  ]),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(it.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600)),
+                        if (fansLabel.isNotEmpty || intro.isNotEmpty)
+                          Text(
+                            fansLabel.isNotEmpty
+                                ? '粉丝数: $fansLabel'
+                                : intro,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 12),
+                          ),
+                      ]),
                 ),
               ),
             ]),
@@ -294,7 +397,7 @@ class _FollowPageState extends State<FollowPage> {
   // ★ 暂未开播：头像行 + 粉丝数 + 预告气泡
   Widget _offlineTile(FollowItem it) {
     final ex = _extras[it.roomId];
-    final fans = ex?.fans ?? 0;
+    final fansLabel = _fansLabel(ex);
     final preview = ex?.preview ?? '';
     return GestureDetector(
       onTap: () => _open(it),
@@ -312,26 +415,33 @@ class _FollowPageState extends State<FollowPage> {
             CircleAvatar(
               radius: 24,
               backgroundColor: Colors.white10,
-              backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+              backgroundImage:
+                  it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
               child: it.avatar.isEmpty
                   ? const Icon(Icons.person, size: 22, color: Colors.white54)
                   : null,
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(it.name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(
-                  fans > 0 ? '粉丝数: ${_fmtFans(fans)}' : '房间 ${it.roomId}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(it.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      fansLabel.isNotEmpty
+                          ? '粉丝数: $fansLabel'
+                          : '房间 ${it.roomId}',
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ]),
             ),
             const Icon(Icons.chevron_right, color: Colors.white30),
           ]),
@@ -345,7 +455,8 @@ class _FollowPageState extends State<FollowPage> {
               ),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: const Color(0xFF4CB7FF).withOpacity(0.25),
                     borderRadius: BorderRadius.circular(4),
@@ -425,7 +536,10 @@ class _FollowPageState extends State<FollowPage> {
                 ]),
               ),
             ),
-            if (offline.isEmpty) _empty('暂无未开播主播') else ...offline.map(_offlineTile),
+            if (offline.isEmpty)
+              _empty('暂无未开播主播')
+            else
+              ...offline.map(_offlineTile),
           ],
         ),
       );
