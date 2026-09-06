@@ -38,101 +38,116 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  
+  // ★ 1.3.0 规范：使用 MinimizeController 驱动，不依赖 ScrollController
+  final GlassTabBarMinimizeController _minController = GlassTabBarMinimizeController();
+
+  @override
+  void dispose() {
+    _minController.dispose();
+    super.dispose();
+  }
 
   void _select(int i) => setState(() => _selectedIndex = i);
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: GlassScaffold(
-        contentAwareBrightness: true,
-        statusBarStyle: GlassStatusBarStyle.light,
-        background: SizedBox.expand(
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(-0.3, -0.8),
-                radius: 1.6,
-                colors: [Color(0xFF2D1B4E), Color(0xFF12121A), Color(0xFF050508)],
-                stops: [0.0, 0.6, 1.0],
+    // ★ 关键修复：将 NotificationListener 提升到最外层，拦截所有滚动事件
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // 将通知喂给控制器，驱动底栏收拢/展开
+        _minController.handleNotification(notification);
+        return false; // 必须返回 false，让通知继续冒泡
+      },
+      child: Material(
+        type: MaterialType.transparency,
+        child: GlassScaffold(
+          contentAwareBrightness: true,
+          statusBarStyle: GlassStatusBarStyle.light,
+          background: SizedBox.expand(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(-0.3, -0.8),
+                  radius: 1.6,
+                  colors: [Color(0xFF2D1B4E), Color(0xFF12121A), Color(0xFF050508)],
+                  stops: [0.0, 0.6, 1.0],
+                ),
               ),
             ),
           ),
-        ),
-        appBar: GlassAppBar(
-          title: GlassContainer(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-            useOwnLayer: true,
-            settings: LiquidGlassSettings(blur: 8, thickness: 20),
-            child: const Text('HuyaLive',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-          ),
-          actions: [
-            GlassIconButton(
-              icon: const Icon(Icons.settings, color: Colors.white),
-              size: 44,
-              onPressed: () => _select(3),
+          appBar: GlassAppBar(
+            title: GlassContainer(
+              shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+              useOwnLayer: true,
+              settings: LiquidGlassSettings(blur: 8, thickness: 20),
+              child: const Text('HuyaLive',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
             ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            Padding(
-              // 1.3.0 body edge-to-edge，让出 状态栏+标题栏 高度
-              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60),
-              child: IndexedStack(
-                index: _selectedIndex,
-                children: [
-                  _HomeView(onOpenFollows: () => _select(2)),
-                  SearchPage(
-                    onOpenRoom: (roomId, nickname, avatarUrl) =>
-                        goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
-                    isFollowed: (roomId) async => FollowStore.contains(roomId),
-                    onToggleFollow: (roomId, follow, nickname, avatar) async {
-                      if (follow) {
-                        await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
-                      } else {
-                        await FollowStore.remove(roomId);
-                      }
-                    },
-                  ),
-                  const FollowPage(),
-                  const SettingsPage(),
-                ],
+            actions: [
+              GlassIconButton(
+                icon: const Icon(Icons.settings, color: Colors.white),
+                size: 44,
+                onPressed: () => _select(3),
               ),
-            ),
-            // 悬浮迷你播放条：贴在底栏上方，常驻显示
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 10,
-              child: _buildMiniBar(),
-            ),
-          ],
-        ),
-        bottomBar: GlassTabBar.minimizable(
-          // 1.3.0 规范：共享滚动控制器驱动 收拢/展开
-          scrollController: PrimaryScrollController.of(context),
-          settings: LiquidGlassSettings(
-            blur: 24,
-            thickness: 30,
-            glassColor: Colors.black.withOpacity(0.45),
+            ],
           ),
-          selectedIndex: _selectedIndex,
-          onTabSelected: _select,
-          selectedIconColor: const Color(0xFFFF8800),
-          selectedLabelColor: const Color(0xFFFF8800),
-          unselectedIconColor: Colors.white.withOpacity(0.5),
-          unselectedLabelColor: Colors.white.withOpacity(0.5),
-          indicatorColor: const Color(0xFFFF8800).withOpacity(0.15),
-          tabs: const [
-            GlassTab(icon: Icon(Icons.home), label: '首页'),
-            GlassTab(icon: Icon(Icons.search), label: '搜索'),
-            GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-            GlassTab(icon: Icon(Icons.settings), label: '设置'),
-          ],
+          body: Stack(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60),
+                child: IndexedStack(
+                  index: _selectedIndex,
+                  children: [
+                    _HomeView(onOpenFollows: () => _select(2)),
+                    SearchPage(
+                      onOpenRoom: (roomId, nickname, avatarUrl) =>
+                          goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+                      isFollowed: (roomId) async => FollowStore.contains(roomId),
+                      onToggleFollow: (roomId, follow, nickname, avatar) async {
+                        if (follow) {
+                          await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
+                        } else {
+                          await FollowStore.remove(roomId);
+                        }
+                      },
+                    ),
+                    const FollowPage(),
+                    const SettingsPage(),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 10,
+                child: _buildMiniBar(),
+              ),
+            ],
+          ),
+          bottomBar: GlassTabBar.minimizable(
+            // ★ 1.3.0 规范：只传 minimizeController，绝对不传 scrollController
+            minimizeController: _minController,
+            settings: LiquidGlassSettings(
+              blur: 24,
+              thickness: 30,
+              glassColor: Colors.black.withOpacity(0.45),
+            ),
+            selectedIndex: _selectedIndex,
+            onTabSelected: _select,
+            selectedIconColor: const Color(0xFFFF8800),
+            selectedLabelColor: const Color(0xFFFF8800),
+            unselectedIconColor: Colors.white.withOpacity(0.5),
+            unselectedLabelColor: Colors.white.withOpacity(0.5),
+            indicatorColor: const Color(0xFFFF8800).withOpacity(0.15),
+            tabs: const [
+              GlassTab(icon: Icon(Icons.home), label: '首页'),
+              GlassTab(icon: Icon(Icons.search), label: '搜索'),
+              GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+              GlassTab(icon: Icon(Icons.settings), label: '设置'),
+            ],
+          ),
         ),
       ),
     );
