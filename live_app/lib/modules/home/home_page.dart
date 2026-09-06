@@ -39,7 +39,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  // ★ 只用受控属性驱动收拢，不传 minimizeController（避免被 controller 接管而失效）
+  // ★ 受控最小化状态（不传 minimizeController，避免被 controller 接管而失效）
   bool _isMinimized = false;
   double _lastScrollOffset = 0;
 
@@ -47,18 +47,22 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // ★ 最外层拦截所有滚动事件，手动驱动底栏收拢/展开
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification) {
           final cur = notification.metrics.pixels;
+          // 向下滚动超过阈值 -> 收拢
           if (cur > _lastScrollOffset + 10 && cur > 40) {
             if (!_isMinimized) setState(() => _isMinimized = true);
-          } else if (cur < _lastScrollOffset - 10 || cur <= 0) {
+          }
+          // 向上滚动或回到顶部 -> 展开
+          else if (cur < _lastScrollOffset - 10 || cur <= 0) {
             if (_isMinimized) setState(() => _isMinimized = false);
           }
           _lastScrollOffset = cur;
         }
-        return false;
+        return false; // 必须返回 false，让通知继续冒泡
       },
       child: Material(
         type: MaterialType.transparency,
@@ -97,9 +101,10 @@ class _HomePageState extends State<HomePage> {
           body: Stack(
             children: [
               Padding(
+                // 1.3.0 body edge-to-edge：让出 状态栏+标题栏，底部留足迷你条+底栏空间
                 padding: EdgeInsets.only(
                   top: MediaQuery.of(context).padding.top + 60,
-                  bottom: 170, // 给悬浮迷你条留空间
+                  bottom: 180,
                 ),
                 child: IndexedStack(
                   index: _selectedIndex,
@@ -122,11 +127,14 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              // ★ 悬浮迷你条：贴在 body 底部（即底栏正上方）
-              Positioned(
+              // ★ 悬浮迷你播放条：AnimatedPositioned 跟随底栏状态平滑移动
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeInOutCubic,
                 left: 16,
                 right: 16,
-                bottom: 96,
+                // 收拢时贴近小胶囊，展开时贴近完整底栏
+                bottom: _isMinimized ? 60.0 : 96.0,
                 child: _buildMiniBar(),
               ),
             ],
