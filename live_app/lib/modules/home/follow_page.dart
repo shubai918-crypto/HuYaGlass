@@ -118,11 +118,10 @@ class _FollowPageState extends State<FollowPage> {
         return '';
       }
 
+      
       // ★ 封面：检索 live-cover.msstatic.com 的 .jpg
       String cover = '';
-      final cm =
-          RegExp(r'https?://live-cover\.msstatic\.com[^"\'\s<>]+?\.jpg')
-              .firstMatch(nbody);
+      final cm = RegExp(r'''https?://live-cover\.msstatic\.com[^"'\s<>]+?\.jpg''').firstMatch(nbody);
       if (cm != null) cover = _decodeEntities(cm.group(0)!);
       if (cover.isEmpty) {
         cover = pick(['screenshot', 'sScreenshot', 'gameScreenshot']);
