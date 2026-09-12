@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
+import 'package:live_app/core/app_settings.dart';
 
 import '../live_play/live_play_page.dart';
 import '../search/search_page.dart';
@@ -86,11 +87,19 @@ class _HomePageState extends State<HomePage> {
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
             ),
             actions: [
-              GlassIconButton(
+              // ★ 明暗主题切换
+              Obx(() => GlassIconButton(
+                    icon: Icon(
+                      AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                      color: Colors.white,
+                    ),
+                    size: 44,
+                    onPressed: () => AppSettings.to.toggleTheme(),
+                  )),
+              // ★ 1.4.3 液态变形：设置 Sheet 从胶囊 morph 弹出
+              GlassBarItem.sheet(
                 icon: const Icon(Icons.settings, color: Colors.white),
-                size: 44,
-                quality: GlassQuality.premium,
-                onPressed: () => _select(3),
+                onPresent: (anchor) => _showQuickSettings(context, anchor),
               ),
             ],
           ),
@@ -123,7 +132,6 @@ class _HomePageState extends State<HomePage> {
           bottomBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
-            // ★ 官方 accessory：展开时骑在栏上，最小化时自动内联进胶囊
             bottomAccessory: _buildMiniBar(),
             settings: LiquidGlassSettings(
               blur: 24,
@@ -149,19 +157,44 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ★ 液态变形快捷设置 Sheet
+  void _showQuickSettings(BuildContext context, GlassMorphAnchor anchor) {
+    GlassModalSheet.show(
+      context: context,
+      morphFrom: anchor,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Obx(() => SwitchListTile(
+                  secondary: const Icon(Icons.dark_mode, color: Colors.white70),
+                  title: const Text('深色模式', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  value: AppSettings.to.isDark,
+                  onChanged: (_) => AppSettings.to.toggleTheme(),
+                )),
+            Obx(() => SwitchListTile(
+                  secondary: const Icon(Icons.bug_report_outlined, color: Colors.white70),
+                  title: const Text('调试模式', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  value: AppSettings.to.debugEnabled.value,
+                  onChanged: AppSettings.to.setDebug,
+                )),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMiniBar() {
     return ValueListenableBuilder<NowRoom?>(
       valueListenable: NowWatching.notifier,
       builder: (context, room, _) {
         if (room == null) return const SizedBox.shrink();
-        // ★ 读取当前 placement：最小化内联时渲染紧凑形态
         final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
             GlassTabBarAccessoryPlacement.inline;
         return GlassContainer(
           key: ValueKey(room.roomId),
           shape: LiquidRoundedSuperellipse(borderRadius: inline ? 999 : 20),
-          padding: EdgeInsets.symmetric(
-              horizontal: inline ? 12 : 12, vertical: inline ? 6 : 8),
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: inline ? 6 : 8),
           useOwnLayer: true,
           settings: LiquidGlassSettings(
             blur: 20,
@@ -179,34 +212,25 @@ class _HomePageState extends State<HomePage> {
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: room.avatarUrl.isNotEmpty
-              ? Image.network(room.avatarUrl,
-                  width: 40, height: 40, fit: BoxFit.cover,
+              ? Image.network(room.avatarUrl, width: 40, height: 40, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _artPlaceholder())
               : _artPlaceholder(),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(room.nickname,
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-              const Text('正在播放 · 虎牙直播',
-                  maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 11)),
-            ],
-          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(room.nickname, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+            const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 11)),
+          ]),
         ),
         GlassIconButton(
-          icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)),
-          size: 36,
+          icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)), size: 36,
           onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
         ),
         const SizedBox(width: 4),
         GlassIconButton(
-          icon: const Icon(Icons.close, color: Colors.white54),
-          size: 32,
+          icon: const Icon(Icons.close, color: Colors.white54), size: 32,
           onPressed: () => NowWatching.notifier.value = null,
         ),
       ]);
@@ -215,17 +239,13 @@ class _HomePageState extends State<HomePage> {
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: room.avatarUrl.isNotEmpty
-              ? Image.network(room.avatarUrl,
-                  width: 26, height: 26, fit: BoxFit.cover,
+              ? Image.network(room.avatarUrl, width: 26, height: 26, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _artPlaceholder())
               : _artPlaceholder(),
         ),
         const SizedBox(width: 8),
-        Flexible(
-          child: Text(room.nickname,
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-        ),
+        Flexible(child: Text(room.nickname, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))),
         const SizedBox(width: 8),
         GestureDetector(
           onTap: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
@@ -262,8 +282,7 @@ class _HomeView extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFFFF8800), Color(0xFFFF5A00)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-            ),
+              begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(24),
           ),
           child: Column(children: [
@@ -283,29 +302,18 @@ class _HomeView extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
-        _card(
-          icon: Icons.subscriptions_outlined,
-          color: const Color(0xFFFF8800),
-          label: '我的订阅',
-          sub: '点击查看已收藏的主播',
-          onTap: onOpenFollows,
-        ),
+        _card(icon: Icons.subscriptions_outlined, color: const Color(0xFFFF8800),
+            label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
         const SizedBox(height: 12),
-        _card(
-          icon: Icons.account_circle,
-          color: const Color(0xFFFFB25E),
-          label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
-          sub: '登录后可发真实弹幕 / 看真实订阅数',
-          onTap: () => Get.toNamed('/huya_login'),
-        ),
+        _card(icon: Icons.account_circle, color: const Color(0xFFFFB25E),
+            label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
+            sub: '登录后可发真实弹幕 / 看真实订阅数', onTap: () => Get.toNamed('/huya_login')),
       ],
     );
   }
 
-  Widget _card({
-    required IconData icon, required Color color,
-    required String label, required String sub, required VoidCallback onTap,
-  }) {
+  Widget _card({required IconData icon, required Color color, required String label,
+      required String sub, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -318,10 +326,7 @@ class _HomeView extends StatelessWidget {
         child: Row(children: [
           Container(
             width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(14),
-            ),
+            decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14)),
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(width: 14),
@@ -351,8 +356,7 @@ class _HomeView extends StatelessWidget {
           style: const TextStyle(color: Colors.white),
           decoration: const InputDecoration(
             hintText: '输入房间号，如 31343932',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
+            hintStyle: TextStyle(color: Colors.white38)),
         ),
         actions: [
           TextButton(onPressed: () => Get.back(), child: const Text('取消', style: TextStyle(color: Colors.white54))),
