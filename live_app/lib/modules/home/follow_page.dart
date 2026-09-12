@@ -150,6 +150,7 @@ class _FollowPageState extends State<FollowPage> {
       }
 
       // ★ 直播预告：读 recommend-live-forenotice 节点
+      // ★ 直播预告：多策略提取（DOM 节点 → JSON 字段 → 裸文本）
       String preview = '';
       final fi = body.indexOf('recommend-live-forenotice');
       if (fi >= 0) {
@@ -158,10 +159,27 @@ class _FollowPageState extends State<FollowPage> {
         if (pStart >= 0 && pEnd > pStart) {
           preview = _decodeEntities(body.substring(pStart + 3, pEnd))
               .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
-              .replaceFirst(RegExp(r'^直播预告[：:]\s*'), '')
               .trim();
         }
       }
+      if (preview.isEmpty) {
+        for (final key in ['sLiveIntro', 'liveIntro', 'sForenotice', 'forenotice', 'sIntro']) {
+          final m = RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').firstMatch(body);
+          if (m != null) {
+            final v = _unescape(m.group(1)!).trim();
+            if (v.isNotEmpty) { preview = v; break; }
+          }
+        }
+      }
+      if (preview.isEmpty) {
+        final m = RegExp(r'直播预告[：:]([^<"]{4,80})').firstMatch(body);
+        if (m != null) {
+          preview = _decodeEntities(m.group(1)!)
+              .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+              .trim();
+        }
+      }
+      preview = preview.replaceFirst(RegExp(r'^直播预告[：:]\s*'), '').trim();
 
       return _RoomExtra(
         screenshot: cover,
@@ -345,50 +363,41 @@ class _FollowPageState extends State<FollowPage> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Row(children: [
-              Transform.translate(
-                offset: const Offset(0, -16),
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: const Color(0xFF16161E),
-                  backgroundImage:
-                      it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
-                  child: it.avatar.isEmpty
-                      ? const Icon(Icons.person,
-                          size: 22, color: Colors.white54)
-                      : null,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end, // ★ 文字落底，不再侵入封面
+              children: [
+                Transform.translate(
+                  offset: const Offset(0, -16), // 只让头像上浮叠在封面边缘
+                  child: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: const Color(0xFF16161E),
+                    backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+                    child: it.avatar.isEmpty
+                        ? const Icon(Icons.person, size: 22, color: Colors.white54)
+                        : null,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Transform.translate(
-                  offset: const Offset(0, -6),
-                  child: Column(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(it.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600)),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                         if (fansLabel.isNotEmpty || intro.isNotEmpty)
-                          Text(
-                            fansLabel.isNotEmpty
-                                ? '粉丝数: $fansLabel'
-                                : intro,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 12),
-                          ),
-                      ]),
+                          Text(fansLabel.isNotEmpty ? '粉丝数: $fansLabel' : intro,
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           ),
-        ]),
       ),
     );
   }
