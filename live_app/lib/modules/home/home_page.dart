@@ -38,8 +38,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-
-  // ★ 受控最小化状态（不传 minimizeController，避免被 controller 接管而失效）
   bool _isMinimized = false;
   double _lastScrollOffset = 0;
 
@@ -47,22 +45,18 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // ★ 最外层拦截所有滚动事件，手动驱动底栏收拢/展开
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification) {
           final cur = notification.metrics.pixels;
-          // 向下滚动超过阈值 -> 收拢
           if (cur > _lastScrollOffset + 10 && cur > 40) {
             if (!_isMinimized) setState(() => _isMinimized = true);
-          }
-          // 向上滚动或回到顶部 -> 展开
-          else if (cur < _lastScrollOffset - 10 || cur <= 0) {
+          } else if (cur < _lastScrollOffset - 10 || cur <= 0) {
             if (_isMinimized) setState(() => _isMinimized = false);
           }
           _lastScrollOffset = cur;
         }
-        return false; // 必须返回 false，让通知继续冒泡
+        return false;
       },
       child: Material(
         type: MaterialType.transparency,
@@ -86,7 +80,6 @@ class _HomePageState extends State<HomePage> {
               shape: const LiquidRoundedSuperellipse(borderRadius: 999),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
               useOwnLayer: true,
-              // ★ 抗锯齿：premium 画质（SDF 平滑边缘）+ 高质量遮罩
               quality: GlassQuality.premium,
               settings: LiquidGlassSettings(blur: 8, thickness: 20),
               child: const Text('HuyaLive',
@@ -96,57 +89,42 @@ class _HomePageState extends State<HomePage> {
               GlassIconButton(
                 icon: const Icon(Icons.settings, color: Colors.white),
                 size: 44,
-                // ★ 抗锯齿：同上
                 quality: GlassQuality.premium,
                 onPressed: () => _select(3),
               ),
             ],
           ),
-          body: Stack(
-            children: [
-              Padding(
-                // 1.3.0 body edge-to-edge：让出 状态栏+标题栏，底部留足迷你条+底栏空间
-                padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 60,
-                  bottom: 180,
+          body: Padding(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 60,
+              bottom: 120,
+            ),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _HomeView(onOpenFollows: () => _select(2)),
+                SearchPage(
+                  onOpenRoom: (roomId, nickname, avatarUrl) =>
+                      goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+                  isFollowed: (roomId) async => FollowStore.contains(roomId),
+                  onToggleFollow: (roomId, follow, nickname, avatar) async {
+                    if (follow) {
+                      await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
+                    } else {
+                      await FollowStore.remove(roomId);
+                    }
+                  },
                 ),
-                child: IndexedStack(
-                  index: _selectedIndex,
-                  children: [
-                    _HomeView(onOpenFollows: () => _select(2)),
-                    SearchPage(
-                      onOpenRoom: (roomId, nickname, avatarUrl) =>
-                          goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
-                      isFollowed: (roomId) async => FollowStore.contains(roomId),
-                      onToggleFollow: (roomId, follow, nickname, avatar) async {
-                        if (follow) {
-                          await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
-                        } else {
-                          await FollowStore.remove(roomId);
-                        }
-                      },
-                    ),
-                    const FollowPage(),
-                    const SettingsPage(),
-                  ],
-                ),
-              ),
-              // ★ 悬浮迷你播放条：AnimatedPositioned 跟随底栏状态平滑移动
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeInOutCubic,
-                left: 16,
-                right: 16,
-                // 收拢时贴近小胶囊，展开时贴近完整底栏
-                bottom: _isMinimized ? 60.0 : 96.0,
-                child: _buildMiniBar(),
-              ),
-            ],
+                const FollowPage(),
+                const SettingsPage(),
+              ],
+            ),
           ),
           bottomBar: GlassTabBar.minimizable(
-            // ★ 只传受控 minimized，不传 minimizeController / scrollController
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
+            // ★ 官方 accessory：展开时骑在栏上，最小化时自动内联进胶囊
+            bottomAccessory: _buildMiniBar(),
             settings: LiquidGlassSettings(
               blur: 24,
               thickness: 30,
@@ -176,62 +154,89 @@ class _HomePageState extends State<HomePage> {
       valueListenable: NowWatching.notifier,
       builder: (context, room, _) {
         if (room == null) return const SizedBox.shrink();
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          transitionBuilder: (child, anim) => SlideTransition(
-              position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(anim),
-              child: child),
-          child: GlassContainer(
-            key: ValueKey(room.roomId),
-            shape: const LiquidRoundedSuperellipse(borderRadius: 20),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            useOwnLayer: true,
-            settings: LiquidGlassSettings(
-              blur: 20,
-              thickness: 25,
-              platformViewMode: PlatformViewGlassMode.passthrough,
-              glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
-            ),
-            child: Row(children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: room.avatarUrl.isNotEmpty
-                    ? Image.network(room.avatarUrl,
-                        width: 40, height: 40, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _artPlaceholder())
-                    : _artPlaceholder(),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(room.nickname,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                    const Text('正在播放 · 虎牙直播',
-                        maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 11)),
-                  ],
-                ),
-              ),
-              GlassIconButton(
-                icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)),
-                size: 36,
-                onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
-              ),
-              const SizedBox(width: 4),
-              GlassIconButton(
-                icon: const Icon(Icons.close, color: Colors.white54),
-                size: 32,
-                onPressed: () => NowWatching.notifier.value = null,
-              ),
-            ]),
+        // ★ 读取当前 placement：最小化内联时渲染紧凑形态
+        final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
+            GlassTabBarAccessoryPlacement.inline;
+        return GlassContainer(
+          key: ValueKey(room.roomId),
+          shape: LiquidRoundedSuperellipse(borderRadius: inline ? 999 : 20),
+          padding: EdgeInsets.symmetric(
+              horizontal: inline ? 12 : 12, vertical: inline ? 6 : 8),
+          useOwnLayer: true,
+          settings: LiquidGlassSettings(
+            blur: 20,
+            thickness: 25,
+            platformViewMode: PlatformViewGlassMode.passthrough,
+            glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
           ),
+          child: inline ? _compactRow(room) : _fullRow(room),
         );
       },
     );
   }
+
+  Widget _fullRow(NowRoom room) => Row(children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: room.avatarUrl.isNotEmpty
+              ? Image.network(room.avatarUrl,
+                  width: 40, height: 40, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _artPlaceholder())
+              : _artPlaceholder(),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(room.nickname,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+              const Text('正在播放 · 虎牙直播',
+                  maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 11)),
+            ],
+          ),
+        ),
+        GlassIconButton(
+          icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)),
+          size: 36,
+          onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
+        ),
+        const SizedBox(width: 4),
+        GlassIconButton(
+          icon: const Icon(Icons.close, color: Colors.white54),
+          size: 32,
+          onPressed: () => NowWatching.notifier.value = null,
+        ),
+      ]);
+
+  Widget _compactRow(NowRoom room) => Row(mainAxisSize: MainAxisSize.min, children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: room.avatarUrl.isNotEmpty
+              ? Image.network(room.avatarUrl,
+                  width: 26, height: 26, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _artPlaceholder())
+              : _artPlaceholder(),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(room.nickname,
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
+          child: const Icon(Icons.play_arrow, size: 18, color: Color(0xFFFF8800)),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => NowWatching.notifier.value = null,
+          child: const Icon(Icons.close, size: 16, color: Colors.white54),
+        ),
+      ]);
 
   Widget _artPlaceholder() => Container(
         width: 40, height: 40,
