@@ -102,56 +102,73 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
+  // ★ 顶部信息栏：液态玻璃胶囊，折射底层视频画面 (PlatformView)
   Widget _header() {
     return Obx(() => Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-          child: Row(children: [
-            CircleAvatar(radius: 20, backgroundColor: Colors.white10,
-                backgroundImage: c.streamerAvatar.value.isNotEmpty ? NetworkImage(c.streamerAvatar.value) : null,
-                child: c.streamerAvatar.value.isEmpty ? const Icon(Icons.person, size: 20, color: Colors.white54) : null),
-            const SizedBox(width: 8),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
-                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text('粉丝 ${_fmt(c.fansCount.value)}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-            ])),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: _showHighEnergySheet,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0x33FFB25E), borderRadius: BorderRadius.circular(12)),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 14),
-                  SizedBox(width: 3),
-                  Text('高能观众', style: TextStyle(color: Color(0xFFFFB25E), fontSize: 11)),
-                ]),
-              ),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: GlassContainer(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            settings: LiquidGlassSettings(
+              blur: 15,
+              thickness: 30,
+              refractiveIndex: 1.2,
+              saturation: 1.3,
+              glassColor: Colors.black.withOpacity(0.15),
+              platformViewMode: PlatformViewGlassMode.passthrough, // ★ 折射底层 PlatformView
+              bodyMode: GlassBodyMode.adaptive, // ★ 根据视频画面明暗自适应
             ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: c.toggleFollow,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0x33E5484D),
-                    border: Border.all(color: const Color(0xFFE5484D)), borderRadius: BorderRadius.circular(12)),
-                child: Text(c.isFollowed.value ? '已订阅' : '订阅',
-                    style: const TextStyle(color: Color(0xFFE5484D), fontSize: 12)),
+            child: Row(children: [
+              CircleAvatar(radius: 18, backgroundColor: Colors.white10,
+                  backgroundImage: c.streamerAvatar.value.isNotEmpty ? NetworkImage(c.streamerAvatar.value) : null,
+                  child: c.streamerAvatar.value.isEmpty ? const Icon(Icons.person, size: 18, color: Colors.white54) : null),
+              const SizedBox(width: 8),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700, height: 1.1, shadows: [Shadow(color: Colors.black54, blurRadius: 2)]),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('粉丝 ${_fmt(c.fansCount.value)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.1),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ])),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: _showHighEnergySheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(color: const Color(0x44FFB25E), borderRadius: BorderRadius.circular(12)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 12),
+                    SizedBox(width: 2),
+                    Text('高能', style: TextStyle(color: Color(0xFFFFB25E), fontSize: 10, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => Get.back(),
-              child: Container(
-                width: 32, height: 32,
-                decoration: const BoxDecoration(color: Colors.white10, shape: BoxShape.circle),
-                child: const Icon(Icons.close, color: Colors.white70, size: 18),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: c.toggleFollow,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                      color: c.isFollowed.value ? Colors.white12 : const Color(0xFFE5484D),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Text(c.isFollowed.value ? '已订阅' : '订阅',
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                ),
               ),
-            ),
-          ]),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => Get.back(),
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
+                  child: const Icon(Icons.close, color: Colors.white, size: 16),
+                ),
+              ),
+            ]),
+          ),
         ));
   }
 
@@ -424,15 +441,9 @@ class _DanmakuList extends StatefulWidget {
 
 class _DanmakuListState extends State<_DanmakuList> {
   final ScrollController _sc = ScrollController();
-  StreamSubscription? _sub;
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
-  void dispose() { _sub?.cancel(); _sc.dispose(); super.dispose(); }
+  void dispose() { _sc.dispose(); super.dispose(); }
 
   Color _fansColor(int lv) {
     if (lv <= 6) return const Color(0xFF59B4FF);
