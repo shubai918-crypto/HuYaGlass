@@ -82,9 +82,15 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
               useOwnLayer: true,
               quality: GlassQuality.premium,
-              settings: LiquidGlassSettings(blur: 8, thickness: 20),
+              settings: LiquidGlassSettings(
+                blur: 12,
+                thickness: 35,
+                refractiveIndex: 1.15,
+                saturation: 1.2,
+                bodyMode: GlassBodyMode.adaptive, // ★ 1.4.4 自适应亮度
+              ),
               child: const Text('HuyaLive',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
             ),
             actions: [
               // ★ 明暗主题切换
@@ -96,10 +102,11 @@ class _HomePageState extends State<HomePage> {
                     size: 44,
                     onPressed: () => AppSettings.to.toggleTheme(),
                   )),
-              // ★ 1.4.3 液态变形：设置 Sheet 从胶囊 morph 弹出
-              GlassBarItem.sheet(
+              // ★ 设置按钮：弹出液态玻璃 Sheet
+              GlassIconButton(
                 icon: const Icon(Icons.settings, color: Colors.white),
-                onPresent: (anchor) => _showQuickSettings(context, anchor),
+                size: 44,
+                onPressed: () => _showQuickSettings(context),
               ),
             ],
           ),
@@ -132,6 +139,7 @@ class _HomePageState extends State<HomePage> {
           bottomBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
+            // ★ 官方 Accessory：展开时骑在栏上，最小化时自动内联进胶囊
             bottomAccessory: _buildMiniBar(),
             settings: LiquidGlassSettings(
               blur: 24,
@@ -157,15 +165,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 液态变形快捷设置 Sheet
-  void _showQuickSettings(BuildContext context, GlassMorphAnchor anchor) {
+  // ★ 液态玻璃快捷设置 Sheet
+  void _showQuickSettings(BuildContext context) {
     GlassModalSheet.show(
       context: context,
-      morphFrom: anchor,
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+            ),
             Obx(() => SwitchListTile(
                   secondary: const Icon(Icons.dark_mode, color: Colors.white70),
                   title: const Text('深色模式', style: TextStyle(color: Colors.white, fontSize: 15)),
@@ -189,6 +200,7 @@ class _HomePageState extends State<HomePage> {
       valueListenable: NowWatching.notifier,
       builder: (context, room, _) {
         if (room == null) return const SizedBox.shrink();
+        // ★ 读取当前 placement：最小化内联时渲染紧凑形态
         final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
             GlassTabBarAccessoryPlacement.inline;
         return GlassContainer(
