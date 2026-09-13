@@ -44,6 +44,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
   final coverUrl = ''.obs;
+  final liveSchedule = ''.obs; // ★ 新增：日常开播预告
   Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
@@ -94,11 +95,13 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
-HuyaDanmakuClient? _danmakuClient; 
+  HuyaDanmakuClient? _danmakuClient; 
   HuyaDanmakuClient get client => _danmakuClient!;
   final inputController = TextEditingController();
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
+  
+  StreamSubscription? _scheduleSub; // ★ 新增：预告流订阅
 
   @override
   void onInit() {
@@ -108,14 +111,14 @@ HuyaDanmakuClient? _danmakuClient;
     _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
 
     ever(streamerName, (name) {
-  if (name.isNotEmpty) {
-    NowWatching.notifier.value = NowRoom(
-      roomId: '$roomId',
-      nickname: name,
-      avatarUrl: streamerAvatar.value,
-    );
-  }
-});
+      if (name.isNotEmpty) {
+        NowWatching.notifier.value = NowRoom(
+          roomId: '$roomId',
+          nickname: name,
+          avatarUrl: streamerAvatar.value,
+        );
+      }
+    });
     
     BackgroundPlayStore.onMediaAction = (action) {
       switch (action) {
@@ -629,6 +632,11 @@ HuyaDanmakuClient? _danmakuClient;
     // ★ 表情字典加载完毕后强制刷新列表以渲染图片
     _danmakuClient!.onEmoteReady = () => danmakuList.refresh();
 
+    // ★ 监听日常开播预告
+    _scheduleSub = _danmakuClient!.scheduleStream.listen((s) {
+      liveSchedule.value = s;
+    });
+
     _danmakuClient!.connect(
         topSid: _topSid, subSid: _subSid, uid: _ayyuid, roomIdStr: roomId);
     danmakuStream = _danmakuClient!.danmakuStream;
@@ -636,6 +644,13 @@ HuyaDanmakuClient? _danmakuClient;
       danmakuList.add(m);
       if (danmakuList.length > 200) {
         danmakuList.removeRange(0, danmakuList.length - 200);
+      }
+    });
+    
+    // ★ 延迟请求预告，确保 WS 注册完成
+    Future.delayed(const Duration(seconds: 2), () {
+      if (_danmakuClient?.isRegistered == true) {
+        _danmakuClient?.fetchLiveSchedule();
       }
     });
   }
@@ -934,12 +949,20 @@ HuyaDanmakuClient? _danmakuClient;
                                     style: const TextStyle(
                                         color: Colors.white54, fontSize: 12)),
                               ],
-                              if (roomTitle.value.isNotEmpty) ...[
+                              // ★ 区分日常预告与本场标题
+                              if (liveSchedule.value.isNotEmpty) ...[
                                 const SizedBox(height: 6),
-                                Text('直播预告：${roomTitle.value}',
+                                Text('日常预告：${liveSchedule.value}',
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
                                         color: Color(0xFFFF8800), fontSize: 13)),
+                              ],
+                              if (roomTitle.value.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text('本场标题：${roomTitle.value}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 12)),
                               ],
                             ]))),
                   ])),
@@ -977,6 +1000,7 @@ HuyaDanmakuClient? _danmakuClient;
     _hideTimer?.cancel();
     _stallTimer?.cancel();
     _durationTimer?.cancel();
+    _scheduleSub?.cancel(); // ★ 释放预告流
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
