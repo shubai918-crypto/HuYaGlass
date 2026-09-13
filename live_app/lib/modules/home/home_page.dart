@@ -87,13 +87,12 @@ class _HomePageState extends State<HomePage> {
                 thickness: 35,
                 refractiveIndex: 1.15,
                 saturation: 1.2,
-                bodyMode: GlassBodyMode.adaptive, // ★ 1.4.4 自适应亮度
+                bodyMode: GlassBodyMode.adaptive,
               ),
               child: const Text('HuyaLive',
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
             ),
             actions: [
-              // ★ 明暗主题切换
               Obx(() => GlassIconButton(
                     icon: Icon(
                       AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
@@ -102,7 +101,6 @@ class _HomePageState extends State<HomePage> {
                     size: 44,
                     onPressed: () => AppSettings.to.toggleTheme(),
                   )),
-              // ★ 设置按钮：弹出液态玻璃 Sheet
               GlassIconButton(
                 icon: const Icon(Icons.settings, color: Colors.white),
                 size: 44,
@@ -139,7 +137,6 @@ class _HomePageState extends State<HomePage> {
           bottomBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
-            // ★ 官方 Accessory：展开时骑在栏上，最小化时自动内联进胶囊
             bottomAccessory: _buildMiniBar(),
             settings: LiquidGlassSettings(
               blur: 24,
@@ -165,13 +162,16 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 液态玻璃快捷设置 Sheet
+  // ★ 修复：改用原生深色 BottomSheet，彻底杜绝白屏和双层拖拽条 Bug
   void _showQuickSettings(BuildContext context) {
-    GlassModalSheet.show(
+    showModalBottomSheet(
       context: context,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
               width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
@@ -200,7 +200,6 @@ class _HomePageState extends State<HomePage> {
       valueListenable: NowWatching.notifier,
       builder: (context, room, _) {
         if (room == null) return const SizedBox.shrink();
-        // ★ 读取当前 placement：最小化内联时渲染紧凑形态
         final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
             GlassTabBarAccessoryPlacement.inline;
         return GlassContainer(
