@@ -162,6 +162,8 @@ class _FollowPageState extends State<FollowPage> {
 
   // ---------- 刷新 ----------
   Future<void> _refresh() async {
+// ---------- 刷新 ----------
+  Future<void> _refresh() async {
     final store = FollowStore.to;
     if (store.refreshing.value) return;
     store.refreshing.value = true;
@@ -169,24 +171,37 @@ class _FollowPageState extends State<FollowPage> {
       final snapshot = store.items.toList();
       for (final e in snapshot) {
         try {
-          // 1. 先获取直播流信息，判断是否开播
-          final info = await _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6));
+          final info = await _resolver
+              .resolveStream(e.roomId)
+              .timeout(const Duration(seconds: 6));
           bool isLive = false;
+          int topSid = 0, subSid = 0, ayyuid = 0;
           if (info != null) {
-            isLive = info.isLive;
+            final d = info as dynamic;
+            isLive = d.isLive == true;
+            try { ayyuid = (d.ayyuid as int?) ?? 0; } catch (_) {}
+            try {
+              topSid = (d.topSid as int?) ?? 0;
+              if (topSid == 0) topSid = (d.presenterUid as int?) ?? 0;
+            } catch (_) {}
+            try { subSid = (d.subSid as int?) ?? 0; } catch (_) {}
             final idx = store.items.indexWhere((x) => x.roomId == e.roomId);
             if (idx >= 0) {
               store.items[idx] = FollowItem(
                 roomId: e.roomId,
-                name: info.streamerInfo.nickname.isNotEmpty ? info.streamerInfo.nickname : e.name,
-                avatar: info.streamerInfo.avatar.isNotEmpty ? info.streamerInfo.avatar : e.avatar,
+                name: d.streamerInfo.nickname.isNotEmpty
+                    ? d.streamerInfo.nickname
+                    : e.name,
+                avatar: d.streamerInfo.avatar.isNotEmpty
+                    ? d.streamerInfo.avatar
+                    : e.avatar,
                 isLive: isLive,
               );
             }
           }
-          
-          // 2. 获取元数据（封面、粉丝），并根据 isLive 决定是否请求 WS 预告
-          final meta = await _fetchMeta(e.roomId, isLive);
+          // ★ 把真实频道/主播 ID 传进去，WS 预告才拿得到
+          final meta = await _fetchMeta(e.roomId, isLive,
+              topSid: topSid, subSid: subSid, ayyuid: ayyuid);
           _extras[e.roomId] = meta;
         } catch (_) {}
       }
@@ -197,22 +212,97 @@ class _FollowPageState extends State<FollowPage> {
     if (mounted) setState(() {});
   }
 
-  void _open(FollowItem it) =>
-      Get.to(() => const LivePlayPage(), arguments: {'roomId': it.roomId});
+  // ---------- 网页元数据抓取 ----------
+  Future<_RoomExtra> _fetchMeta(String roomId, bool isLive,
+      {int topSid = 0, int subSid = 0, int ayyuid = 0}) async {
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
+      final req = await client
+          .getUrl(Uri.parse('https://www.huya.com/$roomId'))
+          .timeout(const Duration(seconds: 6));
+      req.headers.set('User-Agent',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
+      req.headers.set('Referer', 'https://www.huya.com/');
+      final resp = await req.close().timeout(const Duration(seconds: 6));
+      final body =
+          await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
+      client.close(force: true);
 
-  Future<void> _unfollow(FollowItem it) async {
-    final ok = await Get.dialog<bool>(
-          AlertDialog(
-            backgroundColor: const Color(0xFF1A1A2E),
-            title: const Text('取消订阅', style: TextStyle(color: Colors.white)),
-            content: Text('不再关注「${it.name}」？', style: const TextStyle(color: Colors.white70)),
-            actions: [
-              TextButton(onPressed: () => Get.back(result: false), child: const Text('保留', style: TextStyle(color: Colors.white54))),
-              TextButton(onPressed: () => Get.back(result: true), child: const Text('取消订阅', style: TextStyle(color: Color(0xFFE5484D)))),
-            ],
-          ),
-        ) ?? false;
-    if (ok) await FollowStore.remove(it.roomId);
+      final nbody = body.replaceAll('\\/', '/');
+
+      String? grab(String key) {
+        final m =
+            RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').firstMatch(body);
+        return m == null ? null : _unescape(m.group(1)!);
+      }
+
+      int grabInt(String key) {
+        var m = RegExp('"$key"\\s*:\\s*(\\d+)').firstMatch(body);
+        if (m != null) return int.tryParse(m.group(1)!) ?? 0;
+        m = RegExp('"$key"\\s*:\\s*"(\\d+)"').firstMatch(body);
+        if (m != null) return int.tryParse(m.group(1)!) ?? 0;
+        return 0;
+      }
+
+      String pick(List<String> keys) {
+        for (final k in keys) {
+          final v = grab(k);
+          if (v != null && v.isNotEmpty) return v;
+        }
+        return '';
+      }
+
+      // ★ 封面：检索 live-cover.msstatic.com 的 .jpg
+      String cover = '';
+      final cm =
+          RegExp(r'''https?://live-cover\.msstatic\.com[^"'\s<>]+?\.jpg''')
+              .firstMatch(nbody);
+      if (cm != null) cover = _decodeEntities(cm.group(0)!);
+      if (cover.isEmpty) {
+        cover = pick(['screenshot', 'sScreenshot', 'gameScreenshot']);
+      }
+
+      // ★ 粉丝数：优先 activityCount 节点
+      String fansText = '';
+      final fm = RegExp(r'id="activityCount"[^>]*>([^<]+)<').firstMatch(body);
+      if (fm != null) fansText = _decodeEntities(fm.group(1)!).trim();
+      int fans = _parseFans(fansText);
+      if (fans <= 0) {
+        for (final k in [
+          'totalCount', 'fansCount', 'fans', 'followerCount', 'lUserCount'
+        ]) {
+          final v = grabInt(k);
+          if (v > 0) {
+            fans = v;
+            break;
+          }
+        }
+      }
+
+      // ★ 直播预告：未开播时用真实 ID 走 WS 一次性请求
+      String preview = '';
+      if (!isLive) {
+        try {
+          preview = await HuyaDanmakuClient.fetchScheduleOnce(
+            roomId,
+            topSid: topSid,
+            subSid: subSid,
+            ayyuid: ayyuid,
+          ).timeout(const Duration(seconds: 8));
+        } catch (_) {}
+      }
+
+      return _RoomExtra(
+        screenshot: cover,
+        intro: pick(['introduction', 'roomIntro', 'intro']),
+        fans: fans,
+        fansText: fansText,
+        preview: preview,
+      );
+    } catch (_) {
+      return _RoomExtra();
+    }
   }
 
   // ---------- UI ----------
