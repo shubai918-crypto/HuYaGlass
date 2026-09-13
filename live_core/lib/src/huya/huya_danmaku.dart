@@ -203,25 +203,6 @@ class HuyaDanmakuClient {
     }
   }
 
-  // ★ 新增：发送 getPresenterLiveScheduleInfo（与弹幕同一条 WS）
-  void fetchLiveSchedule() {
-    try {
-      final uaInfo = _TarsWriter();
-      uaInfo.writeInt(0, _loginUid > 0 ? _loginUid : _ayyuid);
-      uaInfo.writeString(1, _guid);
-      uaInfo.writeString(3, _sendHuYaUA);
-      uaInfo.writeString(4, _cookie);
-      final info = _TarsWriter();
-      info.writeStruct(0, uaInfo);
-      info.writeInt(1, _ayyuid);
-      final body = _wupBody('presenterui', 'getPresenterLiveScheduleInfo',
-          {'tReq': _treq(info.toBytes())});
-      _send(_wrapWsCmd(_withPrefix(body), 3));
-      _dbgPush('请求直播预告 已发');
-    } catch (e) {
-      _dbgPush('请求预告异常:$e');
-    }
-  }
 
   // ★ 原 fetchLiveSchedule 改为委托
   void fetchLiveSchedule() => _sendScheduleFor(_ayyuid);
