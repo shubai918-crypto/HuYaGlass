@@ -102,7 +102,7 @@ class HuyaDanmakuClient {
     '[震惊]': 'http://cdnfile2.msstatic.com/cdnfile/material_manage/web_base_material_16141737604305_pic.png',
     '[整不会了6]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/abee3a09a3ca49e4b4e567886eb0f5c9/expressconfig/steam_3.png',
     '[你是我的哥]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/dda720298ab146419718397f97dcb2eb/expressconfig/steam_3.png',
-    '[盯]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/27d952f79d2a48859eca9ebaf1146f09/expressconfig/steam_3.png',
+    '[盯]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282d72b257/expressconfig/steam_3.png',
     '[不是哥们2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/809a798714164c70a3f24feb090043b4/expressconfig/steam_3.png',
     '[婉拒了哈]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062162steam_3.png',
     '[这不好吧]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1656062177steam_3.png',
@@ -113,11 +113,11 @@ class HuyaDanmakuClient {
     '[泰酷辣]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/e61973807356460a83adc9568799a938/expressconfig/steam_3.png',
     '[几个菜啊]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/b638ab65dfad4a149e20feebda223ba7/expressconfig/steam_3.png',
     '[街溜子]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c4586ceb173340a19ea86a64d11792cb/expressconfig/steam_3.png',
-    '[我是学生]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f1a8ec12f6a746a2ad4f4df389876d6b/expressconfig/steam_3.png',
+    '[我是学生]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f1a8ec12f6a74641971839362565ba/expressconfig/steam_3.png',
     '[不会吧]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/f9f7caf65ef9419f8ee967e01e6dccab/expressconfig/steam_3.png',
     '[恭喜发财2]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/58f65d52b10b4187815de239362565ba/expressconfig/steam_3.png',
     '[蒜鸟]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/5293fc1adc0c4820aad8d2ce4eabc387/expressconfig/steam_3.png',
-    '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282c72b257/expressconfig/steam_3.png',
+    '[夯爆了]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/2a39fb8007c34591ae1999282d72b257/expressconfig/steam_3.png',
     '[真的六]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/023c6ec6575c4952ae77c4bd74d2a72f/expressconfig/steam_3.png',
     '[俺不中嘞]': 'https://fileserver.cdn.huya.com/web_admin_material_zip_url/c0a00ac14515474f8f65101132964e76/expressconfig/steam_3.png',
     '[这瓜保熟吗]': 'http://cdnfile1.msstatic.com/cdnfile/expressconfig/1629978877steam_3.png',
@@ -188,6 +188,68 @@ class HuyaDanmakuClient {
   final StreamController<List<VipUser>> _vipController =
       StreamController<List<VipUser>>.broadcast();
   Stream<List<VipUser>> get vipStream => _vipController.stream;
+
+  // ★ 新增：日常开播预告 Stream
+  final StreamController<String> _scheduleController =
+      StreamController<String>.broadcast();
+  Stream<String> get scheduleStream => _scheduleController.stream;
+
+  bool get isRegistered => _registered;
+
+  Future<void> waitForReady({int timeoutMs = 5000}) async {
+    final sw = Stopwatch()..start();
+    while (!_registered && sw.elapsedMilliseconds < timeoutMs) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  // ★ 新增：发送 getPresenterLiveScheduleInfo（与弹幕同一条 WS）
+  void fetchLiveSchedule() {
+    try {
+      final uaInfo = _TarsWriter();
+      uaInfo.writeInt(0, _loginUid > 0 ? _loginUid : _ayyuid);
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(3, _sendHuYaUA);
+      uaInfo.writeString(4, _cookie);
+      final info = _TarsWriter();
+      info.writeStruct(0, uaInfo);
+      info.writeInt(1, _ayyuid);
+      final body = _wupBody('presenterui', 'getPresenterLiveScheduleInfo',
+          {'tReq': _treq(info.toBytes())});
+      _send(_wrapWsCmd(_withPrefix(body), 3));
+      _dbgPush('请求直播预告 已发');
+    } catch (e) {
+      _dbgPush('请求预告异常:$e');
+    }
+  }
+
+  // ★ 新增：供订阅页一次性获取预告（独立短连接）
+  static Future<String> fetchScheduleOnce(String roomIdStr) async {
+    final rid = int.tryParse(roomIdStr) ?? 0;
+    if (rid <= 0) return '';
+    final client = HuyaDanmakuClient();
+    final completer = Completer<String>();
+    StreamSubscription? sub;
+    Timer? timeoutTimer;
+    sub = client.scheduleStream.listen((s) {
+      if (!completer.isCompleted) completer.complete(s);
+    });
+    timeoutTimer = Timer(const Duration(seconds: 8), () {
+      if (!completer.isCompleted) completer.complete('');
+    });
+    try {
+      await client.connect(topSid: rid, subSid: rid, uid: 0, roomIdStr: roomIdStr);
+      await client.waitForReady();
+      if (client.isRegistered) client.fetchLiveSchedule();
+      return await completer.future;
+    } catch (_) {
+      return '';
+    } finally {
+      sub?.cancel();
+      timeoutTimer?.cancel();
+      client.disconnect();
+    }
+  }
 
   String _cookieVal(String name) =>
       RegExp('$name=([^;]+)').firstMatch(_cookie)?.group(1)?.trim() ?? '';
@@ -299,6 +361,10 @@ class HuyaDanmakuClient {
     });
     Timer(const Duration(milliseconds: 1500), () {
       if (!_closed) _sendRctTimedMessage();
+    });
+    // ★ 注册完成后请求日常开播预告
+    Timer(const Duration(milliseconds: 1800), () {
+      if (!_closed && _registered) fetchLiveSchedule();
     });
     Timer(const Duration(milliseconds: 4500), () {
       if (!_closed && !_rctOk) _sendRctTimedMessage();
@@ -850,6 +916,33 @@ class HuyaDanmakuClient {
               final r0 = rsp[0];
               ret = r0 is int ? r0 : -99;
               if (servant == 'launch' && ret == 0) _parseLaunchRsp(rsp);
+
+              // ★ 拦截日常开播预告响应（getPresenterLiveScheduleInfo）
+              if (servant == 'presenterui' &&
+                  func == 'getPresenterLiveScheduleInfo') {
+                final parts = <String>[];
+                void walkS(dynamic node, int depth) {
+                  if (depth > 8) return;
+                  if (node is String) {
+                    if (RegExp(r'\d{1,2}:\d{2}').hasMatch(node) ||
+                        node.contains('每天') ||
+                        node.contains('不见不散') ||
+                        node.contains('开播')) {
+                      parts.add(node);
+                    }
+                  } else if (node is Map<int, Object?>) {
+                    node.values.forEach((v) => walkS(v, depth + 1));
+                  } else if (node is List) {
+                    node.forEach((v) => walkS(v, depth + 1));
+                  }
+                }
+                walkS(rsp, 0);
+                if (parts.isNotEmpty) {
+                  final s = parts.join(' ');
+                  _scheduleController.add(s);
+                  _dbgPush('直播预告: $s');
+                }
+              }
             }
           }
         }
@@ -919,11 +1012,11 @@ class HuyaDanmakuClient {
     }
   }
 
-void _parseGiftPush(List<int> payload) {
+  void _parseGiftPush(List<int> payload) {
     try {
       final f = _TarsReader(Uint8List.fromList(payload)).readFields();
       final presenter = f[5] is String ? (f[5] as String) : ''; // 主播名
-      var sender = f[6] is String ? (f[6] as String) : '';       // ★ 送礼人=tag6
+      var sender = f[6] is String ? (f[6] as String) : '';       // 送礼人=tag6
 
       final strs = <String>[];
       void walk(dynamic n, int d) {
@@ -946,14 +1039,12 @@ void _parseGiftPush(List<int> payload) {
 
       bool isId(String s) => s.length > 20 || RegExp(r'^[0-9A-F]{16,}$').hasMatch(s);
 
-      // sender 兜底：第一个 非主播、非长id 的串
       if (sender.isEmpty || sender == presenter) {
         for (final s in strs) {
           if (s.isNotEmpty && s != presenter && !isId(s)) { sender = s; break; }
         }
       }
 
-      // 礼物名：优先命中内置图，否则取 非主播/非发送者/非id 的短串
       String giftName = '';
       for (final s in strs) {
         if (DanmakuMessage.kGiftIcons.containsKey(s)) { giftName = s; break; }
@@ -989,7 +1080,7 @@ void _parseGiftPush(List<int> payload) {
     }
   }
 
-bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
+  bool _emitFromFields(Map<int, Object?> fields, {bool history = false}) {
     Map<int, Object?> msg = fields;
     final f3 = fields[3]; final f0 = fields[0];
     if (f3 is! String && f0 is Map<int, Object?>) {
