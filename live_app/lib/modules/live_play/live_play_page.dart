@@ -806,13 +806,28 @@ class _DetailTab extends StatelessWidget {
           Text(c.lastLiveText, style: const TextStyle(color: Colors.white54, fontSize: 13)),
         ])),
       ],
+      // ★ 本场直播标题
       if (c.roomTitle.value.isNotEmpty) ...[
         const SizedBox(height: 12),
         Container(padding: const EdgeInsets.all(14), decoration: _card(),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('直播预告', style: TextStyle(color: Color(0xFFFF8800), fontSize: 14, fontWeight: FontWeight.w700)),
+              const Text('本场直播标题', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
-              Text(c.roomTitle.value, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              Text(c.roomTitle.value, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+            ])),
+      ],
+      // ★ 日常开播预告 (WS 获取)
+      if (c.liveSchedule.value.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Container(padding: const EdgeInsets.all(14), decoration: _card(),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Row(children: [
+                Icon(Icons.schedule, color: Color(0xFFFF8800), size: 16),
+                SizedBox(width: 6),
+                Text('日常开播预告', style: TextStyle(color: Color(0xFFFF8800), fontSize: 14, fontWeight: FontWeight.w700)),
+              ]),
+              const SizedBox(height: 6),
+              Text(c.liveSchedule.value, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
             ])),
       ],
     ]));
