@@ -224,28 +224,38 @@ class HuyaDanmakuClient {
   }
 
   // ★ 新增：供订阅页一次性获取预告（独立短连接）
-  static Future<String> fetchScheduleOnce(String roomIdStr) async {
+// ★ 供订阅页一次性获取预告（独立短连接，使用真实频道/主播 ID）
+  static Future<String> fetchScheduleOnce(
+    String roomIdStr, {
+    int topSid = 0,
+    int subSid = 0,
+    int ayyuid = 0,
+  }) async {
     final rid = int.tryParse(roomIdStr) ?? 0;
     if (rid <= 0) return '';
+    final top = topSid != 0 ? topSid : rid;
+    final sub = subSid != 0 ? subSid : top;
+    final uid = ayyuid != 0 ? ayyuid : top;
     final client = HuyaDanmakuClient();
     final completer = Completer<String>();
-    StreamSubscription? sub;
+    StreamSubscription? subListen;
     Timer? timeoutTimer;
-    sub = client.scheduleStream.listen((s) {
+    subListen = client.scheduleStream.listen((s) {
       if (!completer.isCompleted) completer.complete(s);
     });
     timeoutTimer = Timer(const Duration(seconds: 8), () {
       if (!completer.isCompleted) completer.complete('');
     });
     try {
-      await client.connect(topSid: rid, subSid: rid, uid: 0, roomIdStr: roomIdStr);
+      await client.connect(
+          topSid: top, subSid: sub, uid: uid, roomIdStr: roomIdStr);
       await client.waitForReady();
       if (client.isRegistered) client.fetchLiveSchedule();
       return await completer.future;
     } catch (_) {
       return '';
     } finally {
-      sub?.cancel();
+      subListen?.cancel();
       timeoutTimer?.cancel();
       client.disconnect();
     }
