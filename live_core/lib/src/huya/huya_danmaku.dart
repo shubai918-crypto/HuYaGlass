@@ -223,6 +223,44 @@ class HuyaDanmakuClient {
     }
   }
 
+  // ★ 原 fetchLiveSchedule 改为委托
+  void fetchLiveSchedule() => _sendScheduleFor(_ayyuid);
+
+  // ★ 按指定主播 uid 构造并发送预告请求
+  void _sendScheduleFor(int ayyuid) {
+    try {
+      final uaInfo = _TarsWriter();
+      uaInfo.writeInt(0, _loginUid > 0 ? _loginUid : _ayyuid);
+      uaInfo.writeString(1, _guid);
+      uaInfo.writeString(3, _sendHuYaUA);
+      uaInfo.writeString(4, _cookie);
+      final info = _TarsWriter();
+      info.writeStruct(0, uaInfo);
+      info.writeInt(1, ayyuid);
+      final body = _wupBody('presenterui', 'getPresenterLiveScheduleInfo',
+          {'tReq': _treq(info.toBytes())});
+      _send(_wrapWsCmd(_withPrefix(body), 3));
+    } catch (_) {}
+  }
+
+  // ★ 在当前连接上为指定 uid 请求预告并等待响应（供单连接批量复用）
+  Future<String> requestScheduleFor(int ayyuid,
+      {Duration timeout = const Duration(seconds: 3)}) async {
+    if (ayyuid <= 0) return '';
+    final completer = Completer<String>();
+    final sub = _scheduleController.stream.listen((s) {
+      if (!completer.isCompleted) completer.complete(s);
+    });
+    try {
+      _sendScheduleFor(ayyuid);
+      return await completer.future.timeout(timeout, onTimeout: () => '');
+    } catch (_) {
+      return '';
+    } finally {
+      await sub.cancel();
+    }
+  }
+
   // ★ 供订阅页一次性获取预告（独立短连接，使用真实频道/主播 ID）
   static Future<String> fetchScheduleOnce(
     String roomIdStr, {
