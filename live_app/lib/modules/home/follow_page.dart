@@ -78,7 +78,7 @@ class _FollowPageState extends State<FollowPage> {
   }
 
   // ---------- 网页元数据抓取 ----------
-  Future<_RoomExtra> _fetchMeta(String roomId) async {
+  Future<_RoomExtra> _fetchMeta(String roomId, bool isLive) async {
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5);
@@ -140,36 +140,13 @@ class _FollowPageState extends State<FollowPage> {
         }
       }
 
-      // ★ 直播预告：多策略提取（DOM 节点 → JSON 字段 → 裸文本）
+      // ★ 直播预告：仅对未开播的主播发起 WS 请求，避免并发过高
       String preview = '';
-      final fi = body.indexOf('recommend-live-forenotice');
-      if (fi >= 0) {
-        final pStart = body.indexOf('<p>', fi);
-        final pEnd = pStart >= 0 ? body.indexOf('</p>', pStart) : -1;
-        if (pStart >= 0 && pEnd > pStart) {
-          preview = _decodeEntities(body.substring(pStart + 3, pEnd))
-              .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
-              .trim();
-        }
+      if (!isLive) {
+        try {
+          preview = await HuyaDanmakuClient.fetchScheduleOnce(roomId).timeout(const Duration(seconds: 8));
+        } catch (_) {}
       }
-      if (preview.isEmpty) {
-        for (final key in ['sLiveIntro', 'liveIntro', 'sForenotice', 'forenotice', 'sIntro']) {
-          final m = RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').firstMatch(body);
-          if (m != null) {
-            final v = _unescape(m.group(1)!).trim();
-            if (v.isNotEmpty) { preview = v; break; }
-          }
-        }
-      }
-      if (preview.isEmpty) {
-        final m = RegExp(r'直播预告[：:]([^<"]{4,80})').firstMatch(body);
-        if (m != null) {
-          preview = _decodeEntities(m.group(1)!)
-              .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
-              .trim();
-        }
-      }
-      preview = preview.replaceFirst(RegExp(r'^直播预告[：:]\s*'), '').trim();
 
       return _RoomExtra(
         screenshot: cover,
@@ -192,24 +169,24 @@ class _FollowPageState extends State<FollowPage> {
       final snapshot = store.items.toList();
       for (final e in snapshot) {
         try {
-          final results = await Future.wait<Object?>([
-            _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6)),
-            _fetchMeta(e.roomId),
-          ]);
-          final info = results[0];
-          final meta = results[1] as _RoomExtra;
+          // 1. 先获取直播流信息，判断是否开播
+          final info = await _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6));
+          bool isLive = false;
           if (info != null) {
-            final d = info as dynamic;
+            isLive = info.isLive;
             final idx = store.items.indexWhere((x) => x.roomId == e.roomId);
             if (idx >= 0) {
               store.items[idx] = FollowItem(
                 roomId: e.roomId,
-                name: d.streamerInfo.nickname.isNotEmpty ? d.streamerInfo.nickname : e.name,
-                avatar: d.streamerInfo.avatar.isNotEmpty ? d.streamerInfo.avatar : e.avatar,
-                isLive: d.isLive,
+                name: info.streamerInfo.nickname.isNotEmpty ? info.streamerInfo.nickname : e.name,
+                avatar: info.streamerInfo.avatar.isNotEmpty ? info.streamerInfo.avatar : e.avatar,
+                isLive: isLive,
               );
             }
           }
+          
+          // 2. 获取元数据（封面、粉丝），并根据 isLive 决定是否请求 WS 预告
+          final meta = await _fetchMeta(e.roomId, isLive);
           _extras[e.roomId] = meta;
         } catch (_) {}
       }
