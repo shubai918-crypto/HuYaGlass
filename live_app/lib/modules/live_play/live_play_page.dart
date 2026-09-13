@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_app/core/app_settings.dart';
+import '../home/home_page.dart'; // ★ 导入 NowWatching / NowRoom
 import 'live_play_controller.dart';
 
 List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? textColor}) {
@@ -48,6 +49,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   late final LivePlayController c = Get.put(LivePlayController());
   late final TabController _tab = TabController(length: 3, vsync: this);
   bool _chromeVisible = false;
+  Worker? _nameWorker; // ★ 新增：用于监听主播名并写入迷你条
 
   @override
   void initState() {
@@ -55,10 +57,24 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _chromeVisible = true);
     });
+    
+    // ★ 核心修复：无论从哪里进入直播间，只要主播信息加载完成，就自动登记到"正在播放"
+    final args = Get.arguments;
+    final roomId = (args is Map ? args['roomId'] : null)?.toString() ?? '';
+    _nameWorker = ever(c.streamerName, (name) {
+      if (name.isNotEmpty) {
+        NowWatching.notifier.value = NowRoom(
+          roomId: roomId,
+          nickname: name,
+          avatarUrl: c.streamerAvatar.value,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _nameWorker?.dispose(); // ★ 释放监听
     _tab.dispose();
     Get.delete<LivePlayController>();
     super.dispose();
@@ -102,7 +118,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 顶部信息栏：液态玻璃胶囊，折射底层视频画面 (PlatformView)
   Widget _header() {
     return Obx(() => Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -117,8 +132,8 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
               refractiveIndex: 1.2,
               saturation: 1.3,
               glassColor: Colors.black.withOpacity(0.15),
-              platformViewMode: PlatformViewGlassMode.passthrough, // ★ 折射底层 PlatformView
-              bodyMode: GlassBodyMode.adaptive, // ★ 根据视频画面明暗自适应
+              platformViewMode: PlatformViewGlassMode.passthrough,
+              bodyMode: GlassBodyMode.adaptive,
             ),
             child: Row(children: [
               CircleAvatar(radius: 18, backgroundColor: Colors.white10,
@@ -817,7 +832,6 @@ class _DetailTab extends StatelessWidget {
   BoxDecoration _card() => BoxDecoration(color: const Color(0xFF16161E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.06)));
 }
 
-// ★ 调试页：受 AppSettings.debugEnabled 开关控制
 class _DebugTab extends StatelessWidget {
   final LivePlayController c;
   const _DebugTab({required this.c});
