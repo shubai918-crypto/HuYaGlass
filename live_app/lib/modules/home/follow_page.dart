@@ -24,6 +24,12 @@ class _RoomExtra {
   });
 }
 
+class _PreviewCache {
+  final String text;
+  final int ts;
+  _PreviewCache(this.text, this.ts);
+}
+
 class FollowPage extends StatefulWidget {
   const FollowPage({super.key});
   @override
@@ -33,6 +39,7 @@ class FollowPage extends StatefulWidget {
 class _FollowPageState extends State<FollowPage> {
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final Map<String, _RoomExtra> _extras = {};
+  final Map<String, _PreviewCache> _previewCache = {};
   bool _offlineByFans = false;
 
   @override
@@ -78,11 +85,27 @@ class _FollowPageState extends State<FollowPage> {
     return '$v';
   }
 
-  // ---------- 网页元数据抓取 ----------
-  Future<_RoomExtra> _fetchMeta(String roomId, bool isLive,
-      {int topSid = 0, int subSid = 0, int ayyuid = 0}) async {
+  // ---------- 有界并发池 ----------
+  Future<void> _runPool<T>(
+      List<T> items, int concurrency, Future<void> Function(T) task) async {
+    if (items.isEmpty) return;
+    var next = 0;
+    await Future.wait(List.generate(concurrency, (_) async {
+      while (true) {
+        final i = next++;
+        if (i >= items.length) return;
+        try {
+          await task(items[i]);
+        } catch (_) {}
+      }
+    }));
+  }
+
+  // ---------- 网页元数据（仅封面/粉丝，不含预告） ----------
+  Future<_RoomExtra> _fetchHttpMeta(String roomId) async {
     try {
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
       final req = await client
           .getUrl(Uri.parse('https://www.huya.com/$roomId'))
           .timeout(const Duration(seconds: 6));
@@ -119,8 +142,9 @@ class _FollowPageState extends State<FollowPage> {
       }
 
       String cover = '';
-      final cm = RegExp(r'''https?://live-cover\.msstatic\.com[^"'\s<>]+?\.jpg''')
-          .firstMatch(nbody);
+      final cm =
+          RegExp(r'''https?://live-cover\.msstatic\.com[^"'\s<>]+?\.jpg''')
+              .firstMatch(nbody);
       if (cm != null) cover = _decodeEntities(cm.group(0)!);
       if (cover.isEmpty) {
         cover = pick(['screenshot', 'sScreenshot', 'gameScreenshot']);
@@ -142,79 +166,124 @@ class _FollowPageState extends State<FollowPage> {
         }
       }
 
-      // ★ 直播预告：未开播时用真实 ID 走 WS 一次性请求
-      String preview = '';
-      if (!isLive) {
-        try {
-          preview = await HuyaDanmakuClient.fetchScheduleOnce(
-            roomId,
-            topSid: topSid,
-            subSid: subSid,
-            ayyuid: ayyuid,
-          ).timeout(const Duration(seconds: 8));
-        } catch (_) {}
-      }
-
       return _RoomExtra(
         screenshot: cover,
         intro: pick(['introduction', 'roomIntro', 'intro']),
         fans: fans,
         fansText: fansText,
-        preview: preview,
       );
     } catch (_) {
       return _RoomExtra();
     }
   }
 
-  // ---------- 刷新 ----------
+  // ---------- 刷新：两阶段 ----------
   Future<void> _refresh() async {
     final store = FollowStore.to;
     if (store.refreshing.value) return;
     store.refreshing.value = true;
     try {
       final snapshot = store.items.toList();
-      for (final e in snapshot) {
+      final ids = <String, List<int>>{};
+      final offlineRooms = <String>[];
+      final now0 = DateTime.now().millisecondsSinceEpoch;
+
+      // 阶段1：4 路并发拉 流信息+封面/粉丝，完成一个立即显示一个
+      await _runPool(snapshot, 4, (e) async {
+        final results = await Future.wait<Object?>([
+          _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6)),
+          _fetchHttpMeta(e.roomId).timeout(const Duration(seconds: 6)),
+        ]);
+        final info = results[0];
+        var meta = (results[1] as _RoomExtra?) ?? _RoomExtra();
+        var isLive = false;
+        var top = 0;
+        var sub = 0;
+        var uid = 0;
+        if (info != null) {
+          final d = info as dynamic;
+          isLive = d.isLive == true;
+          try { uid = (d.ayyuid as int?) ?? 0; } catch (_) {}
+          try {
+            top = (d.topSid as int?) ?? 0;
+            if (top == 0) top = (d.presenterUid as int?) ?? 0;
+          } catch (_) {}
+          try { sub = (d.subSid as int?) ?? 0; } catch (_) {}
+          final idx = store.items.indexWhere((x) => x.roomId == e.roomId);
+          if (idx >= 0) {
+            store.items[idx] = FollowItem(
+              roomId: e.roomId,
+              name: d.streamerInfo.nickname.isNotEmpty
+                  ? d.streamerInfo.nickname
+                  : e.name,
+              avatar: d.streamerInfo.avatar.isNotEmpty
+                  ? d.streamerInfo.avatar
+                  : e.avatar,
+              isLive: isLive,
+            );
+          }
+        }
+        ids[e.roomId] = [top, sub, uid];
+        if (!isLive && uid > 0) offlineRooms.add(e.roomId);
+        // 5 分钟内的预告缓存直接复用，秒出
+        final pc = _previewCache[e.roomId];
+        if (!isLive && pc != null && now0 - pc.ts < 300000) {
+          meta = _RoomExtra(
+            screenshot: meta.screenshot,
+            intro: meta.intro,
+            fans: meta.fans,
+            fansText: meta.fansText,
+            preview: pc.text,
+          );
+        }
+        _extras[e.roomId] = meta;
+        if (mounted) setState(() {});
+      });
+
+      // 阶段2：单条 WS 连接顺序问所有未开播主播的预告（无重复握手）
+      final pending = offlineRooms
+          .where((rid) =>
+              (_previewCache[rid] == null ||
+                  now0 - _previewCache[rid]!.ts >= 300000))
+          .toList();
+      if (pending.isNotEmpty && mounted) {
+        final client = HuyaDanmakuClient();
         try {
-          final info = await _resolver
-              .resolveStream(e.roomId)
-              .timeout(const Duration(seconds: 6));
-          bool isLive = false;
-          int topSid = 0, subSid = 0, ayyuid = 0;
-          if (info != null) {
-            final d = info as dynamic;
-            isLive = d.isLive == true;
-            try { ayyuid = (d.ayyuid as int?) ?? 0; } catch (_) {}
-            try {
-              topSid = (d.topSid as int?) ?? 0;
-              if (topSid == 0) topSid = (d.presenterUid as int?) ?? 0;
-            } catch (_) {}
-            try { subSid = (d.subSid as int?) ?? 0; } catch (_) {}
-            
-            final idx = store.items.indexWhere((x) => x.roomId == e.roomId);
-            if (idx >= 0) {
-              store.items[idx] = FollowItem(
-                roomId: e.roomId,
-                name: d.streamerInfo.nickname.isNotEmpty
-                    ? d.streamerInfo.nickname
-                    : e.name,
-                avatar: d.streamerInfo.avatar.isNotEmpty
-                    ? d.streamerInfo.avatar
-                    : e.avatar,
-                isLive: isLive,
-              );
+          final f = ids[pending.first]!;
+          await client.connect(
+              topSid: f[0], subSid: f[1], uid: f[2], roomIdStr: pending.first);
+          await client.waitForReady(timeoutMs: 3000);
+          for (final rid in pending) {
+            if (!mounted) break;
+            final uid = (ids[rid]?.length ?? 0) > 2 ? ids[rid]![2] : 0;
+            final s = await client.requestScheduleFor(uid,
+                timeout: const Duration(seconds: 3));
+            if (s.isNotEmpty) {
+              _previewCache[rid] =
+                  _PreviewCache(s, DateTime.now().millisecondsSinceEpoch);
+              final ex = _extras[rid];
+              if (ex != null) {
+                _extras[rid] = _RoomExtra(
+                  screenshot: ex.screenshot,
+                  intro: ex.intro,
+                  fans: ex.fans,
+                  fansText: ex.fansText,
+                  preview: s,
+                );
+                if (mounted) setState(() {});
+              }
             }
           }
-          final meta = await _fetchMeta(e.roomId, isLive,
-              topSid: topSid, subSid: subSid, ayyuid: ayyuid);
-          _extras[e.roomId] = meta;
-        } catch (_) {}
+        } catch (_) {} finally {
+          client.disconnect();
+        }
       }
+
       await store.save();
     } finally {
       store.refreshing.value = false;
+      if (mounted) setState(() {});
     }
-    if (mounted) setState(() {});
   }
 
   void _open(FollowItem it) =>
@@ -230,7 +299,8 @@ class _FollowPageState extends State<FollowPage> {
             actions: [
               TextButton(
                   onPressed: () => Get.back(result: false),
-                  child: const Text('保留', style: TextStyle(color: Colors.white54))),
+                  child:
+                      const Text('保留', style: TextStyle(color: Colors.white54))),
               TextButton(
                   onPressed: () => Get.back(result: true),
                   child: const Text('取消订阅',
