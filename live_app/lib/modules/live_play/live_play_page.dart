@@ -38,6 +38,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   late final LivePlayController c = Get.put(LivePlayController());
   late final TabController _tab = TabController(length: 3, vsync: this);
   bool _chromeVisible = false;
+  bool _panelOpen = false;
   Worker? _nameWorker;
   Worker? _avatarWorker;
 
@@ -206,80 +207,138 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-    // ★ 底部控制区：键盘弹出时自动收起清晰度/线路两排
+// ★ 底部控制区：单行玻璃条 + 可展开的清晰度/线路玻璃抽屉
   Widget _bottomBar(bool keyboardOpen) {
+    final showPanel = _panelOpen && !keyboardOpen;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-      child: GlassContainer(
-        shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-        useOwnLayer: true,
-        settings: LiquidGlassSettings(blur: 20, thickness: 28, glassColor: Colors.black.withOpacity(0.45)),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (!keyboardOpen) ...[
-            SizedBox(height: 32, child: Obx(() => ListView.separated(
-                  scrollDirection: Axis.horizontal, itemCount: c.qualities.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 6),
-                  itemBuilder: (_, i) {
-                    final q = c.qualities[i]; final sel = q.name == c.currentQuality.value;
-                    return GestureDetector(
-                      onTap: () => c.switchQuality(q),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                            color: sel ? const Color(0xFF00D2FF).withOpacity(0.14) : Colors.white.withOpacity(0.05),
-                            border: Border.all(color: sel ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.12)),
-                            borderRadius: BorderRadius.circular(999)),
-                        child: Text(q.name, style: TextStyle(color: sel ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 11)),
-                      ),
-                    );
-                  }))),
-            const SizedBox(height: 6),
-            SizedBox(height: 32, child: Obx(() => ListView.separated(
-                  scrollDirection: Axis.horizontal, itemCount: c.lines.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 6),
-                  itemBuilder: (_, i) {
-                    final sel = i == c.currentLine.value;
-                    return GestureDetector(
-                      onTap: () => c.switchLine(i),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                            color: sel ? const Color(0xFF00D2FF).withOpacity(0.14) : Colors.white.withOpacity(0.05),
-                            border: Border.all(color: sel ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.12)),
-                            borderRadius: BorderRadius.circular(999)),
-                        child: Text('线路${i + 1}', style: TextStyle(color: sel ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 11)),
-                      ),
-                    );
-                  }))),
-            const SizedBox(height: 8),
-          ],
-          Row(children: [
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.bottomCenter,
+          child: showPanel
+              ? Padding(padding: const EdgeInsets.only(bottom: 8), child: _qualityPanel())
+              : const SizedBox.shrink(),
+        ),
+        GlassContainer(
+          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          useOwnLayer: true,
+          settings: LiquidGlassSettings(blur: 20, thickness: 26, glassColor: Colors.black.withOpacity(0.45)),
+          child: Row(children: [
+            // ★ 清晰度胶囊按钮：显示当前档位，点击展开抽屉
+            GestureDetector(
+              onTap: () => setState(() => _panelOpen = !_panelOpen),
+              child: Obx(() => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.speed_outlined, color: Color(0xFF00D2FF), size: 14),
+                  const SizedBox(width: 4),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 62),
+                    child: Text(
+                      c.currentQuality.value.isEmpty ? '清晰度' : c.currentQuality.value,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFF00D2FF), fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Icon(showPanel ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                      color: Colors.white40, size: 14),
+                ]),
+              )),
+            ),
             Expanded(child: GlassContainer(
               shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
               settings: LiquidGlassSettings(blur: 8, thickness: 14, glassColor: Colors.white.withOpacity(0.06)),
               child: TextField(
                 controller: c.inputController,
                 style: const TextStyle(color: Colors.white, fontSize: 14),
-                // ★ 回车键=发送；深色键盘与整体暗色风格统一
                 textInputAction: TextInputAction.send,
                 keyboardAppearance: Brightness.dark,
                 decoration: const InputDecoration(hintText: '发送弹幕...', hintStyle: TextStyle(color: Colors.white38), border: InputBorder.none),
                 onSubmitted: (t) => c.sendDanmaku(t),
               ),
             )),
-            const SizedBox(width: 8),
-            GlassIconButton(icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFFFFB25E)), size: 40, onPressed: _showEmotePicker),
             const SizedBox(width: 6),
-            GlassIconButton(icon: const Icon(Icons.send, color: Colors.white), size: 40,
+            GlassIconButton(icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFFFFB25E)), size: 38, onPressed: _showEmotePicker),
+            const SizedBox(width: 4),
+            GlassIconButton(icon: const Icon(Icons.send, color: Colors.white), size: 38,
                 glowColor: const Color(0xFF00D2FF).withOpacity(0.5),
                 onPressed: () => c.sendDanmaku(c.inputController.text)),
           ]),
+        ),
+      ]),
+    );
+  }
+
+  // ★ 清晰度/线路玻璃抽屉面板
+  Widget _qualityPanel() {
+    return GlassContainer(
+      shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      useOwnLayer: true,
+      settings: LiquidGlassSettings(blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.55)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          const Icon(Icons.high_quality_outlined, color: Color(0xFF00D2FF), size: 15),
+          const SizedBox(width: 6),
+          const Text('清晰度', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => setState(() => _panelOpen = false),
+            child: const Icon(Icons.close, color: Colors.white38, size: 16),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Obx(() => Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final q in c.qualities)
+                _glassChip(q.name, q.name == c.currentQuality.value, const Color(0xFF00D2FF), () => c.switchQuality(q)),
+            ])),
+        const SizedBox(height: 14),
+        const Row(children: [
+          Icon(Icons.route_outlined, color: Color(0xFFFF8800), size: 15),
+          SizedBox(width: 6),
+          Text('线路', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 10),
+        Obx(() => Wrap(spacing: 8, runSpacing: 8, children: [
+              for (var i = 0; i < c.lines.length; i++)
+                _glassChip('线路${i + 1}', i == c.currentLine.value, const Color(0xFFFF8800), () => c.switchLine(i)),
+            ])),
+      ]),
+    );
+  }
+
+  // ★ 单个玻璃 chip：选中带 tint + 对勾
+  Widget _glassChip(String label, bool selected, Color tint, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: GlassContainer(
+        shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        settings: LiquidGlassSettings(
+          blur: 10,
+          thickness: 16,
+          glassColor: selected ? tint.withOpacity(0.30) : Colors.white.withOpacity(0.06),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (selected) ...[
+            Icon(Icons.check, size: 12, color: tint),
+            const SizedBox(width: 4),
+          ],
+          Text(label,
+              style: TextStyle(
+                  color: selected ? tint : Colors.white60,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
         ]),
       ),
     );
   }
+
+  
   void _showEmotePicker() {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
     showModalBottomSheet(
