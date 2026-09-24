@@ -442,40 +442,84 @@ class _DanmakuListState extends State<_DanmakuList> {
   void _showDanmakuActions(LivePlayController c, DanmakuMessage m) {
     final content = m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content;
     showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            SelectableText(content, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5)),
-            const SizedBox(height: 8),
-            Text('${m.nickname} · UID: ${m.uid > 0 ? '${m.uid}' : '未知'}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            const SizedBox(height: 14),
-            Row(children: [
-              Expanded(child: TextButton.icon(
-                onPressed: () { Clipboard.setData(ClipboardData(text: content)); Get.back(); Get.snackbar('提示', '已复制到剪贴板', backgroundColor: const Color(0xFF1A1A2E), colorText: Colors.white70, snackPosition: SnackPosition.BOTTOM); },
-                icon: const Icon(Icons.copy, size: 18, color: Color(0xFF00D2FF)), label: const Text('复制', style: TextStyle(color: Color(0xFF00D2FF))))),
-              const SizedBox(width: 12),
-              if (!m.isGift)
+      context: context,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+              ),
+              SelectableText(content, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5)),
+              const SizedBox(height: 8),
+              Text('${m.nickname} · UID: ${m.uid > 0 ? '${m.uid}' : '未知'}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              const SizedBox(height: 14),
+              Row(children: [
                 Expanded(child: TextButton.icon(
-                  onPressed: () { Get.back(); c.sendDanmaku(m.content); },
-                  icon: const Icon(Icons.send, size: 18, color: Color(0xFFFF8800)), label: const Text('+1 复读', style: TextStyle(color: Color(0xFFFF8800))))),
-            ]),
-          ])))),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: content));
+                    Get.back();
+                    Get.snackbar('提示', '已复制到剪贴板',
+                        backgroundColor: const Color(0xFF1A1A2E), colorText: Colors.white70,
+                        snackPosition: SnackPosition.BOTTOM);
+                  },
+                  icon: const Icon(Icons.copy, size: 18, color: Color(0xFF00D2FF)),
+                  label: const Text('复制', style: TextStyle(color: Color(0xFF00D2FF))),
+                )),
+                const SizedBox(width: 12),
+                if (!m.isGift)
+                  Expanded(child: TextButton.icon(
+                    onPressed: () { Get.back(); c.sendDanmaku(m.content); },
+                    icon: const Icon(Icons.send, size: 18, color: Color(0xFFFF8800)),
+                    label: const Text('+1 复读', style: TextStyle(color: Color(0xFFFF8800))),
+                  )),
+              ]),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   void _showDanmakuSettings(LivePlayController c) {
     showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Align(alignment: Alignment.centerLeft, child: Text('弹幕设置', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)))),
-            Obx(() => ListTile(title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)), trailing: Switch(value: c.showGiftOverlay.value, onChanged: (v) => c.showGiftOverlay.value = v))),
-            Obx(() => ListTile(title: const Text('列表显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)), trailing: Switch(value: c.showGiftList.value, onChanged: (v) => c.showGiftList.value = v))),
-          ]))),
+      context: context,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('弹幕设置', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              Obx(() => ListTile(
+                    title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
+                    trailing: Switch(value: c.showGiftOverlay.value, onChanged: (v) => c.showGiftOverlay.value = v),
+                  )),
+              Obx(() => ListTile(
+                    title: const Text('列表显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
+                    trailing: Switch(value: c.showGiftList.value, onChanged: (v) => c.showGiftList.value = v),
+                  )),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
