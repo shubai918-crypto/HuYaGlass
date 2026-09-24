@@ -68,8 +68,7 @@ class _HomePageState extends State<HomePage> {
             child: Container(
               decoration: const BoxDecoration(
                 gradient: RadialGradient(
-                  center: Alignment(-0.3, -0.8),
-                  radius: 1.6,
+                  center: Alignment(-0.3, -0.8), radius: 1.6,
                   colors: [Color(0xFF2D1B4E), Color(0xFF12121A), Color(0xFF050508)],
                   stops: [0.0, 0.6, 1.0],
                 ),
@@ -80,47 +79,33 @@ class _HomePageState extends State<HomePage> {
             title: GlassContainer(
               shape: const LiquidRoundedSuperellipse(borderRadius: 999),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-              useOwnLayer: true,
-              quality: GlassQuality.premium,
-              settings: LiquidGlassSettings(
-                blur: 12, thickness: 35, refractiveIndex: 1.15, saturation: 1.2, bodyMode: GlassBodyMode.adaptive,
-              ),
-              child: const Text('HuyaLive',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              useOwnLayer: true, quality: GlassQuality.premium,
+              settings: LiquidGlassSettings(blur: 12, thickness: 35, refractiveIndex: 1.15, saturation: 1.2, bodyMode: GlassBodyMode.adaptive),
+              child: const Text('HuyaLive', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
             ),
             actions: [
               Obx(() => GlassIconButton(
-                    icon: Icon(
-                      AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                      color: Colors.white,
-                    ),
-                    size: 44,
-                    glowColor: const Color(0xFFFF8800).withOpacity(0.4),
+                    icon: Icon(AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, color: Colors.white),
+                    size: 44, glowColor: const Color(0xFFFF8800).withOpacity(0.4),
                     onPressed: () => AppSettings.to.toggleTheme(),
                   )),
               GlassIconButton(
-                icon: const Icon(Icons.settings, color: Colors.white),
-                size: 44,
+                icon: const Icon(Icons.settings, color: Colors.white), size: 44,
                 glowColor: const Color(0xFFFF8800).withOpacity(0.4),
                 onPressed: () => _showQuickSettings(context),
               ),
             ],
           ),
-          // ★ 核心修复：将迷你条放入 body 的 Stack 中，确保它悬浮在内容区底部，不被 bottomBar 遮挡
           body: Stack(
             children: [
               Padding(
-                padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 60,
-                  bottom: 140, // 给底部 TabBar 留出空间
-                ),
+                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60, bottom: 170),
                 child: IndexedStack(
                   index: _selectedIndex,
                   children: [
                     _HomeView(onOpenFollows: () => _select(2)),
                     SearchPage(
-                      onOpenRoom: (roomId, nickname, avatarUrl) =>
-                          goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+                      onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
                       isFollowed: (roomId) async => FollowStore.contains(roomId),
                       onToggleFollow: (roomId, follow, nickname, avatar) async {
                         if (follow) {
@@ -135,26 +120,20 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 16, // 悬浮在 body 底部，自然位于 bottomBar 上方
-                child: ValueListenableBuilder<NowRoom?>(
-                  valueListenable: NowWatching.notifier,
-                  builder: (context, room, _) {
-                    if (room == null) return const SizedBox.shrink();
-                    return _buildMiniBar(room);
-                  },
-                ),
+              // ★ 悬浮迷你条：始终在导航栏上方，跟随收拢/展开平滑移动
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeInOutCubic,
+                left: 16, right: 16,
+                bottom: _isMinimized ? 62.0 : 98.0,
+                child: _buildMiniBar(),
               ),
             ],
           ),
           bottomBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
-            settings: LiquidGlassSettings(
-              blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45),
-            ),
+            settings: LiquidGlassSettings(blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45)),
             selectedIndex: _selectedIndex,
             onTabSelected: _select,
             selectedIconColor: const Color(0xFFFF8800),
@@ -176,28 +155,23 @@ class _HomePageState extends State<HomePage> {
 
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16161E),
+      context: context, backgroundColor: const Color(0xFF16161E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-            ),
+            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
             Obx(() => SwitchListTile(
                   secondary: const Icon(Icons.dark_mode, color: Colors.white70),
                   title: const Text('深色模式', style: TextStyle(color: Colors.white, fontSize: 15)),
-                  value: AppSettings.to.isDark,
-                  onChanged: (_) => AppSettings.to.toggleTheme(),
+                  value: AppSettings.to.isDark, onChanged: (_) => AppSettings.to.toggleTheme(),
                 )),
             Obx(() => SwitchListTile(
                   secondary: const Icon(Icons.bug_report_outlined, color: Colors.white70),
                   title: const Text('调试模式', style: TextStyle(color: Colors.white, fontSize: 15)),
-                  value: AppSettings.to.debugEnabled.value,
-                  onChanged: AppSettings.to.setDebug,
+                  value: AppSettings.to.debugEnabled.value, onChanged: AppSettings.to.setDebug,
                 )),
           ]),
         ),
@@ -205,45 +179,48 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildMiniBar(NowRoom room) {
-    return GlassContainer(
-      key: ValueKey(room.roomId),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      useOwnLayer: true,
-      quality: GlassQuality.premium,
-      settings: LiquidGlassSettings(
-        blur: 20,
-        thickness: 25,
-        platformViewMode: PlatformViewGlassMode.passthrough,
-        glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
-      ),
-      child: Row(children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: room.avatarUrl.isNotEmpty
-              ? Image.network(room.avatarUrl, width: 40, height: 40, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _artPlaceholder())
-              : _artPlaceholder(),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(room.nickname, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-            const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 11)),
+  Widget _buildMiniBar() {
+    return ValueListenableBuilder<NowRoom?>(
+      valueListenable: NowWatching.notifier,
+      builder: (context, room, _) {
+        if (room == null) return const SizedBox.shrink();
+        return GlassContainer(
+          key: ValueKey(room.roomId),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          useOwnLayer: true, quality: GlassQuality.premium,
+          settings: LiquidGlassSettings(
+            blur: 20, thickness: 25,
+            platformViewMode: PlatformViewGlassMode.passthrough,
+            glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
+          ),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: room.avatarUrl.isNotEmpty
+                  ? Image.network(room.avatarUrl, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _artPlaceholder())
+                  : _artPlaceholder(),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(room.nickname, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 11)),
+              ]),
+            ),
+            GlassIconButton(
+              icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)), size: 36,
+              onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
+            ),
+            const SizedBox(width: 4),
+            GlassIconButton(
+              icon: const Icon(Icons.close, color: Colors.white54), size: 32,
+              onPressed: () => NowWatching.notifier.value = null,
+            ),
           ]),
-        ),
-        GlassIconButton(
-          icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)), size: 36,
-          onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
-        ),
-        const SizedBox(width: 4),
-        GlassIconButton(
-          icon: const Icon(Icons.close, color: Colors.white54), size: 32,
-          onPressed: () => NowWatching.notifier.value = null,
-        ),
-      ]),
+        );
+      },
     );
   }
 
@@ -260,7 +237,6 @@ class _HomePageState extends State<HomePage> {
 class _HomeView extends StatelessWidget {
   final VoidCallback onOpenFollows;
   const _HomeView({required this.onOpenFollows});
-
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -269,30 +245,21 @@ class _HomeView extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFF8800), Color(0xFFFF5A00)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight),
+            gradient: const LinearGradient(colors: [Color(0xFFFF8800), Color(0xFFFF5A00)], begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(24),
           ),
           child: Column(children: [
             const Icon(Icons.live_tv, size: 56, color: Colors.white),
             const SizedBox(height: 12),
-            const Text('虎牙直播 · 液态玻璃',
-                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+            const Text('虎牙直播 · 液态玻璃', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
-            Text('看直播 · 弹幕 · 订阅 · 真实发送',
-                style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
+            Text('看直播 · 弹幕 · 订阅 · 真实发送', style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
             const SizedBox(height: 18),
-            GlassButton(
-              icon: const Icon(Icons.play_arrow),
-              label: '进入直播间',
-              onTap: () => _openEnterRoom(context),
-            ),
+            GlassButton(icon: const Icon(Icons.play_arrow), label: '进入直播间', onTap: () => _openEnterRoom(context)),
           ]),
         ),
         const SizedBox(height: 16),
-        _card(icon: Icons.subscriptions_outlined, color: const Color(0xFFFF8800),
-            label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
+        _card(icon: Icons.subscriptions_outlined, color: const Color(0xFFFF8800), label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
         const SizedBox(height: 12),
         _card(icon: Icons.account_circle, color: const Color(0xFFFFB25E),
             label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
@@ -301,31 +268,22 @@ class _HomeView extends StatelessWidget {
     );
   }
 
-  Widget _card({required IconData icon, required Color color, required String label,
-      required String sub, required VoidCallback onTap}) {
+  Widget _card({required IconData icon, required Color color, required String label, required String sub, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF16161E),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.06)),
-        ),
+        decoration: BoxDecoration(color: const Color(0xFF16161E), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.06))),
         child: Row(children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14)),
-            child: Icon(icon, color: color, size: 24),
-          ),
+          Container(width: 44, height: 44,
+              decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14)),
+              child: Icon(icon, color: color, size: 24)),
           const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12)),
-            ]),
-          ),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12)),
+          ])),
           const Icon(Icons.chevron_right, color: Colors.white38),
         ]),
       ),
@@ -340,19 +298,12 @@ class _HomeView extends StatelessWidget {
         backgroundColor: const Color(0xFF1A1A2E),
         title: const Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 16)),
         content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: '输入房间号，如 31343932',
-            hintStyle: TextStyle(color: Colors.white38)),
+          controller: ctrl, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(hintText: '输入房间号，如 31343932', hintStyle: TextStyle(color: Colors.white38)),
         ),
         actions: [
           TextButton(onPressed: () => Get.back(), child: const Text('取消', style: TextStyle(color: Colors.white54))),
-          TextButton(
-            onPressed: () { Get.back(); goLive(ctrl.text.trim()); },
-            child: const Text('进入', style: TextStyle(color: Color(0xFFFF8800))),
-          ),
+          TextButton(onPressed: () { Get.back(); goLive(ctrl.text.trim()); }, child: const Text('进入', style: TextStyle(color: Color(0xFFFF8800)))),
         ],
       ),
     );
