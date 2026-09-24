@@ -244,7 +244,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                     ),
                   ),
                   Icon(showPanel ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                      color: Colors.white40, size: 14),
+                      color: Colors.white38, size: 14),
                 ]),
               )),
             ),
