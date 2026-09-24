@@ -7,7 +7,7 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_app/core/app_settings.dart';
-import '../home/home_page.dart'; // ★ 导入 NowWatching / NowRoom
+import '../home/home_page.dart';
 import 'live_play_controller.dart';
 
 List<InlineSpan> buildEmoteSpans(String text, {double fontSize = 14, Color? textColor}) {
@@ -49,7 +49,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   late final LivePlayController c = Get.put(LivePlayController());
   late final TabController _tab = TabController(length: 3, vsync: this);
   bool _chromeVisible = false;
-  Worker? _nameWorker; // ★ 新增：用于监听主播名并写入迷你条
+  Worker? _nameWorker;
 
   @override
   void initState() {
@@ -57,16 +57,12 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _chromeVisible = true);
     });
-    
-    // ★ 核心修复：无论从哪里进入直播间，只要主播信息加载完成，就自动登记到"正在播放"
     final args = Get.arguments;
     final roomId = (args is Map ? args['roomId'] : null)?.toString() ?? '';
     _nameWorker = ever(c.streamerName, (name) {
       if (name.isNotEmpty) {
         NowWatching.notifier.value = NowRoom(
-          roomId: roomId,
-          nickname: name,
-          avatarUrl: c.streamerAvatar.value,
+          roomId: roomId, nickname: name, avatarUrl: c.streamerAvatar.value,
         );
       }
     });
@@ -74,7 +70,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
 
   @override
   void dispose() {
-    _nameWorker?.dispose(); // ★ 释放监听
+    _nameWorker?.dispose();
     _tab.dispose();
     Get.delete<LivePlayController>();
     super.dispose();
@@ -127,65 +123,38 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             useOwnLayer: true,
             quality: GlassQuality.premium,
             settings: LiquidGlassSettings(
-              blur: 15,
-              thickness: 30,
-              refractiveIndex: 1.2,
-              saturation: 1.3,
+              blur: 15, thickness: 30, refractiveIndex: 1.2, saturation: 1.3,
               glassColor: Colors.black.withOpacity(0.15),
               platformViewMode: PlatformViewGlassMode.passthrough,
               bodyMode: GlassBodyMode.adaptive,
             ),
             child: Row(children: [
-              CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.white10,
-                  backgroundImage: c.streamerAvatar.value.isNotEmpty
-                      ? NetworkImage(c.streamerAvatar.value)
-                      : null,
-                  child: c.streamerAvatar.value.isEmpty
-                      ? const Icon(Icons.person, size: 18, color: Colors.white54)
-                      : null),
+              CircleAvatar(radius: 18, backgroundColor: Colors.white10,
+                  backgroundImage: c.streamerAvatar.value.isNotEmpty ? NetworkImage(c.streamerAvatar.value) : null,
+                  child: c.streamerAvatar.value.isEmpty ? const Icon(Icons.person, size: 18, color: Colors.white54) : null),
               const SizedBox(width: 8),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                    Text(
-                        c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            height: 1.1,
-                            shadows: [Shadow(color: Colors.black54, blurRadius: 2)]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    Text('粉丝 ${_fmt(c.fansCount.value)}',
-                        style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.1),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ])),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700, height: 1.1, shadows: [Shadow(color: Colors.black54, blurRadius: 2)]),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('粉丝 ${_fmt(c.fansCount.value)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.1),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ])),
               const SizedBox(width: 6),
-              // ★ 1.5.0 嵌套玻璃 Vibrancy：高能标签（不再二次读背景，UIKit 级透射）
+              // ★ 嵌套玻璃：高能标签
               GestureDetector(
                 onTap: _showHighEnergySheet,
-                child: AdaptiveGlass.vibrancy(
+                child: GlassContainer(
                   shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-                  settings: LiquidGlassSettings(
-                      blur: 8, thickness: 18, glassColor: const Color(0x55FFB25E)),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 12),
-                      SizedBox(width: 2),
-                      Text('高能',
-                          style: TextStyle(
-                              color: Color(0xFFFFB25E),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  useOwnLayer: true,
+                  settings: LiquidGlassSettings(blur: 8, thickness: 18, glassColor: const Color(0x55FFB25E)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 12),
+                    SizedBox(width: 2),
+                    Text('高能', style: TextStyle(color: Color(0xFFFFB25E), fontSize: 10, fontWeight: FontWeight.w600)),
+                  ]),
                 ),
               ),
               const SizedBox(width: 6),
@@ -201,27 +170,26 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(width: 6),
-              // ★ 1.7.0 更多菜单：按住不松手滑动到选项上松手即选中（连续滑动默认开启）
-              GlassPullDownButton(
-                icon: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
-                menuItems: [
-                  GlassMenuItem(label: '复制房间链接', onTap: _copyUrl),
-                  GlassMenuItem(label: '刷新线路', onTap: c.refreshPlay),
-                  GlassMenuItem(
-                      label: c.isMuted.value ? '取消静音' : '静音', onTap: c.toggleMute),
-                  GlassMenuDivider(),
-                  GlassMenuItem(
-                      label: c.isFullscreen.value ? '退出全屏' : '全屏',
-                      onTap: c.toggleFullscreen),
+              // ★ 1.7.0 更多菜单 (使用 GlassMenu 兼容 1.7.2 API)
+              GlassMenu(
+                trigger: Container(
+                  width: 28, height: 28, alignment: Alignment.center,
+                  decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
+                  child: const Icon(Icons.more_horiz, color: Colors.white, size: 16),
+                ),
+                items: [
+                  GlassMenuItem(title: '复制房间链接', onTap: _copyUrl),
+                  GlassMenuItem(title: '刷新线路', onTap: c.refreshPlay),
+                  GlassMenuItem(title: c.isMuted.value ? '取消静音' : '静音', onTap: c.toggleMute),
+                  GlassMenuItem(title: c.isFullscreen.value ? '退出全屏' : '全屏', onTap: c.toggleFullscreen),
                 ],
               ),
               const SizedBox(width: 6),
               GestureDetector(
                 onTap: () => Get.back(),
                 child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
                   child: const Icon(Icons.close, color: Colors.white, size: 16),
                 ),
               ),
@@ -232,8 +200,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
 
   void _copyUrl() {
     Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${c.roomId}'));
-    Get.snackbar('已复制', '房间链接已复制到剪贴板',
-        snackPosition: SnackPosition.BOTTOM);
+    Get.snackbar('已复制', '房间链接已复制到剪贴板', snackPosition: SnackPosition.BOTTOM);
   }
 
   void _showHighEnergySheet() {
@@ -855,7 +822,6 @@ class _DetailTab extends StatelessWidget {
           Text(c.lastLiveText, style: const TextStyle(color: Colors.white54, fontSize: 13)),
         ])),
       ],
-      // ★ 本场直播标题
       if (c.roomTitle.value.isNotEmpty) ...[
         const SizedBox(height: 12),
         Container(padding: const EdgeInsets.all(14), decoration: _card(),
@@ -865,7 +831,6 @@ class _DetailTab extends StatelessWidget {
               Text(c.roomTitle.value, style: const TextStyle(color: Colors.white54, fontSize: 13)),
             ])),
       ],
-      // ★ 日常开播预告 (WS 获取)
       if (c.liveSchedule.value.isNotEmpty) ...[
         const SizedBox(height: 12),
         Container(padding: const EdgeInsets.all(14), decoration: _card(),
