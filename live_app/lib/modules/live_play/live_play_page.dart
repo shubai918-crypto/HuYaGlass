@@ -136,29 +136,56 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
               bodyMode: GlassBodyMode.adaptive,
             ),
             child: Row(children: [
-              CircleAvatar(radius: 18, backgroundColor: Colors.white10,
-                  backgroundImage: c.streamerAvatar.value.isNotEmpty ? NetworkImage(c.streamerAvatar.value) : null,
-                  child: c.streamerAvatar.value.isEmpty ? const Icon(Icons.person, size: 18, color: Colors.white54) : null),
+              CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white10,
+                  backgroundImage: c.streamerAvatar.value.isNotEmpty
+                      ? NetworkImage(c.streamerAvatar.value)
+                      : null,
+                  child: c.streamerAvatar.value.isEmpty
+                      ? const Icon(Icons.person, size: 18, color: Colors.white54)
+                      : null),
               const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                Text(c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700, height: 1.1, shadows: [Shadow(color: Colors.black54, blurRadius: 2)]),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text('粉丝 ${_fmt(c.fansCount.value)}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.1),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                    Text(
+                        c.streamerName.value.isEmpty ? '—' : c.streamerName.value,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                            shadows: [Shadow(color: Colors.black54, blurRadius: 2)]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    Text('粉丝 ${_fmt(c.fansCount.value)}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.1),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ])),
               const SizedBox(width: 6),
+              // ★ 1.5.0 嵌套玻璃 Vibrancy：高能标签（不再二次读背景，UIKit 级透射）
               GestureDetector(
                 onTap: _showHighEnergySheet,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(color: const Color(0x44FFB25E), borderRadius: BorderRadius.circular(12)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 12),
-                    SizedBox(width: 2),
-                    Text('高能', style: TextStyle(color: Color(0xFFFFB25E), fontSize: 10, fontWeight: FontWeight.w600)),
-                  ]),
+                child: AdaptiveGlass.vibrancy(
+                  shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+                  settings: LiquidGlassSettings(
+                      blur: 8, thickness: 18, glassColor: const Color(0x55FFB25E)),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 12),
+                      SizedBox(width: 2),
+                      Text('高能',
+                          style: TextStyle(
+                              color: Color(0xFFFFB25E),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -174,17 +201,39 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(width: 6),
+              // ★ 1.7.0 更多菜单：按住不松手滑动到选项上松手即选中（连续滑动默认开启）
+              GlassPullDownButton(
+                icon: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
+                menuItems: [
+                  GlassMenuItem(label: '复制房间链接', onTap: _copyUrl),
+                  GlassMenuItem(label: '刷新线路', onTap: c.refreshPlay),
+                  GlassMenuItem(
+                      label: c.isMuted.value ? '取消静音' : '静音', onTap: c.toggleMute),
+                  GlassMenuDivider(),
+                  GlassMenuItem(
+                      label: c.isFullscreen.value ? '退出全屏' : '全屏',
+                      onTap: c.toggleFullscreen),
+                ],
+              ),
+              const SizedBox(width: 6),
               GestureDetector(
                 onTap: () => Get.back(),
                 child: Container(
-                  width: 28, height: 28,
-                  decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
                   child: const Icon(Icons.close, color: Colors.white, size: 16),
                 ),
               ),
             ]),
           ),
         ));
+  }
+
+  void _copyUrl() {
+    Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${c.roomId}'));
+    Get.snackbar('已复制', '房间链接已复制到剪贴板',
+        snackPosition: SnackPosition.BOTTOM);
   }
 
   void _showHighEnergySheet() {
