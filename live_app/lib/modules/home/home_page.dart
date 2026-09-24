@@ -44,7 +44,7 @@ class _HomePageState extends State<HomePage> {
 
   void _select(int i) => setState(() => _selectedIndex = i);
 
-@override
+  @override
   Widget build(BuildContext context) {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -132,13 +132,13 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          // ★ 修复：参数名改为 bottomNavigationBar，并使用 expanded 避免重叠
-          bottomNavigationBar: GlassTabBar.minimizable(
+          // ★ 核心修复：使用正确的 bottomBar 参数，并设置 expanded 防止重叠
+          bottomBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
             bottomAccessory: _buildMiniBar(),
             bottomAccessoryPlacement: GlassTabBarAccessoryPlacement.expanded,
-            bottomAccessorySpacing: 8,
+            bottomAccessorySpacing: 8.0,
             settings: LiquidGlassSettings(
               blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45),
             ),
@@ -163,7 +163,8 @@ class _HomePageState extends State<HomePage> {
 
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF16161E),
+      context: context,
+      backgroundColor: const Color(0xFF16161E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
@@ -196,7 +197,8 @@ class _HomePageState extends State<HomePage> {
           key: ValueKey(room.roomId),
           shape: const LiquidRoundedSuperellipse(borderRadius: 20),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          useOwnLayer: true, quality: GlassQuality.premium,
+          useOwnLayer: true,
+          quality: GlassQuality.premium,
           settings: LiquidGlassSettings(
             blur: 20, thickness: 25,
             platformViewMode: PlatformViewGlassMode.passthrough,
@@ -245,6 +247,7 @@ class _HomePageState extends State<HomePage> {
 class _HomeView extends StatelessWidget {
   final VoidCallback onOpenFollows;
   const _HomeView({required this.onOpenFollows});
+
   @override
   Widget build(BuildContext context) {
     return ListView(
