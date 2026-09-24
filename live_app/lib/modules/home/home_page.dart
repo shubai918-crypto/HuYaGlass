@@ -95,19 +95,25 @@ class _HomePageState extends State<HomePage> {
             actions: [
               Obx(() => GlassIconButton(
                     icon: Icon(
-                      AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                      AppSettings.to.isDark
+                          ? Icons.light_mode_outlined
+                          : Icons.dark_mode_outlined,
                       color: Colors.white,
                     ),
                     size: 44,
+                    // ★ 1.6.2 原生 iOS 26 交互光晕校准（1.6 半径）
+                    interactionGlowRadius: 1.6,
+                    interactionGlowColor: const Color(0xFFFF8800),
                     onPressed: () => AppSettings.to.toggleTheme(),
                   )),
               GlassIconButton(
                 icon: const Icon(Icons.settings, color: Colors.white),
                 size: 44,
+                interactionGlowRadius: 1.6,
+                interactionGlowColor: const Color(0xFFFF8800),
                 onPressed: () => _showQuickSettings(context),
               ),
             ],
-          ),
           body: Padding(
             padding: EdgeInsets.only(
               top: MediaQuery.of(context).padding.top + 60,
@@ -138,6 +144,8 @@ class _HomePageState extends State<HomePage> {
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
             bottomAccessory: _buildMiniBar(),
+            // ★ 1.6.2 原生交互光晕
+            interactionGlowRadius: 1.6,
             settings: LiquidGlassSettings(
               blur: 24,
               thickness: 30,
@@ -145,16 +153,30 @@ class _HomePageState extends State<HomePage> {
             ),
             selectedIndex: _selectedIndex,
             onTabSelected: _select,
-            selectedIconColor: const Color(0xFFFF8800),
-            selectedLabelColor: const Color(0xFFFF8800),
+            // tintColor 填充后前景自动反白，选中色统一改白
+            selectedIconColor: Colors.white,
+            selectedLabelColor: Colors.white,
             unselectedIconColor: Colors.white.withOpacity(0.5),
             unselectedLabelColor: Colors.white.withOpacity(0.5),
             indicatorColor: const Color(0xFFFF8800).withOpacity(0.15),
-            tabs: const [
-              GlassTab(icon: Icon(Icons.home), label: '首页'),
-              GlassTab(icon: Icon(Icons.search), label: '搜索'),
-              GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-              GlassTab(icon: Icon(Icons.settings), label: '设置'),
+            // ★ 1.6.0 tintColor：选中胶囊被虎牙橙整体填充
+            tabs: [
+              GlassTab(
+                  icon: const Icon(Icons.home),
+                  label: '首页',
+                  tintColor: _selectedIndex == 0 ? const Color(0xFFFF8800) : null),
+              GlassTab(
+                  icon: const Icon(Icons.search),
+                  label: '搜索',
+                  tintColor: _selectedIndex == 1 ? const Color(0xFFFF8800) : null),
+              GlassTab(
+                  icon: const Icon(Icons.subscriptions_outlined),
+                  label: '订阅',
+                  tintColor: _selectedIndex == 2 ? const Color(0xFFFF8800) : null),
+              GlassTab(
+                  icon: const Icon(Icons.settings),
+                  label: '设置',
+                  tintColor: _selectedIndex == 3 ? const Color(0xFFFF8800) : null),
             ],
           ),
         ),
