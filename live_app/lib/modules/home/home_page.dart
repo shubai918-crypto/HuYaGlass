@@ -44,7 +44,7 @@ class _HomePageState extends State<HomePage> {
 
   void _select(int i) => setState(() => _selectedIndex = i);
 
-  @override
+@override
   Widget build(BuildContext context) {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -68,7 +68,8 @@ class _HomePageState extends State<HomePage> {
             child: Container(
               decoration: const BoxDecoration(
                 gradient: RadialGradient(
-                  center: Alignment(-0.3, -0.8), radius: 1.6,
+                  center: Alignment(-0.3, -0.8),
+                  radius: 1.6,
                   colors: [Color(0xFF2D1B4E), Color(0xFF12121A), Color(0xFF050508)],
                   stops: [0.0, 0.6, 1.0],
                 ),
@@ -79,18 +80,27 @@ class _HomePageState extends State<HomePage> {
             title: GlassContainer(
               shape: const LiquidRoundedSuperellipse(borderRadius: 999),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-              useOwnLayer: true, quality: GlassQuality.premium,
-              settings: LiquidGlassSettings(blur: 12, thickness: 35, refractiveIndex: 1.15, saturation: 1.2, bodyMode: GlassBodyMode.adaptive),
-              child: const Text('HuyaLive', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              useOwnLayer: true,
+              quality: GlassQuality.premium,
+              settings: LiquidGlassSettings(
+                blur: 12, thickness: 35, refractiveIndex: 1.15, saturation: 1.2, bodyMode: GlassBodyMode.adaptive,
+              ),
+              child: const Text('HuyaLive',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
             ),
             actions: [
               Obx(() => GlassIconButton(
-                    icon: Icon(AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, color: Colors.white),
-                    size: 44, glowColor: const Color(0xFFFF8800).withOpacity(0.4),
+                    icon: Icon(
+                      AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                      color: Colors.white,
+                    ),
+                    size: 44,
+                    glowColor: const Color(0xFFFF8800).withOpacity(0.4),
                     onPressed: () => AppSettings.to.toggleTheme(),
                   )),
               GlassIconButton(
-                icon: const Icon(Icons.settings, color: Colors.white), size: 44,
+                icon: const Icon(Icons.settings, color: Colors.white),
+                size: 44,
                 glowColor: const Color(0xFFFF8800).withOpacity(0.4),
                 onPressed: () => _showQuickSettings(context),
               ),
@@ -122,20 +132,10 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-              // ★ 悬浮迷你条：始终在导航栏上方，跟随收拢/展开平滑移动
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeInOutCubic,
-                left: 16, right: 16,
-                bottom: _isMinimized ? 62.0 : 98.0,
-                child: _buildMiniBar(),
-              ),
-            ],
-          ),
-          bottomBar: GlassTabBar.minimizable(
+          // ★ 修复：参数名改为 bottomNavigationBar，并使用 expanded 避免重叠
+          bottomNavigationBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
-            // ★ 钉住为 expanded 附件：收拢/展开都悬浮在导航栏上方独立一行，间距由库计算，不再重叠
             bottomAccessory: _buildMiniBar(),
             bottomAccessoryPlacement: GlassTabBarAccessoryPlacement.expanded,
             bottomAccessorySpacing: 8,
