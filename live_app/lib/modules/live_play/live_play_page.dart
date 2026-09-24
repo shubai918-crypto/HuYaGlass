@@ -142,7 +142,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                     maxLines: 1, overflow: TextOverflow.ellipsis),
               ])),
               const SizedBox(width: 6),
-              // ★ 高能标签 (使用稳定的 GlassContainer)
               GestureDetector(
                 onTap: _showHighEnergySheet,
                 child: GlassContainer(
@@ -170,12 +169,15 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(width: 6),
-              // ★ 更多菜单 (使用原生 BottomSheet 保证 100% 不报错)
-              GlassIconButton(
-                icon: const Icon(Icons.more_horiz, color: Colors.white),
-                size: 28,
-                glowColor: const Color(0xFFFF8800).withOpacity(0.4),
-                onPressed: _showMoreMenu,
+              // ★ 修复：使用正确的 items 参数和 GlassMenuItem(child: ...)
+              GlassPullDownButton(
+                icon: Icons.more_horiz,
+                items: [
+                  GlassMenuItem(child: const Text('复制房间链接', style: TextStyle(color: Colors.white)), onTap: _copyUrl),
+                  GlassMenuItem(child: const Text('刷新线路', style: TextStyle(color: Colors.white)), onTap: c.refreshPlay),
+                  GlassMenuItem(child: Text(c.isMuted.value ? '取消静音' : '静音', style: const TextStyle(color: Colors.white)), onTap: c.toggleMute),
+                  GlassMenuItem(child: Text(c.isFullscreen.value ? '退出全屏' : '全屏', style: const TextStyle(color: Colors.white)), onTap: c.toggleFullscreen),
+                ],
               ),
               const SizedBox(width: 6),
               GestureDetector(
@@ -189,43 +191,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             ]),
           ),
         ));
-  }
-
-  void _showMoreMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            ListTile(
-              leading: const Icon(Icons.link, color: Colors.white70),
-              title: const Text('复制房间链接', style: TextStyle(color: Colors.white)),
-              onTap: () { Get.back(); _copyUrl(); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh, color: Colors.white70),
-              title: const Text('刷新线路', style: TextStyle(color: Colors.white)),
-              onTap: () { Get.back(); c.refreshPlay(); },
-            ),
-            ListTile(
-              leading: Icon(c.isMuted.value ? Icons.volume_up : Icons.volume_off, color: Colors.white70),
-              title: Text(c.isMuted.value ? '取消静音' : '静音', style: const TextStyle(color: Colors.white)),
-              onTap: () { Get.back(); c.toggleMute(); },
-            ),
-            ListTile(
-              leading: Icon(c.isFullscreen.value ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white70),
-              title: Text(c.isFullscreen.value ? '退出全屏' : '全屏', style: TextStyle(color: Colors.white)),
-              onTap: () { Get.back(); c.toggleFullscreen(); },
-            ),
-          ]),
-        ),
-      ),
-    );
   }
 
   void _copyUrl() {
