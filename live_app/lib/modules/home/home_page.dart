@@ -83,11 +83,7 @@ class _HomePageState extends State<HomePage> {
               useOwnLayer: true,
               quality: GlassQuality.premium,
               settings: LiquidGlassSettings(
-                blur: 12,
-                thickness: 35,
-                refractiveIndex: 1.15,
-                saturation: 1.2,
-                bodyMode: GlassBodyMode.adaptive,
+                blur: 12, thickness: 35, refractiveIndex: 1.15, saturation: 1.2, bodyMode: GlassBodyMode.adaptive,
               ),
               child: const Text('HuyaLive',
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
@@ -95,25 +91,21 @@ class _HomePageState extends State<HomePage> {
             actions: [
               Obx(() => GlassIconButton(
                     icon: Icon(
-                      AppSettings.to.isDark
-                          ? Icons.light_mode_outlined
-                          : Icons.dark_mode_outlined,
+                      AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
                       color: Colors.white,
                     ),
                     size: 44,
-                    // ★ 1.6.2 原生 iOS 26 交互光晕校准（1.6 半径）
-                    interactionGlowRadius: 1.6,
-                    interactionGlowColor: const Color(0xFFFF8800),
+                    glowColor: const Color(0xFFFF8800).withOpacity(0.4),
                     onPressed: () => AppSettings.to.toggleTheme(),
                   )),
               GlassIconButton(
                 icon: const Icon(Icons.settings, color: Colors.white),
                 size: 44,
-                interactionGlowRadius: 1.6,
-                interactionGlowColor: const Color(0xFFFF8800),
+                glowColor: const Color(0xFFFF8800).withOpacity(0.4),
                 onPressed: () => _showQuickSettings(context),
               ),
             ],
+          ),
           body: Padding(
             padding: EdgeInsets.only(
               top: MediaQuery.of(context).padding.top + 60,
@@ -144,39 +136,21 @@ class _HomePageState extends State<HomePage> {
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
             bottomAccessory: _buildMiniBar(),
-            // ★ 1.6.2 原生交互光晕
-            interactionGlowRadius: 1.6,
             settings: LiquidGlassSettings(
-              blur: 24,
-              thickness: 30,
-              glassColor: Colors.black.withOpacity(0.45),
+              blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45),
             ),
             selectedIndex: _selectedIndex,
             onTabSelected: _select,
-            // tintColor 填充后前景自动反白，选中色统一改白
-            selectedIconColor: Colors.white,
-            selectedLabelColor: Colors.white,
+            selectedIconColor: const Color(0xFFFF8800),
+            selectedLabelColor: const Color(0xFFFF8800),
             unselectedIconColor: Colors.white.withOpacity(0.5),
             unselectedLabelColor: Colors.white.withOpacity(0.5),
             indicatorColor: const Color(0xFFFF8800).withOpacity(0.15),
-            // ★ 1.6.0 tintColor：选中胶囊被虎牙橙整体填充
-            tabs: [
-              GlassTab(
-                  icon: const Icon(Icons.home),
-                  label: '首页',
-                  tintColor: _selectedIndex == 0 ? const Color(0xFFFF8800) : null),
-              GlassTab(
-                  icon: const Icon(Icons.search),
-                  label: '搜索',
-                  tintColor: _selectedIndex == 1 ? const Color(0xFFFF8800) : null),
-              GlassTab(
-                  icon: const Icon(Icons.subscriptions_outlined),
-                  label: '订阅',
-                  tintColor: _selectedIndex == 2 ? const Color(0xFFFF8800) : null),
-              GlassTab(
-                  icon: const Icon(Icons.settings),
-                  label: '设置',
-                  tintColor: _selectedIndex == 3 ? const Color(0xFFFF8800) : null),
+            tabs: const [
+              GlassTab(icon: Icon(Icons.home), label: '首页'),
+              GlassTab(icon: Icon(Icons.search), label: '搜索'),
+              GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
+              GlassTab(icon: Icon(Icons.settings), label: '设置'),
             ],
           ),
         ),
@@ -184,13 +158,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 修复：改用原生深色 BottomSheet，彻底杜绝白屏和双层拖拽条 Bug
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
@@ -230,9 +202,7 @@ class _HomePageState extends State<HomePage> {
           padding: EdgeInsets.symmetric(horizontal: 12, vertical: inline ? 6 : 8),
           useOwnLayer: true,
           settings: LiquidGlassSettings(
-            blur: 20,
-            thickness: 25,
-            platformViewMode: PlatformViewGlassMode.passthrough,
+            blur: 20, thickness: 25, platformViewMode: PlatformViewGlassMode.passthrough,
             glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
           ),
           child: inline ? _compactRow(room) : _fullRow(room),
