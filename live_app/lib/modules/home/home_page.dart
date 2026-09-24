@@ -96,30 +96,32 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
-          body: Stack(
-            children: [
-              Padding(
-                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 60, bottom: 170),
-                child: IndexedStack(
-                  index: _selectedIndex,
-                  children: [
-                    _HomeView(onOpenFollows: () => _select(2)),
-                    SearchPage(
-                      onOpenRoom: (roomId, nickname, avatarUrl) => goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
-                      isFollowed: (roomId) async => FollowStore.contains(roomId),
-                      onToggleFollow: (roomId, follow, nickname, avatar) async {
-                        if (follow) {
-                          await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
-                        } else {
-                          await FollowStore.remove(roomId);
-                        }
-                      },
-                    ),
-                    const FollowPage(),
-                    const SettingsPage(),
-                  ],
+          body: Padding(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 60,
+              bottom: 150,
+            ),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _HomeView(onOpenFollows: () => _select(2)),
+                SearchPage(
+                  onOpenRoom: (roomId, nickname, avatarUrl) =>
+                      goLive(roomId, nickname: nickname, avatarUrl: avatarUrl),
+                  isFollowed: (roomId) async => FollowStore.contains(roomId),
+                  onToggleFollow: (roomId, follow, nickname, avatar) async {
+                    if (follow) {
+                      await FollowStore.add(FollowItem(roomId: roomId, name: nickname, avatar: avatar));
+                    } else {
+                      await FollowStore.remove(roomId);
+                    }
+                  },
                 ),
-              ),
+                const FollowPage(),
+                const SettingsPage(),
+              ],
+            ),
+          ),
               // ★ 悬浮迷你条：始终在导航栏上方，跟随收拢/展开平滑移动
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 350),
@@ -133,7 +135,13 @@ class _HomePageState extends State<HomePage> {
           bottomBar: GlassTabBar.minimizable(
             minimized: _isMinimized,
             onMinimizedTabTap: () => setState(() => _isMinimized = false),
-            settings: LiquidGlassSettings(blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45)),
+            // ★ 钉住为 expanded 附件：收拢/展开都悬浮在导航栏上方独立一行，间距由库计算，不再重叠
+            bottomAccessory: _buildMiniBar(),
+            bottomAccessoryPlacement: GlassTabBarAccessoryPlacement.expanded,
+            bottomAccessorySpacing: 8,
+            settings: LiquidGlassSettings(
+              blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45),
+            ),
             selectedIndex: _selectedIndex,
             onTabSelected: _select,
             selectedIconColor: const Color(0xFFFF8800),
