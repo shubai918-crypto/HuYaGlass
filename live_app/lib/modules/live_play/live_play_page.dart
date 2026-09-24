@@ -169,14 +169,14 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(width: 6),
-              // ★ 修复：使用正确的 items 参数和 GlassMenuItem(child: ...)
+              // ★ 核心修复：icon 改为 Widget (Icon)，GlassMenuItem 使用 title (String)
               GlassPullDownButton(
-                icon: Icons.more_horiz,
+                icon: const Icon(Icons.more_horiz, color: Colors.white),
                 items: [
-                  GlassMenuItem(child: const Text('复制房间链接', style: TextStyle(color: Colors.white)), onTap: _copyUrl),
-                  GlassMenuItem(child: const Text('刷新线路', style: TextStyle(color: Colors.white)), onTap: c.refreshPlay),
-                  GlassMenuItem(child: Text(c.isMuted.value ? '取消静音' : '静音', style: const TextStyle(color: Colors.white)), onTap: c.toggleMute),
-                  GlassMenuItem(child: Text(c.isFullscreen.value ? '退出全屏' : '全屏', style: const TextStyle(color: Colors.white)), onTap: c.toggleFullscreen),
+                  GlassMenuItem(title: '复制房间链接', onTap: _copyUrl),
+                  GlassMenuItem(title: '刷新线路', onTap: c.refreshPlay),
+                  GlassMenuItem(title: c.isMuted.value ? '取消静音' : '静音', onTap: c.toggleMute),
+                  GlassMenuItem(title: c.isFullscreen.value ? '退出全屏' : '全屏', onTap: c.toggleFullscreen),
                 ],
               ),
               const SizedBox(width: 6),
