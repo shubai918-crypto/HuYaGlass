@@ -85,18 +85,25 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
 
   Widget _buildPortrait(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    // ★ 键盘是否弹出
+    final kbOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B10),
+      resizeToAvoidBottomInset: true,
       body: Column(children: [
         SizedBox(height: top),
         GlassMaterialize(visible: _chromeVisible, child: _header()),
         AspectRatio(aspectRatio: 16 / 9, child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)])),
         _tabs(),
-        Expanded(child: TabBarView(controller: _tab, children: [_DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c)])),
-        GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
+        Expanded(child: TabBarView(controller: _tab, children: [
+          _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
+        ])),
+        GlassMaterialize(visible: _chromeVisible, child: _bottomBar(kbOpen)),
       ]),
     );
   }
+
+
 
   // ★ 双行玻璃胶囊：第一行头像+名字+关闭，第二行功能按钮，名字不再被截断
   Widget _header() {
@@ -199,8 +206,8 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 底部控制区整体玻璃面板化
-  Widget _bottomBar() {
+    // ★ 底部控制区：键盘弹出时自动收起清晰度/线路两排
+  Widget _bottomBar(bool keyboardOpen) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       child: GlassContainer(
@@ -209,42 +216,44 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         useOwnLayer: true,
         settings: LiquidGlassSettings(blur: 20, thickness: 28, glassColor: Colors.black.withOpacity(0.45)),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          SizedBox(height: 32, child: Obx(() => ListView.separated(
-                scrollDirection: Axis.horizontal, itemCount: c.qualities.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 6),
-                itemBuilder: (_, i) {
-                  final q = c.qualities[i]; final sel = q.name == c.currentQuality.value;
-                  return GestureDetector(
-                    onTap: () => c.switchQuality(q),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                          color: sel ? const Color(0xFF00D2FF).withOpacity(0.14) : Colors.white.withOpacity(0.05),
-                          border: Border.all(color: sel ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.12)),
-                          borderRadius: BorderRadius.circular(999)),
-                      child: Text(q.name, style: TextStyle(color: sel ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 11)),
-                    ),
-                  );
-                }))),
-          const SizedBox(height: 6),
-          SizedBox(height: 32, child: Obx(() => ListView.separated(
-                scrollDirection: Axis.horizontal, itemCount: c.lines.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 6),
-                itemBuilder: (_, i) {
-                  final sel = i == c.currentLine.value;
-                  return GestureDetector(
-                    onTap: () => c.switchLine(i),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                          color: sel ? const Color(0xFF00D2FF).withOpacity(0.14) : Colors.white.withOpacity(0.05),
-                          border: Border.all(color: sel ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.12)),
-                          borderRadius: BorderRadius.circular(999)),
-                      child: Text('线路${i + 1}', style: TextStyle(color: sel ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 11)),
-                    ),
-                  );
-                }))),
-          const SizedBox(height: 8),
+          if (!keyboardOpen) ...[
+            SizedBox(height: 32, child: Obx(() => ListView.separated(
+                  scrollDirection: Axis.horizontal, itemCount: c.qualities.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 6),
+                  itemBuilder: (_, i) {
+                    final q = c.qualities[i]; final sel = q.name == c.currentQuality.value;
+                    return GestureDetector(
+                      onTap: () => c.switchQuality(q),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                            color: sel ? const Color(0xFF00D2FF).withOpacity(0.14) : Colors.white.withOpacity(0.05),
+                            border: Border.all(color: sel ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.12)),
+                            borderRadius: BorderRadius.circular(999)),
+                        child: Text(q.name, style: TextStyle(color: sel ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 11)),
+                      ),
+                    );
+                  }))),
+            const SizedBox(height: 6),
+            SizedBox(height: 32, child: Obx(() => ListView.separated(
+                  scrollDirection: Axis.horizontal, itemCount: c.lines.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 6),
+                  itemBuilder: (_, i) {
+                    final sel = i == c.currentLine.value;
+                    return GestureDetector(
+                      onTap: () => c.switchLine(i),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                            color: sel ? const Color(0xFF00D2FF).withOpacity(0.14) : Colors.white.withOpacity(0.05),
+                            border: Border.all(color: sel ? const Color(0xFF00D2FF) : Colors.white.withOpacity(0.12)),
+                            borderRadius: BorderRadius.circular(999)),
+                        child: Text('线路${i + 1}', style: TextStyle(color: sel ? const Color(0xFF00D2FF) : Colors.white60, fontSize: 11)),
+                      ),
+                    );
+                  }))),
+            const SizedBox(height: 8),
+          ],
           Row(children: [
             Expanded(child: GlassContainer(
               shape: const LiquidRoundedSuperellipse(borderRadius: 999),
@@ -253,6 +262,9 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
               child: TextField(
                 controller: c.inputController,
                 style: const TextStyle(color: Colors.white, fontSize: 14),
+                // ★ 回车键=发送；深色键盘与整体暗色风格统一
+                textInputAction: TextInputAction.send,
+                keyboardAppearance: Brightness.dark,
                 decoration: const InputDecoration(hintText: '发送弹幕...', hintStyle: TextStyle(color: Colors.white38), border: InputBorder.none),
                 onSubmitted: (t) => c.sendDanmaku(t),
               ),
@@ -268,7 +280,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
       ),
     );
   }
-
   void _showEmotePicker() {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
     showModalBottomSheet(
