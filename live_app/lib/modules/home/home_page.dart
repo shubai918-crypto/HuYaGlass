@@ -3,12 +3,12 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_app/core/app_settings.dart';
-
 import '../live_play/live_play_page.dart';
 import '../search/search_page.dart';
 import '../settings/settings_page.dart';
 import 'follow_page.dart';
 import 'follow_store.dart';
+import 'profile_page.dart'; // ★ 新增引入
 
 class NowRoom {
   final String roomId;
@@ -134,7 +134,7 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                   const FollowPage(),
-                  const SettingsPage(),
+                  const ProfilePage(),
                 ],
               ),
             ),
@@ -161,7 +161,7 @@ class _HomePageState extends State<HomePage> {
                 GlassTab(icon: Icon(Icons.home), label: '首页'),
                 GlassTab(icon: Icon(Icons.search), label: '搜索'),
                 GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-                GlassTab(icon: Icon(Icons.settings), label: '设置'),
+                GlassTab(icon: Icon(Icons.person_outline), label: '我的'),
               ],
             ),
           ),
