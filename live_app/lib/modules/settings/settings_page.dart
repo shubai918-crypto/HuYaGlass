@@ -20,9 +20,12 @@ class SettingsPage extends StatelessWidget {
           child: _card(
             icon: Icons.account_circle, color: const Color(0xFF00D2FF),
             title: '虎牙账号',
-            sub: Obx(() => UserProfile.to.logged.value
-                ? '已登录：${UserProfile.to.nickname.value}'
-                : '粘贴 Cookie 登录，解锁真实弹幕与订阅数'),
+            sub: Obx(() => Text(
+              UserProfile.to.logged.value
+                  ? '已登录：${UserProfile.to.nickname.value}'
+                  : '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+          )),
             trailing: const Icon(Icons.chevron_right, color: Colors.white30),
           ),
         ),
