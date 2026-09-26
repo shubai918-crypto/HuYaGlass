@@ -16,7 +16,6 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    // 每次进入"我的"页静默刷新真实资料
     WidgetsBinding.instance.addPostFrameCallback((_) {
       UserProfile.to.refresh();
     });
@@ -51,7 +50,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ---------- 顶部信息卡片（真实头像/昵称/UID） ----------
+  // ---------- 顶部信息卡片（真实头像/昵称/UID/等级/签名） ----------
   Widget _buildHeaderCard() {
     return Obx(() {
       final p = UserProfile.to;
@@ -63,6 +62,8 @@ class _ProfilePageState extends State<ProfilePage> {
       final uidText = isLogin
           ? (p.uid.value.isNotEmpty ? 'UID: ${p.uid.value}' : 'UID: 已登录')
           : '登录解锁更多功能与真实弹幕';
+      final level = p.level.value;
+      final sign = p.signature.value;
 
       return GestureDetector(
         onTap: isLogin ? null : () => Get.toNamed('/huya_login'),
@@ -98,19 +99,46 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      nickname,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                          nickname,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isLogin && level.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF8800).withOpacity(0.18),
+                            border: Border.all(color: const Color(0xFFFF8800).withOpacity(0.5)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(level,
+                              style: const TextStyle(
+                                  color: Color(0xFFFF8800),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ]),
                     const SizedBox(height: 4),
                     Text(uidText,
                         style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13)),
+                    if (isLogin && sign.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(sign,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white.withOpacity(0.38), fontSize: 11)),
+                    ],
                   ],
                 ),
               ),
@@ -127,7 +155,8 @@ class _ProfilePageState extends State<ProfilePage> {
     return GlassContainer(
       shape: const LiquidRoundedSuperellipse(borderRadius: 24),
       useOwnLayer: true,
-      settings: LiquidGlassSettings(blur: 15, thickness: 25, glassColor: Colors.black.withOpacity(0.20)),
+      settings: LiquidGlassSettings(
+          blur: 15, thickness: 25, glassColor: Colors.black.withOpacity(0.20)),
       child: Column(
         children: [
           for (var i = 0; i < items.length; i++) ...[
@@ -152,7 +181,8 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Row(
           children: [
             Container(
-              width: 32, height: 32,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: item.color.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8),
@@ -162,7 +192,8 @@ class _ProfilePageState extends State<ProfilePage> {
             const SizedBox(width: 16),
             Expanded(
               child: Text(item.title,
-                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
             ),
             const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
           ],
@@ -181,8 +212,12 @@ class _ProfilePageState extends State<ProfilePage> {
             title: const Text('退出登录', style: TextStyle(color: Colors.white)),
             content: const Text('确定要退出当前虎牙账号吗？', style: TextStyle(color: Colors.white70)),
             actions: [
-              TextButton(onPressed: () => Get.back(result: false), child: const Text('取消', style: TextStyle(color: Colors.white54))),
-              TextButton(onPressed: () => Get.back(result: true), child: const Text('退出', style: TextStyle(color: Color(0xFFE5484D)))),
+              TextButton(
+                  onPressed: () => Get.back(result: false),
+                  child: const Text('取消', style: TextStyle(color: Colors.white54))),
+              TextButton(
+                  onPressed: () => Get.back(result: true),
+                  child: const Text('退出', style: TextStyle(color: Color(0xFFE5484D)))),
             ],
           ),
         );
@@ -197,10 +232,12 @@ class _ProfilePageState extends State<ProfilePage> {
       child: GlassContainer(
         shape: const LiquidRoundedSuperellipse(borderRadius: 999),
         padding: const EdgeInsets.symmetric(vertical: 14),
-        settings: LiquidGlassSettings(blur: 10, thickness: 20, glassColor: const Color(0x22E5484D)),
+        settings: LiquidGlassSettings(
+            blur: 10, thickness: 20, glassColor: const Color(0x22E5484D)),
         child: const Center(
           child: Text('退出登录',
-              style: TextStyle(color: Color(0xFFE5484D), fontSize: 15, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  color: Color(0xFFE5484D), fontSize: 15, fontWeight: FontWeight.w600)),
         ),
       ),
     );
