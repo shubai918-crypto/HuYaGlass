@@ -3,12 +3,14 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_app/core/app_settings.dart';
+
 import '../live_play/live_play_page.dart';
 import '../search/search_page.dart';
 import '../settings/settings_page.dart';
 import 'follow_page.dart';
 import 'follow_store.dart';
-import 'profile_page.dart'; // ★ 新增引入
+import 'history_store.dart';
+import 'profile_page.dart';
 
 class NowRoom {
   final String roomId;
@@ -43,6 +45,26 @@ class _HomePageState extends State<HomePage> {
   double _lastScrollOffset = 0;
 
   void _select(int i) => setState(() => _selectedIndex = i);
+
+  @override
+  void initState() {
+    super.initState();
+    HistoryStore.init(); // ★ 加载观看历史
+    ProfilePage.onJumpTab = _select; // ★ 我的页跳底部 Tab
+    NowWatching.notifier.addListener(_onNowWatching); // ★ 自动记录观看历史
+  }
+
+  void _onNowWatching() {
+    final r = NowWatching.notifier.value;
+    if (r != null) HistoryStore.add(r.roomId, r.nickname, r.avatarUrl);
+  }
+
+  @override
+  void dispose() {
+    NowWatching.notifier.removeListener(_onNowWatching);
+    ProfilePage.onJumpTab = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,12 +132,10 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-            // ★ body 不再需要 Stack/Positioned/大 padding：scaffold 会自动把
-            //   accessory 高度算进 body inset（前提是传了 bottomAccessoryHeight）
             body: Padding(
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + 60,
-                bottom: 8,
+                bottom: 150,
               ),
               child: IndexedStack(
                 index: _selectedIndex,
@@ -134,16 +154,14 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                   const FollowPage(),
-                  const ProfilePage(),
+                  const ProfilePage(), // ★ 第四个 Tab 改为"我的"
                 ],
               ),
             ),
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
-              // ★ iOS 26 tabViewBottomAccessory：
-              //   - 必须传 bottomAccessoryHeight（否则 scaffold inset 脱节 → 不显示/重叠）
-              //   - 不传 placement → 展开悬浮栏上方 / 收拢自动 inline 进最小化栏
+              // ★ iOS 26 tabViewBottomAccessory：必须传 height，收拢时自动 inline
               bottomAccessory: room != null ? _buildMiniBar(room) : null,
               bottomAccessoryHeight: room != null ? 56 : null,
               bottomAccessorySpacing: 8,
@@ -170,7 +188,35 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ accessory 自适应布局：读 placement scope，expanded=完整行 / inline=紧凑条
+  // ★ 快捷设置 Sheet（深色/调试开关）
+  void _showQuickSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            Obx(() => SwitchListTile(
+                  secondary: const Icon(Icons.dark_mode, color: Colors.white70),
+                  title: const Text('深色模式', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  value: AppSettings.to.isDark, onChanged: (_) => AppSettings.to.toggleTheme(),
+                )),
+            Obx(() => SwitchListTile(
+                  secondary: const Icon(Icons.bug_report_outlined, color: Colors.white70),
+                  title: const Text('调试模式', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  value: AppSettings.to.debugEnabled.value, onChanged: AppSettings.to.setDebug,
+                )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ★ 迷你播放条：读 placement scope 自适应 expanded/inline 两种布局
   Widget _buildMiniBar(NowRoom room) {
     return Builder(builder: (context) {
       final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
@@ -240,33 +286,6 @@ class _HomePageState extends State<HomePage> {
         ),
         child: const Icon(Icons.live_tv, size: 20, color: Colors.white),
       );
-
-  void _showQuickSettings(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            Obx(() => SwitchListTile(
-                  secondary: const Icon(Icons.dark_mode, color: Colors.white70),
-                  title: const Text('深色模式', style: TextStyle(color: Colors.white, fontSize: 15)),
-                  value: AppSettings.to.isDark, onChanged: (_) => AppSettings.to.toggleTheme(),
-                )),
-            Obx(() => SwitchListTile(
-                  secondary: const Icon(Icons.bug_report_outlined, color: Colors.white70),
-                  title: const Text('调试模式', style: TextStyle(color: Colors.white, fontSize: 15)),
-                  value: AppSettings.to.debugEnabled.value, onChanged: AppSettings.to.setDebug,
-                )),
-          ]),
-        ),
-      ),
-    );
-  }
 }
 
 class _HomeView extends StatelessWidget {
@@ -281,21 +300,30 @@ class _HomeView extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xFFFF8800), Color(0xFFFF5A00)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            gradient: const LinearGradient(
+                colors: [Color(0xFFFF8800), Color(0xFFFF5A00)],
+                begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(24),
           ),
           child: Column(children: [
             const Icon(Icons.live_tv, size: 56, color: Colors.white),
             const SizedBox(height: 12),
-            const Text('虎牙直播 · 液态玻璃', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+            const Text('虎牙直播 · 液态玻璃',
+                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
-            Text('看直播 · 弹幕 · 订阅 · 真实发送', style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
+            Text('看直播 · 弹幕 · 订阅 · 真实发送',
+                style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
             const SizedBox(height: 18),
-            GlassButton(icon: const Icon(Icons.play_arrow), label: '进入直播间', onTap: () => _openEnterRoom(context)),
+            GlassButton(
+              icon: const Icon(Icons.play_arrow),
+              label: '进入直播间',
+              onTap: () => _openEnterRoom(context),
+            ),
           ]),
         ),
         const SizedBox(height: 16),
-        _card(icon: Icons.subscriptions_outlined, color: const Color(0xFFFF8800), label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
+        _card(icon: Icons.subscriptions_outlined, color: const Color(0xFFFF8800),
+            label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
         const SizedBox(height: 12),
         _card(icon: Icons.account_circle, color: const Color(0xFFFFB25E),
             label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
@@ -304,22 +332,31 @@ class _HomeView extends StatelessWidget {
     );
   }
 
-  Widget _card({required IconData icon, required Color color, required String label, required String sub, required VoidCallback onTap}) {
+  Widget _card({required IconData icon, required Color color, required String label,
+      required String sub, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: const Color(0xFF16161E), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.06))),
+        decoration: BoxDecoration(
+          color: const Color(0xFF16161E),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.06)),
+        ),
         child: Row(children: [
-          Container(width: 44, height: 44,
-              decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14)),
-              child: Icon(icon, color: color, size: 24)),
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14)),
+            child: Icon(icon, color: color, size: 24),
+          ),
           const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 2),
-            Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12)),
-          ])),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12)),
+            ]),
+          ),
           const Icon(Icons.chevron_right, color: Colors.white38),
         ]),
       ),
@@ -334,12 +371,19 @@ class _HomeView extends StatelessWidget {
         backgroundColor: const Color(0xFF1A1A2E),
         title: const Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 16)),
         content: TextField(
-          controller: ctrl, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(hintText: '输入房间号，如 31343932', hintStyle: TextStyle(color: Colors.white38)),
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+              hintText: '输入房间号，如 31343932',
+              hintStyle: TextStyle(color: Colors.white38)),
         ),
         actions: [
           TextButton(onPressed: () => Get.back(), child: const Text('取消', style: TextStyle(color: Colors.white54))),
-          TextButton(onPressed: () { Get.back(); goLive(ctrl.text.trim()); }, child: const Text('进入', style: TextStyle(color: Color(0xFFFF8800)))),
+          TextButton(
+            onPressed: () { Get.back(); goLive(ctrl.text.trim()); },
+            child: const Text('进入', style: TextStyle(color: Color(0xFFFF8800))),
+          ),
         ],
       ),
     );
