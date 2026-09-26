@@ -51,7 +51,7 @@ class HistoryPage extends StatelessWidget {
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text('房间 ${e.roomId} · ${_ago(e.ts)}', style: const TextStyle(color: Colors.white40, fontSize: 12)),
+                    Text('房间 ${e.roomId} · ${_ago(e.ts)}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
                   ])),
                   const Icon(Icons.chevron_right, color: Colors.white30),
                 ]),
