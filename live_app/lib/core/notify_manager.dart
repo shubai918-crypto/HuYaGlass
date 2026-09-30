@@ -9,8 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../modules/home/follow_store.dart';
 import '../modules/home/home_page.dart';
 
-class NotifyManager extends GetxService {
-  static NotifyManager get to => Get.find<NotifyManager>();
+class LiveNotifyManager extends GetxService {
+  static LiveNotifyManager get to => Get.find<LiveNotifyManager>();
 
   final FlutterLocalNotificationsPlugin fln = FlutterLocalNotificationsPlugin();
   Timer? _timer;
