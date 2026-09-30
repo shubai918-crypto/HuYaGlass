@@ -16,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.bs.live_app"
-    compileSdk = 34 // ★ 修复：flutter_local_notifications 17.x 强制要求至少 34
+    compileSdk = 36 // ★ 修复：flutter_local_notifications 17.x 强制要求至少 34
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
