@@ -26,7 +26,7 @@ void main() async {
 
   Get.put(AppSettings(), permanent: true);
   Get.put(UserProfile(), permanent: true);
-  Get.put(NotifyManager(), permanent: true); // ★ 开播提醒（系统推送 + 后台任务）
+  Get.put(NotifyManager(), permanent: true); // ★ 通知服务（纯 Dart 版）
 
   await LiquidGlassWidgets.initialize();
 
@@ -60,7 +60,7 @@ class HuyaLiveApp extends StatelessWidget {
             colorScheme: const ColorScheme.dark(primary: Color(0xFFFF8800)),
           ),
           getPages: [
-            GetPage(name: '/notice', page: () => const NoticePage()), // ★ 设置页"开播提醒"入口
+            GetPage(name: '/notice', page: () => const NoticePage()),
           ],
           home: const HomePage(),
         ));
