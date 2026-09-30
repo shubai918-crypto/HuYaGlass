@@ -26,7 +26,7 @@ void main() async {
 
   Get.put(AppSettings(), permanent: true);
   Get.put(UserProfile(), permanent: true);
-  Get.put(NotifyManager(), permanent: true); // ★ 通知服务（纯 Dart 版）
+  Get.put(LiveNotifyManager(), permanent: true); // ★ 通知服务（纯 Dart 版，避免与 GetX 内部命名冲突）
 
   await LiquidGlassWidgets.initialize();
 
