@@ -5,9 +5,11 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import 'core/app_settings.dart';
+import 'core/notify_manager.dart';
 import 'core/user_profile.dart';
 import 'modules/home/home_page.dart';
 import 'modules/home/follow_store.dart';
+import 'modules/home/notice_page.dart';
 import 'modules/live_play/background_play.dart';
 
 void main() async {
@@ -23,7 +25,8 @@ void main() async {
   await FollowStore.init();
 
   Get.put(AppSettings(), permanent: true);
-  Get.put(UserProfile(), permanent: true); // ★ 注册用户资料服务
+  Get.put(UserProfile(), permanent: true);
+  Get.put(NotifyManager(), permanent: true); // ★ 开播提醒（系统推送 + 后台任务）
 
   await LiquidGlassWidgets.initialize();
 
@@ -56,6 +59,9 @@ class HuyaLiveApp extends StatelessWidget {
             scaffoldBackgroundColor: const Color(0xFF0A0A0F),
             colorScheme: const ColorScheme.dark(primary: Color(0xFFFF8800)),
           ),
+          getPages: [
+            GetPage(name: '/notice', page: () => const NoticePage()), // ★ 设置页"开播提醒"入口
+          ],
           home: const HomePage(),
         ));
   }
