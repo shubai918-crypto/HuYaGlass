@@ -54,7 +54,7 @@ class _NoticePageState extends State<NoticePage> {
                   const Text('开播提醒',
                       style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
-                  const Text('订阅主播开播时发系统通知 · 后台每 15 分钟检测',
+                  const Text('App 运行期间每 5 分钟检测 · 开播即发系统通知',
                       style: TextStyle(color: Colors.white54, fontSize: 12)),
                 ])),
                 Switch(
@@ -108,10 +108,10 @@ class _NoticePageState extends State<NoticePage> {
                   Text('说明', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
                   SizedBox(height: 8),
                   Text(
-                    '· App 在前台 / 后台播放保活时：每 5 分钟检测一次，开播立即弹系统通知。\n'
-                    '· App 被系统杀死后：由系统后台任务每 15 分钟唤醒检测（Android 最短周期）。\n'
-                    '· 小米/华为等国产 ROM 请在系统设置里给本 App 开启「自启动」+「后台无限制」，否则被杀后唤醒会被拦截。\n'
-                    '· 通知权限需允许（Android 13+ 首次开启提醒时会弹窗请求）。',
+                    '· 只要 App 还在运行（前台或后台），每 5 分钟就会精准检测订阅主播状态。\n'
+                    '· 发现主播从「未开播」变为「直播中」时，立即弹出高优先级系统通知。\n'
+                    '· 点击通知可直接进入直播间。\n'
+                    '· 首次开启会自动请求通知权限（Android 13+）。',
                     style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.6),
                   ),
                 ],
