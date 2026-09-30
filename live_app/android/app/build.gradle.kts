@@ -16,20 +16,18 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.bs.live_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34 // ★ 修复：flutter_local_notifications 17.x 强制要求至少 34
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = true
+        isCoreLibraryDesugaringEnabled = true // ★ 开启核心库脱糖
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    
-
     defaultConfig {
         applicationId = "com.bs.live_app"
-        minSdk = flutter.minSdkVersion
+        minSdk = 21 // ★ 修复：flutter_local_notifications 17.x 强制要求至少 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -63,6 +61,11 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+// ★ 核心修复：新增 dependencies 块，引入 Java 8 脱糖库
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
 
 flutter {
