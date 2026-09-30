@@ -15,7 +15,7 @@ class _NoticePageState extends State<NoticePage> {
   @override
   void initState() {
     super.initState();
-    NotifyManager.to.isEnabled().then((v) => setState(() => _enabled = v));
+    LiveNotifyManager.to.isEnabled().then((v) => setState(() => _enabled = v));
   }
 
   @override
@@ -62,7 +62,7 @@ class _NoticePageState extends State<NoticePage> {
                   activeColor: const Color(0xFFFF8800),
                   onChanged: (v) async {
                     setState(() => _enabled = v);
-                    await NotifyManager.to.setEnabled(v);
+                    await LiveNotifyManager.to.setEnabled(v);
                   },
                 ),
               ]),
@@ -73,7 +73,7 @@ class _NoticePageState extends State<NoticePage> {
                   ? null
                   : () async {
                       setState(() => _checking = true);
-                      final s = await NotifyManager.to.checkNow();
+                      final s = await LiveNotifyManager.to.checkNow();
                       if (mounted) setState(() => {_checking = false, _last = s});
                     },
               child: Container(
