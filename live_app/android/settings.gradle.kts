@@ -18,7 +18,9 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "9.0.1" apply false
+    id("com.android.application") version "8.7.0" apply false
+    // ★ 核心修复：显式声明 Kotlin 2.2.20，满足 Flutter 最低版本要求
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 
 include(":app")
