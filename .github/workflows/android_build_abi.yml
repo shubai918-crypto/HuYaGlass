@@ -53,7 +53,7 @@ jobs:
           flutter pub get
 
       # 4. 构建 APK（按 ABI 拆分）
-- name: Build APK
+     - name: Build APK
         run: |
           cd live_app
           flutter build apk --release --split-per-abi --android-skip-build-dependency-validation
