@@ -59,6 +59,11 @@ class HuyaLiveApp extends StatelessWidget {
             scaffoldBackgroundColor: const Color(0xFF0A0A0F),
             colorScheme: const ColorScheme.dark(primary: Color(0xFFFF8800)),
           ),
+          // ★ 官方修复：MaterialApp 下给 glass 页面补透明 Material，消灭黄下划线
+          builder: (context, child) => Material(
+            type: MaterialType.transparency,
+            child: child!,
+          ),
           getPages: [
             GetPage(name: '/notice', page: () => const NoticePage()),
           ],
