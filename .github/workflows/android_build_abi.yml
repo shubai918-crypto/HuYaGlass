@@ -52,8 +52,8 @@ jobs:
           rm -rf .dart_tool
           flutter pub get
 
-      # 4. 构建 APK（按 ABI 拆分）
-     - name: Build APK
+      # 4. 构建 APK（按 ABI 拆分）★ 修复缩进 + 跳过依赖校验
+      - name: Build APK
         run: |
           cd live_app
           flutter build apk --release --split-per-abi --android-skip-build-dependency-validation
