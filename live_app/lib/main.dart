@@ -5,10 +5,11 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import 'core/app_settings.dart';
+import 'core/huya_glass_theme.dart'; // ★ 必须引入 HuyaGlassScope
 import 'core/notify_manager.dart';
 import 'core/user_profile.dart';
-import 'modules/home/home_page.dart';
 import 'modules/home/follow_store.dart';
+import 'modules/home/home_page.dart';
 import 'modules/home/notice_page.dart';
 import 'modules/live_play/background_play.dart';
 
@@ -26,18 +27,19 @@ void main() async {
 
   Get.put(AppSettings(), permanent: true);
   Get.put(UserProfile(), permanent: true);
-  Get.put(LiveNotifyManager(), permanent: true); // ★ 通知服务（纯 Dart 版，避免与 GetX 内部命名冲突）
+  Get.put(LiveNotifyManager(), permanent: true);
 
   await LiquidGlassWidgets.initialize();
 
   runApp(
-    HuyaGlassScope( // ★ 包裹全局 Scope
+    HuyaGlassScope( // ★ 包裹全局 Scope，让 iOS 27 材质开关全局生效
       child: LiquidGlassWidgets.wrap(
         child: const HuyaLiveApp(),
         brightnessResolver: Theme.maybeBrightnessOf,
       ),
     ),
   );
+}
 
 class HuyaLiveApp extends StatelessWidget {
   const HuyaLiveApp({super.key});
