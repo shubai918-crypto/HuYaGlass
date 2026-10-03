@@ -31,12 +31,13 @@ void main() async {
   await LiquidGlassWidgets.initialize();
 
   runApp(
-    LiquidGlassWidgets.wrap(
-      child: const HuyaLiveApp(),
-      brightnessResolver: Theme.maybeBrightnessOf,
+    HuyaGlassScope( // ★ 包裹全局 Scope
+      child: LiquidGlassWidgets.wrap(
+        child: const HuyaLiveApp(),
+        brightnessResolver: Theme.maybeBrightnessOf,
+      ),
     ),
   );
-}
 
 class HuyaLiveApp extends StatelessWidget {
   const HuyaLiveApp({super.key});
