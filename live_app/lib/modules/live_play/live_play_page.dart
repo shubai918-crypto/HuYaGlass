@@ -464,20 +464,30 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
     setState(() {});
   }
 
-  // surrogate-pair 安全退格
+// surrogate-pair 安全退格（原生 UTF-16 判断，无需外部库）
   void _backspace() {
     final tc = widget.c.inputController;
     final text = tc.text;
     if (text.isEmpty) return;
     final sel = tc.selection;
     int start = sel.start, end = sel.end;
+    
     if (start == end && start > 0) {
       int del = 1;
-      if (start >= 2 && Rune.isSurrogatePair(text.codeUnitAt(start - 2), text.codeUnitAt(start - 1))) del = 2;
+      if (start >= 2) {
+        final high = text.codeUnitAt(start - 2);
+        final low = text.codeUnitAt(start - 1);
+        // 判断前两个字符是否构成 UTF-16 代理对 (High Surrogate + Low Surrogate)
+        // High: 0xD800 - 0xDBFF, Low: 0xDC00 - 0xDFFF
+        if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF) {
+          del = 2; // 是 Emoji，一次删两个 code unit
+        }
+      }
       start -= del;
     } else if (start > end) {
       final t = start; start = end; end = t;
     }
+    
     tc.text = text.replaceRange(start, end, '');
     tc.selection = TextSelection.collapsed(offset: start);
     setState(() {});
