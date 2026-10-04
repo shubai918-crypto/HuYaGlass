@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -100,7 +99,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 头部：深色玻璃胶囊（浅背景下白字清晰）
   Widget _header() {
     return Obx(() => Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -186,6 +184,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
+  // ★ 黑线修复：dividerColor 透明 + indicator 只跟标签宽
   Widget _tabs() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
@@ -198,6 +197,8 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         child: TabBar(
           controller: _tab,
           indicatorColor: kAccent,
+          indicatorSize: TabBarIndicatorSize.label,
+          dividerColor: Colors.transparent,
           labelColor: kAccent,
           unselectedLabelColor: const Color(0xFF5F6672),
           tabs: const [Tab(text: '弹幕'), Tab(text: '主播详情'), Tab(text: '调试')],
@@ -206,7 +207,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 酷安同款紧凑底栏：左 pill(52) + 右四键组，高可见液态玻璃
+  // ★ 底栏高性能方案：premium + 拖拽物理 + HDR 级高光
   Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -218,9 +219,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             useOwnLayer: true,
             quality: GlassQuality.premium,
             shape: const LiquidRoundedSuperellipse(borderRadius: 26),
-            settings: _barGlass(),
+            settings: _hdrGlass(),
             stretch: 0.5,
             resistance: 0.08,
+            interactionScale: 1.04,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(children: [
@@ -247,7 +249,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           borderRadius: 26,
           iconSize: 20,
           itemPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-          settings: _barGlass(),
+          settings: _hdrGlass(),
           items: [
             GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
             GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
@@ -258,22 +260,34 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 高可见液态玻璃：35% 白 + 高模糊 + 强高光/色散
+  // 通透底栏玻璃
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x59FFFFFF),
-        thickness: 30,
-        blur: 24,
-        lightIntensity: 0.8,
+        glassColor: const Color(0x2EFFFFFF),
+        thickness: 28,
+        blur: 28,
+        lightIntensity: 0.7,
         specularSharpness: GlassSpecularSharpness.medium,
         fresnelStrength: 1.2,
         refractiveIndex: 1.2,
-        saturation: 1.6,
+        saturation: 1.5,
         chromaticAberration: 0.015,
-        shadowElevation: 1.5,
-        whitenStrength: 0.1,
+        shadowElevation: 2.0,
       );
 
-  // ★ 酷安同款实色白 Sheet（内容自适应高度，拖拽关闭）
+  // ★ HDR 高亮玻璃：sharp 镜面 + 高饱和 + 色散，拖拽时高光跟手
+  LiquidGlassSettings _hdrGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x40FFFFFF),
+        thickness: 26,
+        blur: 20,
+        lightIntensity: 1.1,
+        specularSharpness: GlassSpecularSharpness.sharp,
+        fresnelStrength: 1.4,
+        refractiveIndex: 1.25,
+        saturation: 1.7,
+        chromaticAberration: 0.02,
+        shadowElevation: 1.5,
+      );
+
   void _openQualitySheet() {
     showModalBottomSheet(
       context: context,
@@ -374,7 +388,6 @@ class _LightSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      // ★ 键盘顶起时整体上移，不再被盖住
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         decoration: const BoxDecoration(
@@ -393,7 +406,7 @@ class _LightSheet extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 评论 Sheet 内容（浅色 + 富文本输入 + 智能退格 + 表情/短语面板）
+// 评论 Sheet 内容（单面输入：聚焦 TextField / 失焦富文本渲染）
 // ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuComposeBody extends StatefulWidget {
   final LivePlayController c;
@@ -523,7 +536,6 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   Widget build(BuildContext context) {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      // ★ 单面输入：聚焦=真 TextField（有光标）；失焦=富文本渲染面（表情可见），永不重复
       Container(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 64),
@@ -776,6 +788,9 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 弹幕列表（长按胶囊菜单 + 点昵称用户卡）
+// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuList extends StatefulWidget {
   final LivePlayController c;
   const _DanmakuList({required this.c});
@@ -798,78 +813,138 @@ class _DanmakuListState extends State<_DanmakuList> {
     return const Color(0xFFE5484D);
   }
 
-  // ★ 可读性映射：浅色弹幕(白/浅黄)在白底上隐身 → 自动压成深灰；彩色保留
   Color _contentColor(int rgb) {
     final c = Color(rgb);
     final l = (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255;
     return l > 0.62 ? const Color(0xFF3C4248) : c;
   }
 
-  void _showDanmakuActions(LivePlayController c, DanmakuMessage m) {
-    final content = m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content;
-    showModalBottomSheet(
+  LiquidGlassSettings _menuGlass() => LiquidGlassSettings(
+        glassColor: const Color(0xCC1C1C1E),
+        thickness: 26,
+        blur: 18,
+        lightIntensity: 0.25,
+        saturation: 1.1,
+        refractiveIndex: 1.15,
+        specularSharpness: GlassSpecularSharpness.medium,
+      );
+
+  void _showDanmakuMenu(DanmakuMessage m, Offset pos) {
+    showDialog(
       context: context,
-      backgroundColor: kCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
-              SelectableText(content, style: const TextStyle(color: kText, fontSize: 15, height: 1.5)),
-              const SizedBox(height: 8),
-              Text('${m.nickname} · UID: ${m.uid > 0 ? '${m.uid}' : '未知'}', style: const TextStyle(color: kSub, fontSize: 12)),
-              const SizedBox(height: 14),
-              Row(children: [
-                Expanded(child: TextButton.icon(
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: content));
-                    Get.back();
-                    Get.snackbar('提示', '已复制到剪贴板', snackPosition: SnackPosition.BOTTOM);
-                  },
-                  icon: const Icon(Icons.copy, size: 18, color: Color(0xFF00B8D4)),
-                  label: const Text('复制', style: TextStyle(color: Color(0xFF00B8D4))),
-                )),
-                const SizedBox(width: 12),
-                if (!m.isGift)
-                  Expanded(child: TextButton.icon(
-                    onPressed: () { Get.back(); c.sendDanmaku(m.content); },
-                    icon: const Icon(Icons.send, size: 18, color: kAccent),
-                    label: const Text('+1 复读', style: TextStyle(color: kAccent)),
-                  )),
+      barrierColor: Colors.black26,
+      builder: (_) => _DanmakuMenu(c: widget.c, m: m, pos: pos, menuGlass: _menuGlass(), onUserInfo: () {
+        Navigator.of(context).pop();
+        _showUserInfo(m);
+      }),
+    );
+  }
+
+  void _showUserInfo(DanmakuMessage m) {
+    final fc = _fansColor(m.fansLevel);
+    showDialog(
+      context: context,
+      barrierColor: Colors.black38,
+      builder: (_) => Center(
+        child: Material(
+          type: MaterialType.transparency,
+          child: GlassContainer(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 28),
+            padding: const EdgeInsets.all(24),
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            settings: _menuGlass(),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              CircleAvatar(
+                radius: 36,
+                backgroundColor: const Color(0xFF2A2A34),
+                child: Text(
+                  m.nickname.isNotEmpty ? m.nickname[0].toUpperCase() : '?',
+                  style: const TextStyle(color: Colors.white70, fontSize: 28, fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(m.nickname.isEmpty ? '神秘用户' : m.nickname,
+                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+                _infoChip('UID: ${m.uid > 0 ? m.uid : '未知'}', const Color(0xFF8A9099)),
+                if (m.fansName.isNotEmpty) _infoChip('${m.fansLevel} ${m.fansName}', fc),
+                if (m.managerType > 0) _infoChip('房管', const Color(0xFFE5484D)),
               ]),
-            ],
+              const SizedBox(height: 18),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                GlassButton.custom(
+                  onTap: () {
+                    widget.c.inputController.text = '@${m.nickname} ';
+                    Navigator.of(context).pop();
+                    Get.snackbar('打招呼', '已填入 @${m.nickname}', snackPosition: SnackPosition.BOTTOM);
+                  },
+                  height: 40,
+                  shape: const LiquidRoundedRectangle(borderRadius: 20),
+                  quality: GlassQuality.premium,
+                  settings: LiquidGlassSettings(glassColor: const Color(0x66FF8800), thickness: 20, blur: 2, bodyMode: GlassBodyMode.clear),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('打招呼', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GlassButton.custom(
+                  onTap: () => Navigator.of(context).pop(),
+                  height: 40,
+                  shape: const LiquidRoundedRectangle(borderRadius: 20),
+                  quality: GlassQuality.premium,
+                  settings: LiquidGlassSettings(glassColor: const Color(0x33FFFFFF), thickness: 20, blur: 2),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('关闭', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ]),
+            ]),
           ),
         ),
       ),
     );
   }
 
+  Widget _infoChip(String label, Color tint) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: tint.withOpacity(0.18),
+          border: Border.all(color: tint.withOpacity(0.55)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(label, style: TextStyle(color: tint, fontSize: 11, fontWeight: FontWeight.w700)),
+      );
+
   Widget _item(LivePlayController c, DanmakuMessage m) {
-    if (m.isGift) {
-      final icon = DanmakuMessage.kGiftIcons[m.giftName]; final fc = _fansColor(m.fansLevel);
-      return GestureDetector(onTap: () => _showDanmakuActions(c, m),
-          child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                if (m.fansName.isNotEmpty)
-                  Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
-                      child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
-                Text('${m.nickname}: ', style: const TextStyle(color: Color(0xFFFF7A00), fontSize: 14, fontWeight: FontWeight.w600)),
-                const Text('送 ', style: TextStyle(color: Color(0xFF576066), fontSize: 14)),
-                if (icon != null)
-                  Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Image.network(icon, width: 20, height: 20, errorBuilder: (_, __, ___) => Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14))))
-                else
-                  Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
-                Text(' ${m.giftCount}', style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
-                if (m.comboCount > 1) Text(' ${m.comboCount}连击', style: const TextStyle(color: Color(0xFF8A9099), fontSize: 12)),
-              ])));
-    }
     final fc = _fansColor(m.fansLevel);
+    if (m.isGift) {
+      final icon = DanmakuMessage.kGiftIcons[m.giftName];
+      return GestureDetector(
+        onLongPressStart: (d) => _showDanmakuMenu(m, d.globalPosition),
+        child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (m.fansName.isNotEmpty)
+                Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
+                    child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+              GestureDetector(
+                onTap: () => _showUserInfo(m),
+                child: Text('${m.nickname}: ', style: const TextStyle(color: Color(0xFFFF7A00), fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+              const Text('送 ', style: TextStyle(color: Color(0xFF576066), fontSize: 14)),
+              if (icon != null)
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Image.network(icon, width: 20, height: 20, errorBuilder: (_, __, ___) => Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14))))
+              else
+                Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
+              Text(' ${m.giftCount}', style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
+              if (m.comboCount > 1) Text(' ${m.comboCount}连击', style: const TextStyle(color: Color(0xFF8A9099), fontSize: 12)),
+            ])),
+      );
+    }
     final guard = c.client.guardList.isNotEmpty ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname) : null;
     final shownBadges = <String>[]; bool mgrShown = false;
     for (final u in m.badgeUrls) {
@@ -878,22 +953,26 @@ class _DanmakuListState extends State<_DanmakuList> {
       shownBadges.add(u);
     }
     if (m.managerType > 0 && !mgrShown) shownBadges.add(DanmakuMessage.kBadgeManager);
-    return GestureDetector(onTap: () => _showDanmakuActions(c, m),
-        child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-              if (m.fansName.isNotEmpty)
-                Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
-                    child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
-              if (guard != null && guard.guardIcon.isNotEmpty)
-                Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
-              for (final url in shownBadges)
-                Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
-              Text.rich(TextSpan(children: [
-                TextSpan(text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ', style: const TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600)),
-                ...buildEmoteSpans(m.content, textColor: _contentColor(m.fontColor)),
-              ])),
-            ])));
+    return GestureDetector(
+      onLongPressStart: (d) => _showDanmakuMenu(m, d.globalPosition),
+      child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+            if (m.fansName.isNotEmpty)
+              Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
+                  child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+            if (guard != null && guard.guardIcon.isNotEmpty)
+              Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+            for (final url in shownBadges)
+              Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+            GestureDetector(
+              onTap: () => _showUserInfo(m),
+              child: Text('${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ',
+                  style: const TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+            Text.rich(TextSpan(children: buildEmoteSpans(m.content, textColor: _contentColor(m.fontColor)))),
+          ])),
+    );
   }
 
   @override
@@ -910,7 +989,7 @@ class _DanmakuListState extends State<_DanmakuList> {
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          settings: _lightGlassLocal(),
+          settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 24, blur: 12, lightIntensity: 0.6, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.3),
           child: Column(children: [
             GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
             const SizedBox(height: 4),
@@ -924,11 +1003,6 @@ class _DanmakuListState extends State<_DanmakuList> {
       ]);
     });
   }
-
-  LiquidGlassSettings _lightGlassLocal() => LiquidGlassSettings(
-        glassColor: const Color(0xB3FFFFFF), thickness: 24, blur: 12,
-        lightIntensity: 0.6, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.3,
-      );
 
   void _showDanmakuSettingsLocal(LivePlayController c) {
     showModalBottomSheet(
@@ -960,7 +1034,125 @@ class _DanmakuListState extends State<_DanmakuList> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 高能榜（浅色 Sheet 内容）
+// 长按菜单：图一横向胶囊 → 点 > 展开图二竖排
+// ─────────────────────────────────────────────────────────────────────────────
+class _DanmakuMenu extends StatefulWidget {
+  final LivePlayController c;
+  final DanmakuMessage m;
+  final Offset pos;
+  final LiquidGlassSettings menuGlass;
+  final VoidCallback onUserInfo;
+  const _DanmakuMenu({required this.c, required this.m, required this.pos, required this.menuGlass, required this.onUserInfo});
+  @override
+  State<_DanmakuMenu> createState() => _DanmakuMenuState();
+}
+
+class _DanmakuMenuState extends State<_DanmakuMenu> {
+  bool _expanded = false;
+
+  void _done() => Navigator.of(context).pop();
+
+  String get _content => widget.m.isGift ? '${widget.m.nickname} 送 ${widget.m.giftName}' : widget.m.content;
+
+  void _copy() {
+    Clipboard.setData(ClipboardData(text: _content));
+    Get.snackbar('提示', '已复制到剪贴板', snackPosition: SnackPosition.BOTTOM);
+    _done();
+  }
+
+  void _repeat() {
+    if (!widget.m.isGift) widget.c.sendDanmaku(widget.m.content);
+    _done();
+  }
+
+  void _quote() {
+    widget.c.inputController.text = widget.m.content;
+    Get.snackbar('引用', '内容已填入输入框', snackPosition: SnackPosition.BOTTOM);
+    _done();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final w = _expanded ? 232.0 : 196.0;
+    final h = _expanded ? 268.0 : 52.0;
+    final left = widget.pos.dx.clamp(8.0, size.width - w - 8);
+    final top = (widget.pos.dy - 60).clamp(80.0, size.height - h - 140);
+    return Stack(children: [
+      Positioned(
+        left: left,
+        top: top,
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topLeft,
+          child: _expanded ? _verticalMenu() : _capsule(),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _capsule() {
+    return GlassButtonGroup.icons(
+      useOwnLayer: true,
+      quality: GlassQuality.premium,
+      borderRadius: 26,
+      iconSize: 18,
+      itemPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      settings: widget.menuGlass,
+      items: [
+        GlassButtonGroupItem(label: '复制', icon: const Icon(Icons.copy, color: Colors.white70), onTap: _copy),
+        GlassButtonGroupItem(label: '+1', icon: const Icon(Icons.send, color: Color(0xFFFF8800)), onTap: _repeat),
+        GlassButtonGroupItem(label: '引用', icon: const Icon(Icons.format_quote, color: Colors.white70), onTap: _quote),
+        GlassButtonGroupItem(label: '更多', icon: const Icon(Icons.chevron_right, color: Colors.white70),
+            onTap: () => setState(() => _expanded = true)),
+      ],
+    );
+  }
+
+  Widget _verticalMenu() {
+    return GlassContainer(
+      shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+      useOwnLayer: true,
+      quality: GlassQuality.premium,
+      settings: widget.menuGlass,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _row(Icons.copy, Colors.white70, '复制内容', _copy),
+        _divider(),
+        _row(Icons.send, const Color(0xFFFF8800), '+1 复读', _repeat),
+        _divider(),
+        _row(Icons.format_quote, Colors.white70, '引用到输入框', _quote),
+        _divider(),
+        _row(Icons.person, const Color(0xFF00B8D4), '查看用户信息', widget.onUserInfo),
+        _divider(),
+        _row(Icons.block, const Color(0xFFE5484D), '屏蔽该弹幕', () {
+          Get.snackbar('屏蔽', '已本地屏蔽 ${widget.m.nickname}', snackPosition: SnackPosition.BOTTOM);
+          _done();
+        }),
+      ]),
+    );
+  }
+
+  Widget _divider() => Container(height: 0.5, color: Colors.white.withOpacity(0.08), margin: const EdgeInsets.only(left: 44));
+
+  Widget _row(IconData icon, Color color, String title, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 12),
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 高能榜
 // ─────────────────────────────────────────────────────────────────────────────
 class _HighEnergyBody extends StatefulWidget {
   final LivePlayController c;
@@ -1010,7 +1202,7 @@ class _HighEnergyBodyState extends State<_HighEnergyBody> with SingleTickerProvi
   @override
   Widget build(BuildContext context) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      TabBar(controller: _tab, labelColor: kAccent, unselectedLabelColor: const Color(0xFF5F6672), indicatorColor: kAccent, tabs: [Tab(text: '守护 (${_guard.length})'), Tab(text: '贵宾 (${_vip.length})')]),
+      TabBar(controller: _tab, labelColor: kAccent, unselectedLabelColor: const Color(0xFF5F6672), indicatorColor: kAccent, dividerColor: Colors.transparent, tabs: [Tab(text: '守护 (${_guard.length})'), Tab(text: '贵宾 (${_vip.length})')]),
       ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
           child: TabBarView(controller: _tab, children: [_list(_guard, '暂无守护'), _list(_vip, '暂无贵宾')])),
     ]);
