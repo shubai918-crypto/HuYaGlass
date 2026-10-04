@@ -44,9 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _group([
             Obx(() => _row(
                   Icons.account_circle, const Color(0xFF4CB7FF),
-                  UserProfile.to.logged.value
-                      ? '已登录：${UserProfile.to.nickname.value}'
-                      : '虎牙账号',
+                  UserProfile.to.logged.value ? '已登录：${UserProfile.to.nickname.value}' : '虎牙账号',
                   UserProfile.to.logged.value ? '点击进入账号管理' : '粘贴 Cookie 登录，解锁真实弹幕与订阅数',
                   () => Get.toNamed('/huya_login'),
                 )),
@@ -75,16 +73,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 LiveNotifyManager.to.setEnabled(v);
               },
             ),
-          ]),
-          const SizedBox(height: 24),
-          _section('外观'),
-          const SizedBox(height: 8),
-          _group([
-            Obx(() => _switchRow(
-                  Icons.dark_mode, const Color(0xFF576066), '深色模式', '切换明暗主题',
-                  value: AppSettings.to.isDark,
-                  onChanged: (_) => AppSettings.to.toggleTheme(),
-                )),
           ]),
           const SizedBox(height: 24),
           _section('开发者'),
