@@ -12,6 +12,14 @@ import 'follow_store.dart';
 import 'history_store.dart';
 import 'profile_page.dart';
 
+// ★ 浅色色板（酷安式白底 + 虎牙橙）
+const kBg = Color(0xFFF4F5F6);
+const kCard = Colors.white;
+const kText = Color(0xFF1F2329);
+const kSub = Color(0xFF8A9099);
+const kLine = Color(0xFFE9EBEF);
+const kAccent = Color(0xFFFF8800);
+
 class NowRoom {
   final String roomId;
   final String nickname;
@@ -87,19 +95,8 @@ class _HomePageState extends State<HomePage> {
           type: MaterialType.transparency,
           child: GlassScaffold(
             contentAwareBrightness: true,
-            statusBarStyle: GlassStatusBarStyle.light,
-            background: SizedBox.expand(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment(-0.3, -0.8),
-                    radius: 1.6,
-                    colors: [Color(0xFF2D1B4E), Color(0xFF12121A), Color(0xFF050508)],
-                    stops: [0.0, 0.6, 1.0],
-                  ),
-                ),
-              ),
-            ),
+            statusBarStyle: GlassStatusBarStyle.dark,
+            background: const SizedBox.expand(child: ColoredBox(color: kBg)),
             appBar: GlassAppBar(
               title: GlassContainer(
                 shape: const LiquidRoundedSuperellipse(borderRadius: 999),
@@ -107,26 +104,28 @@ class _HomePageState extends State<HomePage> {
                 useOwnLayer: true,
                 quality: GlassQuality.premium,
                 settings: LiquidGlassSettings(
-                  blur: 12, thickness: 35, refractiveIndex: 1.15, saturation: 1.2,
-                  bodyMode: GlassBodyMode.adaptive,
+                  glassColor: const Color(0xB3FFFFFF),
+                  thickness: 25, blur: 12, lightIntensity: 0.6,
+                  specularSharpness: GlassSpecularSharpness.medium,
+                  fresnelStrength: 1.0, saturation: 1.3, refractiveIndex: 1.15,
                 ),
                 child: const Text('HuyaLive',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                    style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
               ),
               actions: [
                 Obx(() => GlassIconButton(
                       icon: Icon(
                         AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                        color: Colors.white,
+                        color: const Color(0xFF3C4248),
                       ),
                       size: 44,
-                      glowColor: const Color(0xFFFF8800).withOpacity(0.4),
+                      glowColor: kAccent.withOpacity(0.35),
                       onPressed: () => AppSettings.to.toggleTheme(),
                     )),
                 GlassIconButton(
-                  icon: const Icon(Icons.settings, color: Colors.white),
+                  icon: const Icon(Icons.settings, color: Color(0xFF3C4248)),
                   size: 44,
-                  glowColor: const Color(0xFFFF8800).withOpacity(0.4),
+                  glowColor: kAccent.withOpacity(0.35),
                   onPressed: () => _showQuickSettings(context),
                 ),
               ],
@@ -163,15 +162,11 @@ class _HomePageState extends State<HomePage> {
               bottomAccessory: room != null ? _buildMiniBar(room) : null,
               bottomAccessoryHeight: room != null ? 56 : null,
               bottomAccessorySpacing: 8,
-              // ★ Apple Music Demo 同款 pill 玻璃参数
               settings: LiquidGlassSettings(
-                glassColor: const Color(0xCC141419),
-                thickness: 30,
-                blur: 2,
-                lightIntensity: 0.18,
-                chromaticAberration: 0.01,
-                saturation: 1.2,
-                fresnelStrength: 0.0,
+                glassColor: const Color(0xB3FFFFFF),
+                thickness: 28, blur: 14, lightIntensity: 0.6,
+                specularSharpness: GlassSpecularSharpness.medium,
+                fresnelStrength: 1.0, saturation: 1.3, refractiveIndex: 1.15,
               ),
               barHeight: 64,
               minimizedBarHeight: 50,
@@ -180,11 +175,11 @@ class _HomePageState extends State<HomePage> {
               spacing: 6,
               selectedIndex: _selectedIndex,
               onTabSelected: _select,
-              indicatorColor: Colors.white.withOpacity(0.10),
-              selectedIconColor: const Color(0xFFFF8800),
-              selectedLabelColor: const Color(0xFFFF8800),
-              unselectedIconColor: Colors.white.withOpacity(0.75),
-              unselectedLabelColor: Colors.white.withOpacity(0.75),
+              indicatorColor: kAccent.withOpacity(0.12),
+              selectedIconColor: kAccent,
+              selectedLabelColor: kAccent,
+              unselectedIconColor: const Color(0xFF5F6672),
+              unselectedLabelColor: const Color(0xFF5F6672),
               iconSize: 26,
               labelFontSize: 10,
               iconLabelSpacing: 2,
@@ -206,22 +201,22 @@ class _HomePageState extends State<HomePage> {
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF16161E),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
             Obx(() => SwitchListTile(
-                  secondary: const Icon(Icons.dark_mode, color: Colors.white70),
-                  title: const Text('深色模式', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  secondary: const Icon(Icons.dark_mode, color: Color(0xFF3C4248)),
+                  title: const Text('深色模式', style: TextStyle(color: kText, fontSize: 15)),
                   value: AppSettings.to.isDark, onChanged: (_) => AppSettings.to.toggleTheme(),
                 )),
             Obx(() => SwitchListTile(
-                  secondary: const Icon(Icons.bug_report_outlined, color: Colors.white70),
-                  title: const Text('调试模式', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  secondary: const Icon(Icons.bug_report_outlined, color: Color(0xFF3C4248)),
+                  title: const Text('调试模式', style: TextStyle(color: kText, fontSize: 15)),
                   value: AppSettings.to.debugEnabled.value, onChanged: AppSettings.to.setDebug,
                 )),
           ]),
@@ -241,9 +236,9 @@ class _HomePageState extends State<HomePage> {
         useOwnLayer: true,
         quality: GlassQuality.premium,
         settings: LiquidGlassSettings(
-          blur: 20, thickness: 25,
-          platformViewMode: PlatformViewGlassMode.passthrough,
-          glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
+          glassColor: const Color(0xCCFFFFFF),
+          thickness: 25, blur: 12, lightIntensity: 0.6,
+          specularSharpness: GlassSpecularSharpness.medium, saturation: 1.3,
         ),
         child: SizedBox(
           height: 48,
@@ -265,21 +260,21 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(room.nickname,
                       maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
                   if (!inline)
                     const Text('正在播放 · 虎牙直播',
-                        maxLines: 1, style: TextStyle(color: Colors.white54, fontSize: 10)),
+                        maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
                 ],
               ),
             ),
             GlassIconButton(
-              icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)),
+              icon: const Icon(Icons.play_arrow, color: kAccent),
               size: inline ? 32 : 36,
               onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
             ),
             const SizedBox(width: 4),
             GlassIconButton(
-              icon: const Icon(Icons.close, color: Colors.white54),
+              icon: const Icon(Icons.close, color: Color(0xFF8A9099)),
               size: inline ? 28 : 32,
               onPressed: () => NowWatching.notifier.value = null,
             ),
@@ -333,7 +328,7 @@ class _HomeView extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
-        _card(icon: Icons.subscriptions_outlined, color: const Color(0xFFFF8800),
+        _card(icon: Icons.subscriptions_outlined, color: kAccent,
             label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
         const SizedBox(height: 12),
         _card(icon: Icons.account_circle, color: const Color(0xFFFFB25E),
@@ -350,25 +345,25 @@ class _HomeView extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF16161E),
+          color: kCard,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.06)),
+          border: Border.all(color: kLine),
         ),
         child: Row(children: [
           Container(
             width: 44, height: 44,
-            decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(14)),
+            decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+              Text(label, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12)),
+              Text(sub, style: const TextStyle(color: kSub, fontSize: 12)),
             ]),
           ),
-          const Icon(Icons.chevron_right, color: Colors.white38),
+          const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF)),
         ]),
       ),
     );
@@ -379,21 +374,21 @@ class _HomeView extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 16)),
+        backgroundColor: Colors.white,
+        title: const Text('进入直播间', style: TextStyle(color: kText, fontSize: 16)),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: kText),
           decoration: const InputDecoration(
               hintText: '输入房间号，如 31343932',
-              hintStyle: TextStyle(color: Colors.white38)),
+              hintStyle: TextStyle(color: Color(0xFFA6ADB5))),
         ),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('取消', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Get.back(), child: const Text('取消', style: TextStyle(color: kSub))),
           TextButton(
             onPressed: () { Get.back(); goLive(ctrl.text.trim()); },
-            child: const Text('进入', style: TextStyle(color: Color(0xFFFF8800))),
+            child: const Text('进入', style: TextStyle(color: kAccent)),
           ),
         ],
       ),
