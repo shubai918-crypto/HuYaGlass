@@ -367,23 +367,27 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   }
 }
 
-// ★ 酷安同款实色白 Sheet 外壳
+// ★ 酷安同款实色白 Sheet 外壳 + 键盘避让
 class _LightSheet extends StatelessWidget {
   final Widget child;
   const _LightSheet({required this.child});
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    return Padding(
+      // ★ 键盘顶起时整体上移，不再被盖住
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10),
+              decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), child: child),
+          SizedBox(height: MediaQuery.of(context).padding.bottom),
+        ]),
       ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10),
-            decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), child: child),
-        SizedBox(height: MediaQuery.of(context).padding.bottom),
-      ]),
     );
   }
 }
@@ -401,6 +405,7 @@ class _DanmakuComposeBody extends StatefulWidget {
 
 class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   final FocusNode _fn = FocusNode();
+  bool _focused = false;
   bool _emojiOpen = false;
   bool _phraseOpen = false;
   bool _sending = false;
@@ -421,9 +426,10 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   }
 
   void _onFocus() {
-    if (_fn.hasFocus && (_emojiOpen || _phraseOpen)) {
-      setState(() { _emojiOpen = false; _phraseOpen = false; });
-    }
+    setState(() {
+      _focused = _fn.hasFocus;
+      if (_fn.hasFocus) { _emojiOpen = false; _phraseOpen = false; }
+    });
   }
 
   @override
@@ -517,58 +523,46 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   Widget build(BuildContext context) {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Opacity(
-        opacity: 0,
-        child: SizedBox(
-          height: 1,
-          child: TextField(
-            controller: widget.c.inputController,
-            focusNode: _fn,
-            showCursor: false,
-            maxLines: 1,
-            textInputAction: TextInputAction.send,
-            keyboardAppearance: Brightness.light,
-            onSubmitted: (_) => _sendFlow(),
-          ),
-        ),
-      ),
-      // ★ 真输入框：光标/点按/选择全部原生正常；有文本时上方实时渲染表情预览
+      // ★ 单面输入：聚焦=真 TextField（有光标）；失焦=富文本渲染面（表情可见），永不重复
       Container(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 64),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(color: const Color(0xFFF2F3F5), borderRadius: BorderRadius.circular(16)),
-        child: Column(children: [
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: widget.c.inputController,
-            builder: (context, v, _) => v.text.isEmpty
-                ? const SizedBox.shrink()
-                : Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text.rich(
-                      TextSpan(children: buildEmoteSpans(v.text, fontSize: 18, textColor: const Color(0xFF23272E))),
-                      style: const TextStyle(color: Color(0xFF23272E), fontSize: 18, height: 1.4),
-                    ),
-                  ),
-          ),
-          TextField(
-            controller: widget.c.inputController,
-            focusNode: _fn,
-            autofocus: !widget.showEmojiInitial,
-            maxLines: 3,
-            minLines: 1,
-            style: const TextStyle(color: Color(0xFF23272E), fontSize: 15),
-            cursorColor: kAccent,
-            keyboardAppearance: Brightness.light,
-            textInputAction: TextInputAction.send,
-            onSubmitted: (_) => _sendFlow(),
-            decoration: const InputDecoration(
-              hintText: '发送弹幕...',
-              hintStyle: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15),
-              border: InputBorder.none,
-            ),
-          ),
-        ]),
+        child: _focused
+            ? TextField(
+                controller: widget.c.inputController,
+                focusNode: _fn,
+                maxLines: 3,
+                minLines: 1,
+                style: const TextStyle(color: Color(0xFF23272E), fontSize: 15),
+                cursorColor: kAccent,
+                keyboardAppearance: Brightness.light,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendFlow(),
+                decoration: const InputDecoration(
+                  hintText: '发送弹幕...',
+                  hintStyle: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15),
+                  border: InputBorder.none,
+                ),
+              )
+            : GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => FocusScope.of(context).requestFocus(_fn),
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: widget.c.inputController,
+                  builder: (context, v, _) => v.text.isEmpty
+                      ? const Align(alignment: Alignment.centerLeft,
+                          child: Text('发送弹幕...', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15)))
+                      : Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text.rich(
+                            TextSpan(children: buildEmoteSpans(v.text, fontSize: 15, textColor: const Color(0xFF23272E))),
+                            style: const TextStyle(color: Color(0xFF23272E), fontSize: 15, height: 1.5),
+                          ),
+                        ),
+                ),
+              ),
       ),
       const SizedBox(height: 10),
       Row(children: [
