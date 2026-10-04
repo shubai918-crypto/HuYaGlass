@@ -14,7 +14,6 @@ import 'modules/live_play/background_play.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
@@ -28,7 +27,6 @@ void main() async {
   Get.put(UserProfile(), permanent: true);
   Get.put(LiveNotifyManager(), permanent: true);
 
-  // ★ 预热 shader，消除首帧卡顿
   await LiquidGlassWidgets.initialize();
 
   runApp(LiquidGlassWidgets.wrap(
@@ -42,38 +40,23 @@ class HuyaLiveApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() => GetMaterialApp(
-          title: 'HuyaLive',
-          debugShowCheckedModeBanner: false,
-          themeMode: AppSettings.to.themeMode.value,
-          theme: ThemeData(
-            brightness: Brightness.light,
-            useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFFF4F5F6),
-            colorScheme: const ColorScheme.light(primary: Color(0xFFFF8800)),
-          ),
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFF0A0A0F),
-            colorScheme: const ColorScheme.dark(primary: Color(0xFFFF8800)),
-          ),
-          // ★ 官方修复：MaterialApp 下给 glass 页面补透明 Material
-          builder: (context, child) => Material(
-            type: MaterialType.transparency,
-            child: child!,
-          ),
-          getPages: [
-            GetPage(name: '/notice', page: () => const NoticePage()),
-          ],
-          home: const SplashPage(), // ★ 启动页
-        ));
+    // ★ 锁死浅色主题，删除深浅切换
+    return GetMaterialApp(
+      title: 'HuyaLive',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.light,
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF4F5F6),
+        colorScheme: const ColorScheme.light(primary: Color(0xFFFF8800)),
+      ),
+      builder: (context, child) => Material(type: MaterialType.transparency, child: child!),
+      getPages: [GetPage(name: '/notice', page: () => const NoticePage())],
+      home: const SplashPage(),
+    );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ★ Splash 启动页：遮住首帧 shader 编译卡顿，进入更顺滑
-// ─────────────────────────────────────────────────────────────────────────────
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
   @override
@@ -119,8 +102,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
             child: Column(children: [
               const Spacer(),
               Container(
-                width: 96,
-                height: 96,
+                width: 96, height: 96,
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28)),
                 child: const Icon(Icons.live_tv, color: Color(0xFFFF7A00), size: 52),
               ),
@@ -128,8 +110,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
               const Text('HuyaLive',
                   style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1)),
               const SizedBox(height: 8),
-              Text('虎牙直播 · 液态玻璃',
-                  style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 14)),
+              Text('虎牙直播 · 液态玻璃', style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 14)),
               const Spacer(),
               Padding(
                 padding: const EdgeInsets.only(bottom: 24),
