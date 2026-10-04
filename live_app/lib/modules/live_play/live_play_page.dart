@@ -38,7 +38,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   late final LivePlayController c = Get.put(LivePlayController());
   late final TabController _tab = TabController(length: 3, vsync: this);
   bool _chromeVisible = false;
-  bool _panelOpen = false;
   Worker? _nameWorker;
   Worker? _avatarWorker;
 
@@ -85,10 +84,9 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
 
   Widget _buildPortrait(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    final kbOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B10),
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       body: Column(children: [
         SizedBox(height: top),
         GlassMaterialize(visible: _chromeVisible, child: _header()),
@@ -97,7 +95,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         Expanded(child: TabBarView(controller: _tab, children: [
           _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
         ])),
-        GlassMaterialize(visible: _chromeVisible, child: _bottomBar(kbOpen)),
+        GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
       ]),
     );
   }
@@ -201,62 +199,51 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 图一双 pill 底栏：左=发弹幕触发条，右=图标组
-  Widget _bottomBar(bool keyboardOpen) {
-    final showPanel = _panelOpen && !keyboardOpen;
+  // ★ 图一双 pill 底栏（清晰度入口改为 GlassSheet）
+  Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        AnimatedSize(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.bottomCenter,
-          child: showPanel
-              ? Padding(padding: const EdgeInsets.only(bottom: 8), child: _qualityPanel())
-              : const SizedBox.shrink(),
-        ),
-        Row(children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _openComposeSheet(),
-              child: GlassContainer(
-                shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                useOwnLayer: true,
-                quality: GlassQuality.premium,
-                settings: _pillGlass(),
-                child: Row(children: [
-                  const Icon(Icons.edit_note, color: Colors.white54, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: c.inputController,
-                      builder: (context, v, _) => Text(
-                        v.text.isEmpty ? '发弹幕...' : v.text,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white70, fontSize: 13),
-                      ),
+      child: Row(children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: () => _openComposeSheet(),
+            child: GlassContainer(
+              shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              useOwnLayer: true,
+              quality: GlassQuality.premium,
+              settings: _pillGlass(),
+              child: Row(children: [
+                const Icon(Icons.edit_note, color: Colors.white54, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: c.inputController,
+                    builder: (context, v, _) => Text(
+                      v.text.isEmpty ? '发弹幕...' : v.text,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white70, fontSize: 13),
                     ),
                   ),
-                ]),
-              ),
+                ),
+              ]),
             ),
           ),
-          const SizedBox(width: 8),
-          GlassContainer(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            useOwnLayer: true,
-            quality: GlassQuality.premium,
-            settings: _pillGlass(),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              _barIcon(Icons.speed, () => setState(() => _panelOpen = !_panelOpen), active: _panelOpen),
-              _barIcon(Icons.tune, _showDanmakuSettingsSheet),
-              _barIcon(Icons.emoji_emotions_outlined, () => _openComposeSheet(focusEmoji: true)),
-              _barIcon(Icons.send, () => _openComposeSheet(), accent: true),
-            ]),
-          ),
-        ]),
+        ),
+        const SizedBox(width: 8),
+        GlassContainer(
+          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          useOwnLayer: true,
+          quality: GlassQuality.premium,
+          settings: _pillGlass(),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            _barIcon(Icons.speed, _openQualitySheet),
+            _barIcon(Icons.tune, _showDanmakuSettingsSheet),
+            _barIcon(Icons.emoji_emotions_outlined, () => _openComposeSheet(focusEmoji: true)),
+            _barIcon(Icons.send, () => _openComposeSheet(), accent: true),
+          ]),
+        ),
       ]),
     );
   }
@@ -283,12 +270,78 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  void _openComposeSheet({bool focusEmoji = false}) {
-    showModalBottomSheet(
+  // ★ 修复3：清晰度/线路改用官方 GlassSheet（可拖拽关闭 + 玻璃面）
+  void _openQualitySheet() {
+    GlassSheet.show(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _DanmakuComposeSheet(c: c, showEmojiInitial: focusEmoji),
+      settings: RecommendedGlassSettings.sheet,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: _qualityContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _qualityContent() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        const Icon(Icons.high_quality_outlined, color: Color(0xFF00D2FF), size: 16),
+        const SizedBox(width: 6),
+        const Text('清晰度', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+        const Spacer(),
+        GestureDetector(onTap: () => Navigator.of(context).pop(), child: const Icon(Icons.close, color: Colors.white38, size: 18)),
+      ]),
+      const SizedBox(height: 12),
+      Obx(() => Wrap(spacing: 10, runSpacing: 10, children: [
+            for (final q in c.qualities)
+              _chip(q.name, q.name == c.currentQuality.value, const Color(0xFF00D2FF), () => c.switchQuality(q)),
+          ])),
+      const SizedBox(height: 18),
+      const Row(children: [
+        Icon(Icons.route_outlined, color: Color(0xFFFF8800), size: 16),
+        SizedBox(width: 6),
+        Text('线路', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+      ]),
+      const SizedBox(height: 12),
+      Obx(() => Wrap(spacing: 10, runSpacing: 10, children: [
+            for (var i = 0; i < c.lines.length; i++)
+              _chip('线路${i + 1}', i == c.currentLine.value, const Color(0xFFFF8800), () => c.switchLine(i)),
+          ])),
+    ]);
+  }
+
+  // ★ Sheet 内部 chip 用实色 Container（官方规则：glass 只做表面，内容行不实色）
+  Widget _chip(String label, bool selected, Color tint, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? tint.withOpacity(0.25) : Colors.white.withOpacity(0.08),
+          border: Border.all(color: selected ? tint : Colors.transparent, width: 1),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (selected) ...[Icon(Icons.check, size: 12, color: tint), const SizedBox(width: 4)],
+          Text(label, style: TextStyle(color: selected ? tint : Colors.white70, fontSize: 12, fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
+        ]),
+      ),
+    );
+  }
+
+  // ★ 修复1：评论 Sheet 改用 GlassModalSheet（half↔full 可拖拽 + grabber + 弹簧）
+  void _openComposeSheet({bool focusEmoji = false}) {
+    GlassModalSheet.show(
+      context: context,
+      initialState: GlassSheetState.half,
+      halfSize: 0.55,
+      mode: GlassSheetMode.dismissible,
+      showDragIndicator: true,
+      quality: GlassQuality.premium,
+      settings: RecommendedGlassSettings.sheet,
+      builder: (_) => _DanmakuComposeBody(c: c, showEmojiInitial: focusEmoji),
     );
   }
 
@@ -319,83 +372,20 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
       ),
     );
   }
-
-  Widget _qualityPanel() {
-    return GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      useOwnLayer: true,
-      settings: LiquidGlassSettings(blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.55)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [
-          const Icon(Icons.high_quality_outlined, color: Color(0xFF00D2FF), size: 15),
-          const SizedBox(width: 6),
-          const Text('清晰度', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => setState(() => _panelOpen = false),
-            child: const Icon(Icons.close, color: Colors.white38, size: 16),
-          ),
-        ]),
-        const SizedBox(height: 10),
-        Obx(() => Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final q in c.qualities)
-                _glassChip(q.name, q.name == c.currentQuality.value, const Color(0xFF00D2FF), () => c.switchQuality(q)),
-            ])),
-        const SizedBox(height: 14),
-        const Row(children: [
-          Icon(Icons.route_outlined, color: Color(0xFFFF8800), size: 15),
-          SizedBox(width: 6),
-          Text('线路', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
-        ]),
-        const SizedBox(height: 10),
-        Obx(() => Wrap(spacing: 8, runSpacing: 8, children: [
-              for (var i = 0; i < c.lines.length; i++)
-                _glassChip('线路${i + 1}', i == c.currentLine.value, const Color(0xFFFF8800), () => c.switchLine(i)),
-            ])),
-      ]),
-    );
-  }
-
-  Widget _glassChip(String label, bool selected, Color tint, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: GlassContainer(
-        shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        settings: LiquidGlassSettings(
-          blur: 10,
-          thickness: 16,
-          glassColor: selected ? tint.withOpacity(0.30) : Colors.white.withOpacity(0.06),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (selected) ...[
-            Icon(Icons.check, size: 12, color: tint),
-            const SizedBox(width: 4),
-          ],
-          Text(label,
-              style: TextStyle(
-                  color: selected ? tint : Colors.white60,
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
-        ]),
-      ),
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 酷安视频同款：弹幕评论 Sheet
+// 评论 Sheet 内容（富文本输入面 + 智能退格 + 表情/短语面板）
 // ─────────────────────────────────────────────────────────────────────────────
-class _DanmakuComposeSheet extends StatefulWidget {
+class _DanmakuComposeBody extends StatefulWidget {
   final LivePlayController c;
   final bool showEmojiInitial;
-  const _DanmakuComposeSheet({required this.c, this.showEmojiInitial = false});
+  const _DanmakuComposeBody({required this.c, this.showEmojiInitial = false});
   @override
-  State<_DanmakuComposeSheet> createState() => _DanmakuComposeSheetState();
+  State<_DanmakuComposeBody> createState() => _DanmakuComposeBodyState();
 }
 
-class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
+class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   final FocusNode _fn = FocusNode();
   bool _emojiOpen = false;
   bool _phraseOpen = false;
@@ -416,7 +406,6 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
     });
   }
 
-  // 键盘弹出时自动收起面板（与视频一致）
   void _onFocus() {
     if (_fn.hasFocus && (_emojiOpen || _phraseOpen)) {
       setState(() {
@@ -436,20 +425,14 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
   void _toggleEmoji() {
     setState(() {
       _emojiOpen = !_emojiOpen;
-      if (_emojiOpen) {
-        _phraseOpen = false;
-        _fn.unfocus();
-      }
+      if (_emojiOpen) { _phraseOpen = false; _fn.unfocus(); }
     });
   }
 
   void _togglePhrase() {
     setState(() {
       _phraseOpen = !_phraseOpen;
-      if (_phraseOpen) {
-        _emojiOpen = false;
-        _fn.unfocus();
-      }
+      if (_phraseOpen) { _emojiOpen = false; _fn.unfocus(); }
     });
   }
 
@@ -464,35 +447,31 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
     setState(() {});
   }
 
-// surrogate-pair 安全退格（原生 UTF-16 判断，无需外部库）
+  // ★ 修复2：智能退格 —— 光标前若是完整 [表情] token 则整块删除
   void _backspace() {
     final tc = widget.c.inputController;
     final text = tc.text;
     if (text.isEmpty) return;
     final sel = tc.selection;
-    int start = sel.start, end = sel.end;
-    
+    int start = sel.start < 0 ? text.length : sel.start;
+    int end = sel.end < 0 ? text.length : sel.end;
     if (start == end && start > 0) {
-      int del = 1;
-      if (start >= 2) {
-        final high = text.codeUnitAt(start - 2);
-        final low = text.codeUnitAt(start - 1);
-        // 判断前两个字符是否构成 UTF-16 代理对 (High Surrogate + Low Surrogate)
-        // High: 0xD800 - 0xDBFF, Low: 0xDC00 - 0xDFFF
-        if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF) {
-          del = 2; // 是 Emoji，一次删两个 code unit
-        }
+      final prefix = text.substring(0, start);
+      final m = RegExp(r'\[[^\]]+\]$').firstMatch(prefix);
+      if (m != null) {
+        start -= m.group(0)!.length;
+      } else {
+        int del = 1;
+        if (start >= 2 && Rune.isSurrogatePair(text.codeUnitAt(start - 2), text.codeUnitAt(start - 1))) del = 2;
+        start -= del;
       }
-      start -= del;
     } else if (start > end) {
       final t = start; start = end; end = t;
     }
-    
     tc.text = text.replaceRange(start, end, '');
     tc.selection = TextSelection.collapsed(offset: start);
     setState(() {});
   }
-
 
   Future<void> _sendFlow() async {
     final t = widget.c.inputController.text.trim();
@@ -500,16 +479,12 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
     setState(() => _sending = true);
     _fn.unfocus();
     final nav = Navigator.of(context);
-    // 1) 居中 loading
     showDialog(context: context, barrierDismissible: false, builder: (_) => const _SendingCard());
-    // 2) 发送
     try {
       widget.c.sendDanmaku(t);
       await Future.delayed(const Duration(milliseconds: 400));
     } catch (_) {}
-    // 3) 关 loading
     if (mounted) nav.pop();
-    // 4) toast + 关 Sheet + 清空
     if (mounted) {
       _toast('发送成功');
       widget.c.inputController.clear();
@@ -539,115 +514,110 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
   @override
   Widget build(BuildContext context) {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
-    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
-      padding: EdgeInsets.only(bottom: viewInsets),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF16161E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10),
-              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // ★ 隐藏的真 TextField（负责键盘与光标）+ 富文本镜面（负责显示表情图）
+        Opacity(
+          opacity: 0,
+          child: SizedBox(
+            height: 1,
             child: TextField(
               controller: widget.c.inputController,
               focusNode: _fn,
-              autofocus: !widget.showEmojiInitial,
-              maxLines: 3,
-              minLines: 1,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              keyboardAppearance: Brightness.dark,
+              showCursor: false,
+              maxLines: 1,
               textInputAction: TextInputAction.send,
+              keyboardAppearance: Brightness.dark,
               onSubmitted: (_) => _sendFlow(),
-              decoration: const InputDecoration(
-                  hintText: '发送弹幕...', hintStyle: TextStyle(color: Colors.white30), border: InputBorder.none),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 12, 8),
-            child: Row(children: [
-              IconButton(
-                  icon: Icon(Icons.emoji_emotions_outlined,
-                      color: _emojiOpen ? const Color(0xFFFF8800) : Colors.white54, size: 22),
-                  onPressed: _toggleEmoji),
-              IconButton(
-                  icon: Icon(Icons.add_circle_outline,
-                      color: _phraseOpen ? const Color(0xFFFF8800) : Colors.white54, size: 22),
-                  onPressed: _togglePhrase),
-              IconButton(icon: const Icon(Icons.backspace_outlined, color: Colors.white54, size: 22), onPressed: _backspace),
-              IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white54, size: 22),
-                  onPressed: () {
-                    widget.c.inputController.clear();
-                    setState(() {});
-                  }),
-              const Spacer(),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: widget.c.inputController,
-                builder: (context, v, _) {
-                  final can = v.text.trim().isNotEmpty && !_sending;
-                  return GestureDetector(
-                    onTap: can ? _sendFlow : null,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: can ? const Color(0xFFFF8800) : Colors.white.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(999),
+        ),
+        GestureDetector(
+          onTap: () => FocusScope.of(context).requestFocus(_fn),
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 64),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(16)),
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: widget.c.inputController,
+              builder: (context, v, _) => v.text.isEmpty
+                  ? const Align(alignment: Alignment.centerLeft,
+                      child: Text('发送弹幕...', style: TextStyle(color: Colors.white30, fontSize: 15)))
+                  : Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text.rich(
+                        TextSpan(children: buildEmoteSpans(v.text, fontSize: 16, textColor: Colors.white)),
+                        style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5),
                       ),
-                      child: Text('发布',
-                          style: TextStyle(
-                              color: can ? Colors.white : Colors.white30, fontSize: 14, fontWeight: FontWeight.w600)),
                     ),
-                  );
-                },
-              ),
-            ]),
+            ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            child: _emojiOpen
-                ? _emoteGrid(entries)
-                : _phraseOpen
-                    ? _phraseGrid()
-                    : const SizedBox.shrink(),
+        ),
+        const SizedBox(height: 10),
+        Row(children: [
+          IconButton(icon: Icon(Icons.emoji_emotions_outlined, color: _emojiOpen ? const Color(0xFFFF8800) : Colors.white54, size: 22), onPressed: _toggleEmoji),
+          IconButton(icon: Icon(Icons.add_circle_outline, color: _phraseOpen ? const Color(0xFFFF8800) : Colors.white54, size: 22), onPressed: _togglePhrase),
+          IconButton(icon: const Icon(Icons.backspace_outlined, color: Colors.white54, size: 22), onPressed: _backspace),
+          IconButton(icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white54, size: 22),
+              onPressed: () { widget.c.inputController.clear(); setState(() {}); }),
+          const Spacer(),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: widget.c.inputController,
+            builder: (context, v, _) {
+              final can = v.text.trim().isNotEmpty && !_sending;
+              return GestureDetector(
+                onTap: can ? _sendFlow : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: can ? const Color(0xFFFF8800) : Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text('发布', style: TextStyle(color: can ? Colors.white : Colors.white30, fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+              );
+            },
           ),
-          SizedBox(height: viewInsets == 0 ? 10 : 0),
         ]),
-      ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          child: _emojiOpen
+              ? _emoteGrid(entries)
+              : _phraseOpen
+                  ? _phraseGrid()
+                  : const SizedBox.shrink(),
+        ),
+      ]),
     );
   }
 
   Widget _emoteGrid(List<MapEntry<String, String>> entries) {
     return SizedBox(
-      height: 210,
+      height: 220,
       child: Stack(children: [
         GridView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 6, 56, 28),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 6, mainAxisSpacing: 8, crossAxisSpacing: 8),
+          padding: const EdgeInsets.fromLTRB(0, 6, 48, 28),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 6, mainAxisSpacing: 8, crossAxisSpacing: 8),
           itemCount: entries.length,
           itemBuilder: (_, i) {
             final e = entries[i];
             return GestureDetector(
               onTap: () => _insert(e.key),
-              child: Image.network(e.value, width: 34, height: 34,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+              child: Image.network(e.value, width: 34, height: 34, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
             );
           },
         ),
         Positioned(
-          right: 12,
-          bottom: 6,
+          right: 0,
+          bottom: 0,
           child: GestureDetector(
             onTap: _backspace,
             child: Container(
-              width: 44,
-              height: 32,
+              width: 44, height: 32,
               decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
               child: const Icon(Icons.backspace_outlined, color: Colors.white70, size: 18),
             ),
@@ -660,10 +630,9 @@ class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
   Widget _phraseGrid() {
     return Container(
       height: 150,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 5),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 5),
         itemCount: _kPhrases.length,
         itemBuilder: (_, i) => GestureDetector(
           onTap: () => _insert(_kPhrases[i]),
@@ -686,8 +655,7 @@ class _SendingCard extends StatelessWidget {
       type: MaterialType.transparency,
       child: Center(
         child: Container(
-          width: 150,
-          height: 130,
+          width: 150, height: 130,
           decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(20)),
           child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             SizedBox(width: 34, height: 34, child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFFFF8800))),
@@ -844,17 +812,14 @@ class _DanmakuListState extends State<_DanmakuList> {
                   decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
               SelectableText(content, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5)),
               const SizedBox(height: 8),
-              Text('${m.nickname} · UID: ${m.uid > 0 ? '${m.uid}' : '未知'}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              Text('${m.nickname} · UID: ${m.uid > 0 ? '${m.uid}' : '未知'}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
               const SizedBox(height: 14),
               Row(children: [
                 Expanded(child: TextButton.icon(
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: content));
                     Get.back();
-                    Get.snackbar('提示', '已复制到剪贴板',
-                        backgroundColor: const Color(0xFF1A1A2E), colorText: Colors.white70,
-                        snackPosition: SnackPosition.BOTTOM);
+                    Get.snackbar('提示', '已复制到剪贴板', backgroundColor: const Color(0xFF1A1A2E), colorText: Colors.white70, snackPosition: SnackPosition.BOTTOM);
                   },
                   icon: const Icon(Icons.copy, size: 18, color: Color(0xFF00D2FF)),
                   label: const Text('复制', style: TextStyle(color: Color(0xFF00D2FF))),
