@@ -17,19 +17,22 @@ class HistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0B10),
+      backgroundColor: kBg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('观看历史', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: const IconThemeData(color: kText),
+        title: const Text('观看历史', style: TextStyle(color: kText, fontSize: 17, fontWeight: FontWeight.w700)),
         actions: [
-          IconButton(icon: const Icon(Icons.delete_outline, color: Colors.white70), onPressed: () => HistoryStore.clear()),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Color(0xFF8A9099)),
+            onPressed: () => HistoryStore.clear(),
+          ),
         ],
       ),
       body: Obx(() {
         if (HistoryStore.items.isEmpty) {
-          return const Center(child: Text('暂无观看历史', style: TextStyle(color: Colors.white38)));
+          return const Center(child: Text('暂无观看历史', style: TextStyle(color: Color(0xFFA6ADB5))));
         }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
@@ -42,18 +45,19 @@ class HistoryPage extends StatelessWidget {
               onLongPress: () => HistoryStore.remove(e.roomId),
               child: Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: const Color(0xFF16161E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.06))),
+                decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
                 child: Row(children: [
-                  CircleAvatar(radius: 22, backgroundColor: Colors.white10,
+                  CircleAvatar(radius: 22, backgroundColor: const Color(0xFFF2F3F5),
                       backgroundImage: e.avatar.isNotEmpty ? NetworkImage(e.avatar) : null,
-                      child: e.avatar.isEmpty ? const Icon(Icons.person, size: 20, color: Colors.white54) : null),
+                      child: e.avatar.isEmpty ? const Icon(Icons.person, size: 20, color: Color(0xFFA6ADB5)) : null),
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                    Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text('房间 ${e.roomId} · ${_ago(e.ts)}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                    Text('房间 ${e.roomId} · ${_ago(e.ts)}', style: const TextStyle(color: kSub, fontSize: 12)),
                   ])),
-                  const Icon(Icons.chevron_right, color: Colors.white30),
+                  const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF)),
                 ]),
               ),
             );
