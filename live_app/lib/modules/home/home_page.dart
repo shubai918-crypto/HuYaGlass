@@ -103,12 +103,7 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
                 useOwnLayer: true,
                 quality: GlassQuality.premium,
-                settings: LiquidGlassSettings(
-                  glassColor: const Color(0xB3FFFFFF),
-                  thickness: 25, blur: 12, lightIntensity: 0.6,
-                  specularSharpness: GlassSpecularSharpness.medium,
-                  fresnelStrength: 1.0, saturation: 1.3, refractiveIndex: 1.15,
-                ),
+                settings: _barGlass(),
                 child: const Text('HuyaLive',
                     style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
               ),
@@ -133,7 +128,7 @@ class _HomePageState extends State<HomePage> {
             body: Padding(
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + 60,
-                bottom: 150,
+                bottom: 120,
               ),
               child: IndexedStack(
                 index: _selectedIndex,
@@ -156,23 +151,19 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+            // ★ 酷安同款紧凑尺寸 + 高可见液态玻璃
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
               bottomAccessory: room != null ? _buildMiniBar(room) : null,
-              bottomAccessoryHeight: room != null ? 56 : null,
-              bottomAccessorySpacing: 8,
-              settings: LiquidGlassSettings(
-                glassColor: const Color(0xB3FFFFFF),
-                thickness: 28, blur: 14, lightIntensity: 0.6,
-                specularSharpness: GlassSpecularSharpness.medium,
-                fresnelStrength: 1.0, saturation: 1.3, refractiveIndex: 1.15,
-              ),
-              barHeight: 64,
-              minimizedBarHeight: 50,
-              horizontalPadding: 16,
-              verticalPadding: 10,
-              spacing: 6,
+              bottomAccessoryHeight: room != null ? 50 : null,
+              bottomAccessorySpacing: 6,
+              settings: _barGlass(),
+              barHeight: 56,
+              minimizedBarHeight: 48,
+              horizontalPadding: 12,
+              verticalPadding: 6,
+              spacing: 4,
               selectedIndex: _selectedIndex,
               onTabSelected: _select,
               indicatorColor: kAccent.withOpacity(0.12),
@@ -180,7 +171,7 @@ class _HomePageState extends State<HomePage> {
               selectedLabelColor: kAccent,
               unselectedIconColor: const Color(0xFF5F6672),
               unselectedLabelColor: const Color(0xFF5F6672),
-              iconSize: 26,
+              iconSize: 22,
               labelFontSize: 10,
               iconLabelSpacing: 2,
               quality: GlassQuality.premium,
@@ -198,10 +189,25 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ★ 高可见液态玻璃：35% 白 + 高模糊 + 强高光/色散，滚动时霜化折射清晰可见
+  LiquidGlassSettings _barGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x59FFFFFF),
+        thickness: 30,
+        blur: 24,
+        lightIntensity: 0.8,
+        specularSharpness: GlassSpecularSharpness.medium,
+        fresnelStrength: 1.2,
+        refractiveIndex: 1.2,
+        saturation: 1.6,
+        chromaticAberration: 0.015,
+        shadowElevation: 1.5,
+        whitenStrength: 0.1,
+      );
+
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: kCard,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
@@ -229,19 +235,15 @@ class _HomePageState extends State<HomePage> {
     return Builder(builder: (context) {
       final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
           GlassTabBarAccessoryPlacement.inline;
-      final avatarSize = inline ? 32.0 : 40.0;
+      final avatarSize = inline ? 30.0 : 38.0;
       return GlassContainer(
         shape: const LiquidRoundedSuperellipse(borderRadius: 999),
         padding: EdgeInsets.symmetric(horizontal: inline ? 10 : 12, vertical: 4),
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        settings: LiquidGlassSettings(
-          glassColor: const Color(0xCCFFFFFF),
-          thickness: 25, blur: 12, lightIntensity: 0.6,
-          specularSharpness: GlassSpecularSharpness.medium, saturation: 1.3,
-        ),
+        settings: _barGlass(),
         child: SizedBox(
-          height: 48,
+          height: 42,
           child: Row(children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
@@ -269,13 +271,13 @@ class _HomePageState extends State<HomePage> {
             ),
             GlassIconButton(
               icon: const Icon(Icons.play_arrow, color: kAccent),
-              size: inline ? 32 : 36,
+              size: inline ? 30 : 34,
               onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
             ),
             const SizedBox(width: 4),
             GlassIconButton(
               icon: const Icon(Icons.close, color: Color(0xFF8A9099)),
-              size: inline ? 28 : 32,
+              size: inline ? 26 : 30,
               onPressed: () => NowWatching.notifier.value = null,
             ),
           ]),
@@ -320,10 +322,29 @@ class _HomeView extends StatelessWidget {
             Text('看直播 · 弹幕 · 订阅 · 真实发送',
                 style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
             const SizedBox(height: 18),
-            GlassButton(
-              icon: const Icon(Icons.play_arrow),
-              label: '进入直播间',
+            // ★ GlassButton 调参：176×48 圆角矩形 + clear 白玻璃 + 白字标签
+            GlassButton.custom(
               onTap: () => _openEnterRoom(context),
+              width: 176,
+              height: 48,
+              shape: const LiquidRoundedRectangle(borderRadius: 24),
+              useOwnLayer: true,
+              quality: GlassQuality.premium,
+              stretch: 0.3,
+              settings: LiquidGlassSettings(
+                glassColor: Colors.white.withOpacity(0.22),
+                bodyMode: GlassBodyMode.clear,
+                thickness: 24,
+                blur: 2,
+                lightIntensity: 0.6,
+                specularSharpness: GlassSpecularSharpness.medium,
+              ),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.play_arrow, color: Colors.white, size: 20),
+                SizedBox(width: 6),
+                Text('进入直播间',
+                    style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+              ]),
             ),
           ]),
         ),
@@ -374,7 +395,7 @@ class _HomeView extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: kCard,
         title: const Text('进入直播间', style: TextStyle(color: kText, fontSize: 16)),
         content: TextField(
           controller: ctrl,
