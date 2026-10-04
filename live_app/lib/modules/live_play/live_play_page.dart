@@ -252,7 +252,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
             GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
             GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
-            GlassButtonGroupItem(label: '发送', icon: const Icon(Icons.send, color: kAccent), onTap: () => _openComposeSheet()),
           ],
         ),
       ]),
@@ -533,27 +532,43 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
           ),
         ),
       ),
-      GestureDetector(
-        onTap: () => FocusScope.of(context).requestFocus(_fn),
-        child: Container(
-          width: double.infinity,
-          constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFFF2F3F5), borderRadius: BorderRadius.circular(16)),
-          child: ValueListenableBuilder<TextEditingValue>(
+      // ★ 真输入框：光标/点按/选择全部原生正常；有文本时上方实时渲染表情预览
+      Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(minHeight: 64),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: const Color(0xFFF2F3F5), borderRadius: BorderRadius.circular(16)),
+        child: Column(children: [
+          ValueListenableBuilder<TextEditingValue>(
             valueListenable: widget.c.inputController,
             builder: (context, v, _) => v.text.isEmpty
-                ? const Align(alignment: Alignment.centerLeft,
-                    child: Text('发送弹幕...', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15)))
-                : Align(
-                    alignment: Alignment.centerLeft,
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Text.rich(
-                      TextSpan(children: buildEmoteSpans(v.text, fontSize: 16, textColor: const Color(0xFF23272E))),
-                      style: const TextStyle(color: Color(0xFF23272E), fontSize: 16, height: 1.5),
+                      TextSpan(children: buildEmoteSpans(v.text, fontSize: 18, textColor: const Color(0xFF23272E))),
+                      style: const TextStyle(color: Color(0xFF23272E), fontSize: 18, height: 1.4),
                     ),
                   ),
           ),
-        ),
+          TextField(
+            controller: widget.c.inputController,
+            focusNode: _fn,
+            autofocus: !widget.showEmojiInitial,
+            maxLines: 3,
+            minLines: 1,
+            style: const TextStyle(color: Color(0xFF23272E), fontSize: 15),
+            cursorColor: kAccent,
+            keyboardAppearance: Brightness.light,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) => _sendFlow(),
+            decoration: const InputDecoration(
+              hintText: '发送弹幕...',
+              hintStyle: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15),
+              border: InputBorder.none,
+            ),
+          ),
+        ]),
       ),
       const SizedBox(height: 10),
       Row(children: [
