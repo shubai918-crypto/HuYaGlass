@@ -226,7 +226,8 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                     builder: (context, v, _) => Text(
                       v.text.isEmpty ? '发弹幕...' : v.text,
                       maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white80, fontSize: 13),
+                      // ✅ 修复后的代码
+style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white70, fontSize: 13),
                     ),
                   ),
                 ),
@@ -479,7 +480,15 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
         start -= m.group(0)!.length;
       } else {
         int del = 1;
-        if (start >= 2 && Rune.isSurrogatePair(text.codeUnitAt(start - 2), text.codeUnitAt(start - 1))) del = 2;
+        // ✅ 修复后的代码
+if (start >= 2) {
+  final high = text.codeUnitAt(start - 2);
+  final low = text.codeUnitAt(start - 1);
+  // High Surrogate: 0xD800-0xDBFF, Low Surrogate: 0xDC00-0xDFFF
+  if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF) {
+    del = 2;
+  }
+}
         start -= del;
       }
     } else if (start > end) {
