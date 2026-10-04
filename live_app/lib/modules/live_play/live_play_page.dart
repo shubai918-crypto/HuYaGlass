@@ -53,7 +53,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         NowWatching.notifier.value = NowRoom(roomId: roomId, nickname: name, avatarUrl: c.streamerAvatar.value);
       }
     });
-    // ★ 头像后到时补写迷你条，避免迷你条头像变占位图
     _avatarWorker = ever(c.streamerAvatar, (av) {
       final cur = NowWatching.notifier.value;
       if (av.isNotEmpty && cur != null && cur.roomId == roomId) {
@@ -86,7 +85,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
 
   Widget _buildPortrait(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    // ★ 键盘是否弹出
     final kbOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B10),
@@ -104,9 +102,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-
-
-  // ★ 双行玻璃胶囊：第一行头像+名字+关闭，第二行功能按钮，名字不再被截断
   Widget _header() {
     return Obx(() => Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -187,7 +182,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
 
   void _showHighEnergySheet() => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _HighEnergySheet(c: c));
 
-  // ★ TabBar 装入玻璃胶囊
   Widget _tabs() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
@@ -207,7 +201,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-// ★ 底部控制区：单行玻璃条 + 可展开的清晰度/线路玻璃抽屉
+  // ★ 图一双 pill 底栏：左=发弹幕触发条，右=图标组
   Widget _bottomBar(bool keyboardOpen) {
     final showPanel = _panelOpen && !keyboardOpen;
     return Padding(
@@ -221,59 +215,111 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
               ? Padding(padding: const EdgeInsets.only(bottom: 8), child: _qualityPanel())
               : const SizedBox.shrink(),
         ),
-        GlassContainer(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          useOwnLayer: true,
-          settings: LiquidGlassSettings(blur: 20, thickness: 26, glassColor: Colors.black.withOpacity(0.45)),
-          child: Row(children: [
-            // ★ 清晰度胶囊按钮：显示当前档位，点击展开抽屉
-            GestureDetector(
-              onTap: () => setState(() => _panelOpen = !_panelOpen),
-              child: Obx(() => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.speed_outlined, color: Color(0xFF00D2FF), size: 14),
-                  const SizedBox(width: 4),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 62),
-                    child: Text(
-                      c.currentQuality.value.isEmpty ? '清晰度' : c.currentQuality.value,
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF00D2FF), fontSize: 11, fontWeight: FontWeight.w700),
+        Row(children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _openComposeSheet(),
+              child: GlassContainer(
+                shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                useOwnLayer: true,
+                quality: GlassQuality.premium,
+                settings: _pillGlass(),
+                child: Row(children: [
+                  const Icon(Icons.edit_note, color: Colors.white54, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: c.inputController,
+                      builder: (context, v, _) => Text(
+                        v.text.isEmpty ? '发弹幕...' : v.text,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white70, fontSize: 13),
+                      ),
                     ),
                   ),
-                  Icon(showPanel ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                      color: Colors.white38, size: 14),
                 ]),
-              )),
-            ),
-            Expanded(child: GlassContainer(
-              shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              settings: LiquidGlassSettings(blur: 8, thickness: 14, glassColor: Colors.white.withOpacity(0.06)),
-              child: TextField(
-                controller: c.inputController,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                textInputAction: TextInputAction.send,
-                keyboardAppearance: Brightness.dark,
-                decoration: const InputDecoration(hintText: '发送弹幕...', hintStyle: TextStyle(color: Colors.white38), border: InputBorder.none),
-                onSubmitted: (t) => c.sendDanmaku(t),
               ),
-            )),
-            const SizedBox(width: 6),
-            GlassIconButton(icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFFFFB25E)), size: 38, onPressed: _showEmotePicker),
-            const SizedBox(width: 4),
-            GlassIconButton(icon: const Icon(Icons.send, color: Colors.white), size: 38,
-                glowColor: const Color(0xFF00D2FF).withOpacity(0.5),
-                onPressed: () => c.sendDanmaku(c.inputController.text)),
-          ]),
-        ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GlassContainer(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            settings: _pillGlass(),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              _barIcon(Icons.speed, () => setState(() => _panelOpen = !_panelOpen), active: _panelOpen),
+              _barIcon(Icons.tune, _showDanmakuSettingsSheet),
+              _barIcon(Icons.emoji_emotions_outlined, () => _openComposeSheet(focusEmoji: true)),
+              _barIcon(Icons.send, () => _openComposeSheet(), accent: true),
+            ]),
+          ),
+        ]),
       ]),
     );
   }
 
-  // ★ 清晰度/线路玻璃抽屉面板
+  LiquidGlassSettings _pillGlass() => LiquidGlassSettings(
+        glassColor: const Color(0xCC141419),
+        thickness: 30,
+        blur: 2,
+        lightIntensity: 0.18,
+        chromaticAberration: 0.01,
+        saturation: 1.2,
+        fresnelStrength: 0.0,
+      );
+
+  Widget _barIcon(IconData icon, VoidCallback onTap, {bool active = false, bool accent = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: accent ? const BoxDecoration(color: Color(0xFFFF8800), shape: BoxShape.circle) : null,
+        child: Icon(icon, color: accent ? Colors.white : (active ? const Color(0xFF00D2FF) : Colors.white70), size: 20),
+      ),
+    );
+  }
+
+  void _openComposeSheet({bool focusEmoji = false}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DanmakuComposeSheet(c: c, showEmojiInitial: focusEmoji),
+    );
+  }
+
+  void _showDanmakuSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Align(alignment: Alignment.centerLeft,
+                  child: Text('弹幕设置', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700))),
+            ),
+            Obx(() => ListTile(
+                  title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  trailing: Switch(value: c.showGiftOverlay.value, onChanged: (v) => c.showGiftOverlay.value = v),
+                )),
+            Obx(() => ListTile(
+                  title: const Text('列表显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  trailing: Switch(value: c.showGiftList.value, onChanged: (v) => c.showGiftList.value = v),
+                )),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget _qualityPanel() {
     return GlassContainer(
       shape: const LiquidRoundedSuperellipse(borderRadius: 24),
@@ -311,7 +357,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 单个玻璃 chip：选中带 tint + 对勾
   Widget _glassChip(String label, bool selected, Color tint, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -337,46 +382,309 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
       ),
     );
   }
+}
 
-  
-  void _showEmotePicker() {
+// ─────────────────────────────────────────────────────────────────────────────
+// 酷安视频同款：弹幕评论 Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+class _DanmakuComposeSheet extends StatefulWidget {
+  final LivePlayController c;
+  final bool showEmojiInitial;
+  const _DanmakuComposeSheet({required this.c, this.showEmojiInitial = false});
+  @override
+  State<_DanmakuComposeSheet> createState() => _DanmakuComposeSheetState();
+}
+
+class _DanmakuComposeSheetState extends State<_DanmakuComposeSheet> {
+  final FocusNode _fn = FocusNode();
+  bool _emojiOpen = false;
+  bool _phraseOpen = false;
+  bool _sending = false;
+
+  static const List<String> _kPhrases = [
+    '666666', '主播帅呆了！', '来了来了', '加油加油！', '哈哈哈哈',
+    '这波操作可以', '注意身体别熬夜', '求带飞', '弹幕护体', '前排围观',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _emojiOpen = widget.showEmojiInitial;
+    _fn.addListener(_onFocus);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_emojiOpen && !_phraseOpen) _fn.requestFocus();
+    });
+  }
+
+  // 键盘弹出时自动收起面板（与视频一致）
+  void _onFocus() {
+    if (_fn.hasFocus && (_emojiOpen || _phraseOpen)) {
+      setState(() {
+        _emojiOpen = false;
+        _phraseOpen = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _fn.removeListener(_onFocus);
+    _fn.dispose();
+    super.dispose();
+  }
+
+  void _toggleEmoji() {
+    setState(() {
+      _emojiOpen = !_emojiOpen;
+      if (_emojiOpen) {
+        _phraseOpen = false;
+        _fn.unfocus();
+      }
+    });
+  }
+
+  void _togglePhrase() {
+    setState(() {
+      _phraseOpen = !_phraseOpen;
+      if (_phraseOpen) {
+        _emojiOpen = false;
+        _fn.unfocus();
+      }
+    });
+  }
+
+  void _insert(String s) {
+    final tc = widget.c.inputController;
+    final text = tc.text;
+    final sel = tc.selection;
+    final start = sel.start.clamp(0, text.length);
+    final end = sel.end.clamp(0, text.length);
+    tc.text = text.replaceRange(start, end, s);
+    tc.selection = TextSelection.collapsed(offset: start + s.length);
+    setState(() {});
+  }
+
+  // surrogate-pair 安全退格
+  void _backspace() {
+    final tc = widget.c.inputController;
+    final text = tc.text;
+    if (text.isEmpty) return;
+    final sel = tc.selection;
+    int start = sel.start, end = sel.end;
+    if (start == end && start > 0) {
+      int del = 1;
+      if (start >= 2 && Rune.isSurrogatePair(text.codeUnitAt(start - 2), text.codeUnitAt(start - 1))) del = 2;
+      start -= del;
+    } else if (start > end) {
+      final t = start; start = end; end = t;
+    }
+    tc.text = text.replaceRange(start, end, '');
+    tc.selection = TextSelection.collapsed(offset: start);
+    setState(() {});
+  }
+
+
+  Future<void> _sendFlow() async {
+    final t = widget.c.inputController.text.trim();
+    if (t.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    _fn.unfocus();
+    final nav = Navigator.of(context);
+    // 1) 居中 loading
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const _SendingCard());
+    // 2) 发送
+    try {
+      widget.c.sendDanmaku(t);
+      await Future.delayed(const Duration(milliseconds: 400));
+    } catch (_) {}
+    // 3) 关 loading
+    if (mounted) nav.pop();
+    // 4) toast + 关 Sheet + 清空
+    if (mounted) {
+      _toast('发送成功');
+      widget.c.inputController.clear();
+      nav.pop();
+    }
+  }
+
+  void _toast(String msg) {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Center(
+        child: Material(
+          type: MaterialType.transparency,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(color: const Color(0xE6262626), borderRadius: BorderRadius.circular(999)),
+            child: Text(msg, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1200), () => entry.remove());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.5, minChildSize: 0.3, maxChildSize: 0.85, expand: false,
-        builder: (_, sc) => Column(children: [
-          Container(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(children: [
-                const Text('表情', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-                const Spacer(),
-                IconButton(icon: const Icon(Icons.close, color: Colors.white54, size: 20), onPressed: () => Navigator.of(context).pop()),
-              ])),
-          const Divider(height: 1, color: Colors.white12),
-          Expanded(child: GridView.builder(
-            controller: sc, padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8),
-            itemCount: entries.length,
-            itemBuilder: (_, i) {
-              final e = entries[i];
-              return InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  final tc = c.inputController; final text = tc.text; final sel = tc.selection;
-                  final start = sel.start.clamp(0, text.length); final end = sel.end.clamp(0, text.length);
-                  tc.text = text.replaceRange(start, end, e.key);
-                  tc.selection = TextSelection.collapsed(offset: start + e.key.length);
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF16161E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10),
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: widget.c.inputController,
+              focusNode: _fn,
+              autofocus: !widget.showEmojiInitial,
+              maxLines: 3,
+              minLines: 1,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              keyboardAppearance: Brightness.dark,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _sendFlow(),
+              decoration: const InputDecoration(
+                  hintText: '发送弹幕...', hintStyle: TextStyle(color: Colors.white30), border: InputBorder.none),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 12, 8),
+            child: Row(children: [
+              IconButton(
+                  icon: Icon(Icons.emoji_emotions_outlined,
+                      color: _emojiOpen ? const Color(0xFFFF8800) : Colors.white54, size: 22),
+                  onPressed: _toggleEmoji),
+              IconButton(
+                  icon: Icon(Icons.add_circle_outline,
+                      color: _phraseOpen ? const Color(0xFFFF8800) : Colors.white54, size: 22),
+                  onPressed: _togglePhrase),
+              IconButton(icon: const Icon(Icons.backspace_outlined, color: Colors.white54, size: 22), onPressed: _backspace),
+              IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white54, size: 22),
+                  onPressed: () {
+                    widget.c.inputController.clear();
+                    setState(() {});
+                  }),
+              const Spacer(),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: widget.c.inputController,
+                builder: (context, v, _) {
+                  final can = v.text.trim().isNotEmpty && !_sending;
+                  return GestureDetector(
+                    onTap: can ? _sendFlow : null,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: can ? const Color(0xFFFF8800) : Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text('发布',
+                          style: TextStyle(
+                              color: can ? Colors.white : Colors.white30, fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                  );
                 },
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Image.network(e.value, width: 40, height: 40, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                  const SizedBox(height: 4),
-                  Text(e.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                ]),
-              );
-            },
-          )),
+              ),
+            ]),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: _emojiOpen
+                ? _emoteGrid(entries)
+                : _phraseOpen
+                    ? _phraseGrid()
+                    : const SizedBox.shrink(),
+          ),
+          SizedBox(height: viewInsets == 0 ? 10 : 0),
         ]),
+      ),
+    );
+  }
+
+  Widget _emoteGrid(List<MapEntry<String, String>> entries) {
+    return SizedBox(
+      height: 210,
+      child: Stack(children: [
+        GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 6, 56, 28),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 6, mainAxisSpacing: 8, crossAxisSpacing: 8),
+          itemCount: entries.length,
+          itemBuilder: (_, i) {
+            final e = entries[i];
+            return GestureDetector(
+              onTap: () => _insert(e.key),
+              child: Image.network(e.value, width: 34, height: 34,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+            );
+          },
+        ),
+        Positioned(
+          right: 12,
+          bottom: 6,
+          child: GestureDetector(
+            onTap: _backspace,
+            child: Container(
+              width: 44,
+              height: 32,
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.backspace_outlined, color: Colors.white70, size: 18),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _phraseGrid() {
+    return Container(
+      height: 150,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: GridView.builder(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 5),
+        itemCount: _kPhrases.length,
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () => _insert(_kPhrases[i]),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(999)),
+            child: Text(_kPhrases[i], style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SendingCard extends StatelessWidget {
+  const _SendingCard();
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Center(
+        child: Container(
+          width: 150,
+          height: 130,
+          decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(20)),
+          child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            SizedBox(width: 34, height: 34, child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFFFF8800))),
+            SizedBox(height: 12),
+            Text('正在发送...', style: TextStyle(color: Colors.white70, fontSize: 13)),
+          ]),
+        ),
       ),
     );
   }
@@ -514,8 +822,7 @@ class _DanmakuListState extends State<_DanmakuList> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -523,10 +830,8 @@ class _DanmakuListState extends State<_DanmakuList> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-              ),
+              Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
               SelectableText(content, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5)),
               const SizedBox(height: 8),
               Text('${m.nickname} · UID: ${m.uid > 0 ? '${m.uid}' : '未知'}',
@@ -552,40 +857,6 @@ class _DanmakuListState extends State<_DanmakuList> {
                     label: const Text('+1 复读', style: TextStyle(color: Color(0xFFFF8800))),
                   )),
               ]),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDanmakuSettings(LivePlayController c) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16161E),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('弹幕设置', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-                ),
-              ),
-              Obx(() => ListTile(
-                    title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
-                    trailing: Switch(value: c.showGiftOverlay.value, onChanged: (v) => c.showGiftOverlay.value = v),
-                  )),
-              Obx(() => ListTile(
-                    title: const Text('列表显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
-                    trailing: Switch(value: c.showGiftList.value, onChanged: (v) => c.showGiftList.value = v),
-                  )),
             ],
           ),
         ),
@@ -652,14 +923,13 @@ class _DanmakuListState extends State<_DanmakuList> {
           child: Scrollbar(controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
               child: ListView.builder(controller: _sc, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
         ),
-        // ★ 右侧浮动按钮组合成玻璃竖条
         Positioned(right: 8, bottom: 12, child: GlassContainer(
           shape: const LiquidRoundedSuperellipse(borderRadius: 999),
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
           useOwnLayer: true,
           settings: LiquidGlassSettings(blur: 15, thickness: 22, glassColor: Colors.black.withOpacity(0.35)),
           child: Column(children: [
-            GlassIconButton(icon: const Icon(Icons.tune, color: Colors.white), size: 38, onPressed: () => _showDanmakuSettings(c)),
+            GlassIconButton(icon: const Icon(Icons.tune, color: Colors.white), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
             const SizedBox(height: 4),
             GlassIconButton(icon: const Icon(Icons.keyboard_arrow_up, color: Colors.white), size: 38,
                 onPressed: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
@@ -670,6 +940,34 @@ class _DanmakuListState extends State<_DanmakuList> {
         )),
       ]);
     });
+  }
+
+  void _showDanmakuSettingsLocal(LivePlayController c) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF16161E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Align(alignment: Alignment.centerLeft,
+                  child: Text('弹幕设置', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700))),
+            ),
+            Obx(() => ListTile(
+                  title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  trailing: Switch(value: c.showGiftOverlay.value, onChanged: (v) => c.showGiftOverlay.value = v),
+                )),
+            Obx(() => ListTile(
+                  title: const Text('列表显示礼物弹幕', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  trailing: Switch(value: c.showGiftList.value, onChanged: (v) => c.showGiftList.value = v),
+                )),
+          ]),
+        ),
+      ),
+    );
   }
 }
 
