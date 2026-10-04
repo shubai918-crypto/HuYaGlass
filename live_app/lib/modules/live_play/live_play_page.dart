@@ -100,7 +100,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // 头部悬浮在视频上，保持深色玻璃（对比度最好）
+  // ★ 头部：深色玻璃胶囊（浅背景下白字清晰）
   Widget _header() {
     return Obx(() => Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -109,10 +109,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             useOwnLayer: true, quality: GlassQuality.premium,
             settings: LiquidGlassSettings(
-              blur: 15, thickness: 30, refractiveIndex: 1.2, saturation: 1.3,
-              glassColor: Colors.black.withOpacity(0.15),
+              blur: 20, thickness: 30, refractiveIndex: 1.2, saturation: 1.3,
+              glassColor: const Color(0xCC101014),
               platformViewMode: PlatformViewGlassMode.passthrough,
-              bodyMode: GlassBodyMode.adaptive,
+              bodyMode: GlassBodyMode.clear,
             ),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Row(children: [
@@ -194,7 +194,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        settings: _lightGlass(),
+        settings: _barGlass(),
         child: TabBar(
           controller: _tab,
           indicatorColor: kAccent,
@@ -206,32 +206,19 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 浅色通透玻璃 + 加强拖拽镜面光感
-  LiquidGlassSettings _lightGlass() => LiquidGlassSettings(
-        glassColor: const Color(0xB3FFFFFF),
-        thickness: 26,
-        blur: 14,
-        lightIntensity: 0.6,
-        specularSharpness: GlassSpecularSharpness.medium,
-        fresnelStrength: 1.0,
-        refractiveIndex: 1.15,
-        saturation: 1.3,
-        chromaticAberration: 0.012,
-      );
-
-  // ★ 底栏：左 pill + 右四键组（发送并入组内，红色大圆钮已删除）
+  // ★ 酷安同款紧凑底栏：左 pill(52) + 右四键组，高可见液态玻璃
   Widget _bottomBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Row(children: [
         Expanded(
           child: GlassButton.custom(
             onTap: () => _openComposeSheet(),
-            height: 48,
+            height: 52,
             useOwnLayer: true,
             quality: GlassQuality.premium,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-            settings: _lightGlass(),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 26),
+            settings: _barGlass(),
             stretch: 0.5,
             resistance: 0.08,
             child: Padding(
@@ -257,10 +244,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         GlassButtonGroup.icons(
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          borderRadius: 24,
+          borderRadius: 26,
           iconSize: 20,
-          itemPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          settings: _lightGlass(),
+          itemPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+          settings: _barGlass(),
           items: [
             GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
             GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
@@ -272,7 +259,22 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 修复 Bug：改回酷安同款实色白 Sheet（内容多高 Sheet 多高，拖拽关闭原生接管，零重影）
+  // ★ 高可见液态玻璃：35% 白 + 高模糊 + 强高光/色散
+  LiquidGlassSettings _barGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x59FFFFFF),
+        thickness: 30,
+        blur: 24,
+        lightIntensity: 0.8,
+        specularSharpness: GlassSpecularSharpness.medium,
+        fresnelStrength: 1.2,
+        refractiveIndex: 1.2,
+        saturation: 1.6,
+        chromaticAberration: 0.015,
+        shadowElevation: 1.5,
+        whitenStrength: 0.1,
+      );
+
+  // ★ 酷安同款实色白 Sheet（内容自适应高度，拖拽关闭）
   void _openQualitySheet() {
     showModalBottomSheet(
       context: context,
@@ -340,7 +342,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   void _showDanmakuSettingsSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: kCard,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
@@ -366,7 +368,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   }
 }
 
-// ★ 酷安同款实色白 Sheet 外壳（grabber + 内容自适应高度 + 底部安全区）
+// ★ 酷安同款实色白 Sheet 外壳
 class _LightSheet extends StatelessWidget {
   final Widget child;
   const _LightSheet({required this.child});
@@ -374,7 +376,7 @@ class _LightSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: kCard,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -648,7 +650,7 @@ class _SendingCard extends StatelessWidget {
       child: Center(
         child: Container(
           width: 150, height: 130,
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20)),
           child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             SizedBox(width: 34, height: 34, child: CircularProgressIndicator(strokeWidth: 3, color: kAccent)),
             SizedBox(height: 12),
@@ -787,11 +789,18 @@ class _DanmakuListState extends State<_DanmakuList> {
     return const Color(0xFFE5484D);
   }
 
+  // ★ 可读性映射：浅色弹幕(白/浅黄)在白底上隐身 → 自动压成深灰；彩色保留
+  Color _contentColor(int rgb) {
+    final c = Color(rgb);
+    final l = (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255;
+    return l > 0.62 ? const Color(0xFF3C4248) : c;
+  }
+
   void _showDanmakuActions(LivePlayController c, DanmakuMessage m) {
     final content = m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content;
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: kCard,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
@@ -872,9 +881,8 @@ class _DanmakuListState extends State<_DanmakuList> {
               for (final url in shownBadges)
                 Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
               Text.rich(TextSpan(children: [
-                const TextSpan(text: '', style: TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600)),
-                TextSpan(text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ', style: TextStyle(color: const Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600)),
-                ...buildEmoteSpans(m.content, textColor: const Color(0xFF23272E)),
+                TextSpan(text: '${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ', style: const TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600)),
+                ...buildEmoteSpans(m.content, textColor: _contentColor(m.fontColor)),
               ])),
             ])));
   }
@@ -916,7 +924,7 @@ class _DanmakuListState extends State<_DanmakuList> {
   void _showDanmakuSettingsLocal(LivePlayController c) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: kCard,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Padding(
