@@ -12,7 +12,6 @@ import 'follow_store.dart';
 import 'history_store.dart';
 import 'profile_page.dart';
 
-// ★ 浅色色板（酷安式白底 + 虎牙橙）
 const kBg = Color(0xFFF4F5F6);
 const kCard = Colors.white;
 const kText = Color(0xFF1F2329);
@@ -108,15 +107,7 @@ class _HomePageState extends State<HomePage> {
                     style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
               ),
               actions: [
-                Obx(() => GlassIconButton(
-                      icon: Icon(
-                        AppSettings.to.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                        color: const Color(0xFF3C4248),
-                      ),
-                      size: 44,
-                      glowColor: kAccent.withOpacity(0.35),
-                      onPressed: () => AppSettings.to.toggleTheme(),
-                    )),
+                // ★ 主题切换已删除，只保留设置
                 GlassIconButton(
                   icon: const Icon(Icons.settings, color: Color(0xFF3C4248)),
                   size: 44,
@@ -151,7 +142,6 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-            // ★ 酷安同款紧凑尺寸 + 高可见液态玻璃
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
@@ -189,19 +179,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 高可见液态玻璃：35% 白 + 高模糊 + 强高光/色散，滚动时霜化折射清晰可见
+  // ★ 通透磨砂玻璃：18% 白 + 高模糊 + 零 whiten，悬浮感对齐酷安
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x59FFFFFF),
-        thickness: 30,
-        blur: 24,
-        lightIntensity: 0.8,
+        glassColor: const Color(0x2EFFFFFF),
+        thickness: 28,
+        blur: 28,
+        lightIntensity: 0.7,
         specularSharpness: GlassSpecularSharpness.medium,
         fresnelStrength: 1.2,
         refractiveIndex: 1.2,
-        saturation: 1.6,
+        saturation: 1.5,
         chromaticAberration: 0.015,
-        shadowElevation: 1.5,
-        whitenStrength: 0.1,
+        shadowElevation: 2.0,
       );
 
   void _showQuickSettings(BuildContext context) {
@@ -215,11 +204,6 @@ class _HomePageState extends State<HomePage> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
-            Obx(() => SwitchListTile(
-                  secondary: const Icon(Icons.dark_mode, color: Color(0xFF3C4248)),
-                  title: const Text('深色模式', style: TextStyle(color: kText, fontSize: 15)),
-                  value: AppSettings.to.isDark, onChanged: (_) => AppSettings.to.toggleTheme(),
-                )),
             Obx(() => SwitchListTile(
                   secondary: const Icon(Icons.bug_report_outlined, color: Color(0xFF3C4248)),
                   title: const Text('调试模式', style: TextStyle(color: kText, fontSize: 15)),
@@ -264,8 +248,7 @@ class _HomePageState extends State<HomePage> {
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
                   if (!inline)
-                    const Text('正在播放 · 虎牙直播',
-                        maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
+                    const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
                 ],
               ),
             ),
@@ -322,7 +305,6 @@ class _HomeView extends StatelessWidget {
             Text('看直播 · 弹幕 · 订阅 · 真实发送',
                 style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
             const SizedBox(height: 18),
-            // ★ GlassButton 调参：176×48 圆角矩形 + clear 白玻璃 + 白字标签
             GlassButton.custom(
               onTap: () => _openEnterRoom(context),
               width: 176,
@@ -342,8 +324,7 @@ class _HomeView extends StatelessWidget {
               child: const Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.play_arrow, color: Colors.white, size: 20),
                 SizedBox(width: 6),
-                Text('进入直播间',
-                    style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
               ]),
             ),
           ]),
