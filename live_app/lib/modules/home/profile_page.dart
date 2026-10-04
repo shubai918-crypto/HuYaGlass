@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
+import 'package:live_app/core/user_profile.dart';
 
-import '../../core/user_profile.dart';
 import '../settings/settings_page.dart';
 import 'about_page.dart';
 import 'history_page.dart';
+import 'home_page.dart';
 import 'notice_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
-  /// 由 HomePage 注入，用于跳转底部 Tab（我的订阅 → 订阅页）
   static ValueChanged<int>? onJumpTab;
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -28,173 +27,145 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
-        _buildHeaderCard(),
-        const SizedBox(height: 16),
-        _buildMenuGroup([
-          _MenuItemData(Icons.history_outlined, '观看历史', const Color(0xFF4CB7FF),
-              onTap: () => Get.to(() => const HistoryPage())),
-          _MenuItemData(Icons.subscriptions_outlined, '我的订阅', const Color(0xFFFF8800),
-              onTap: () => ProfilePage.onJumpTab?.call(2)),
-        ]),
-        const SizedBox(height: 16),
-        _buildMenuGroup([
-          _MenuItemData(Icons.notifications_outlined, '消息通知', const Color(0xFFFFB25E),
-              onTap: () => Get.to(() => const NoticePage())),
-        ]),
-        const SizedBox(height: 16),
-        _buildMenuGroup([
-          _MenuItemData(Icons.settings_outlined, '设置', const Color(0xFFA0A0A0),
-              onTap: () => Get.to(() => const SettingsPage())),
-          _MenuItemData(Icons.info_outline, '关于 HuyaLive', const Color(0xFF00D2FF),
-              onTap: () => Get.to(() => const AboutPage())),
-        ]),
-        Obx(() => UserProfile.to.logged.value
-            ? Padding(padding: const EdgeInsets.only(top: 24), child: _buildLogoutButton())
-            : const SizedBox.shrink()),
-      ],
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            const SizedBox(height: 8),
+            _accountCard(),
+            const SizedBox(height: 24),
+            _section('我的服务'),
+            const SizedBox(height: 8),
+            _group([
+              _row(Icons.history_outlined, const Color(0xFF4CB7FF), '观看历史', '最近进入的直播间',
+                  () => Get.to(() => const HistoryPage())),
+              _divider(),
+              _row(Icons.subscriptions_outlined, kAccent, '我的订阅', '查看已关注的主播',
+                  () => ProfilePage.onJumpTab?.call(2)),
+            ]),
+            const SizedBox(height: 24),
+            _section('消息与系统'),
+            const SizedBox(height: 8),
+            _group([
+              _row(Icons.notifications_outlined, const Color(0xFFFFB25E), '消息通知', '开播提醒开关',
+                  () => Get.to(() => const NoticePage())),
+              _divider(),
+              _row(Icons.settings_outlined, const Color(0xFF8A9099), '设置', '主题 / 播放 / 调试',
+                  () => Get.to(() => const SettingsPage())),
+              _divider(),
+              _row(Icons.info_outline, const Color(0xFF4CB7FF), '关于 HuyaLive', '开发者：白薯 + qwen3.8Max',
+                  () => Get.to(() => const AboutPage())),
+            ]),
+            const SizedBox(height: 28),
+            Obx(() => UserProfile.to.logged.value
+                ? GestureDetector(
+                    onTap: () async {
+                      final ok = await Get.dialog<bool>(AlertDialog(
+                        backgroundColor: kCard,
+                        title: const Text('退出登录', style: TextStyle(color: kText)),
+                        content: const Text('确定要退出当前虎牙账号吗？', style: TextStyle(color: kSub)),
+                        actions: [
+                          TextButton(onPressed: () => Get.back(result: false), child: const Text('取消', style: TextStyle(color: kSub))),
+                          TextButton(onPressed: () => Get.back(result: true), child: const Text('退出', style: TextStyle(color: Color(0xFFE5484D)))),
+                        ],
+                      ));
+                      if (ok == true) {
+                        try { HuyaLoginManager().logout(); } catch (_) {}
+                        await UserProfile.to.clear();
+                        Get.snackbar('提示', '已退出登录', snackPosition: SnackPosition.BOTTOM);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
+                      child: const Center(child: Text('退出登录', style: TextStyle(color: Color(0xFFE5484D), fontSize: 15, fontWeight: FontWeight.w600))),
+                    ),
+                  )
+                : const SizedBox.shrink()),
+          ],
+        ),
+      ),
     );
   }
 
-  // ---------- 顶部信息卡片 ----------
-  Widget _buildHeaderCard() {
+  Widget _accountCard() {
     return Obx(() {
-      final p = UserProfile.to;
-      final isLogin = p.logged.value;
-      final avatarUrl = p.avatar.value;
-      final nickname = isLogin ? (p.nickname.value.isNotEmpty ? p.nickname.value : '虎牙用户') : '点击登录';
-      final uidText = isLogin ? (p.uid.value.isNotEmpty ? 'UID: ${p.uid.value}' : 'UID: 已登录') : '登录解锁更多功能与真实弹幕';
-      final level = p.level.value;
-      final sign = p.signature.value;
-
+      final logged = UserProfile.to.logged.value;
+      final avatar = UserProfile.to.avatar.value;
+      final nick = UserProfile.to.nickname.value;
+      final uid = UserProfile.to.uid.value;
+      final level = UserProfile.to.level.value;
       return GestureDetector(
-        onTap: isLogin ? null : () => Get.toNamed('/huya_login'),
-        child: GlassContainer(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 28),
-          padding: const EdgeInsets.all(20),
-          useOwnLayer: true,
-          // ★ 修复：滚动列表内不使用 premium（Impeller 回弹会出现黑色背板残影）
-          quality: GlassQuality.standard,
-          settings: LiquidGlassSettings(
-            blur: 20,
-            thickness: 30,
-            glassColor: Colors.black.withOpacity(0.25),
-            bodyMode: GlassBodyMode.adaptive,
-          ),
+        onTap: logged ? null : () => Get.toNamed('/huya_login'),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
           child: Row(children: [
             Container(
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.2), width: 2)),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: kAccent.withOpacity(0.5), width: 2)),
               child: CircleAvatar(
-                radius: 32,
-                backgroundColor: Colors.white10,
-                backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                child: avatarUrl.isEmpty ? const Icon(Icons.person, size: 32, color: Colors.white54) : null,
+                radius: 30,
+                backgroundColor: const Color(0xFFF2F3F5),
+                backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                child: avatar.isEmpty ? const Icon(Icons.person, size: 30, color: Color(0xFFA6ADB5)) : null,
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Flexible(child: Text(nickname,
-                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0.5),
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
-                if (isLogin && level.isNotEmpty) ...[
+                Flexible(child: Text(logged ? (nick.isNotEmpty ? nick : '虎牙用户') : '点击登录',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w800))),
+                if (logged && level.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFFF8800).withOpacity(0.18),
-                        border: Border.all(color: const Color(0xFFFF8800).withOpacity(0.5)),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text(level, style: const TextStyle(color: Color(0xFFFF8800), fontSize: 10, fontWeight: FontWeight.w700)),
+                    decoration: BoxDecoration(color: kAccent.withOpacity(0.12), border: Border.all(color: kAccent.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
+                    child: Text(level, style: const TextStyle(color: kAccent, fontSize: 10, fontWeight: FontWeight.w700)),
                   ),
                 ],
               ]),
               const SizedBox(height: 4),
-              Text(uidText, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13)),
-              if (isLogin && sign.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(sign, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withOpacity(0.38), fontSize: 11)),
-              ],
+              Text(logged ? (uid.isNotEmpty ? 'UID: $uid' : '已登录') : '粘贴 Cookie 登录，解锁真实弹幕',
+                  style: const TextStyle(color: kSub, fontSize: 12)),
             ])),
-            const Icon(Icons.chevron_right, color: Colors.white24, size: 24),
+            const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF)),
           ]),
         ),
       );
     });
   }
 
-  // ---------- 菜单分组 ----------
-  Widget _buildMenuGroup(List<_MenuItemData> items) {
-    return GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-      useOwnLayer: true,
-      quality: GlassQuality.standard,
-      settings: LiquidGlassSettings(blur: 15, thickness: 25, glassColor: Colors.black.withOpacity(0.20)),
-      child: Column(children: [
-        for (var i = 0; i < items.length; i++) ...[
-          _buildMenuItem(items[i]),
-          if (i < items.length - 1)
-            Padding(padding: const EdgeInsets.only(left: 60, right: 16), child: Divider(height: 1, color: Colors.white.withOpacity(0.08))),
-        ],
-      ]),
-    );
-  }
+  Widget _section(String t) => Text(t, style: const TextStyle(color: kSub, fontSize: 13, fontWeight: FontWeight.w600));
 
-  Widget _buildMenuItem(_MenuItemData item) {
-    return InkWell(
-      onTap: item.onTap,
-      borderRadius: const BorderRadius.all(Radius.circular(24)),
+  Widget _group(List<Widget> children) => Container(
+        decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
+        child: Column(children: children),
+      );
+
+  Widget _divider() => Container(height: 0.5, color: kLine, margin: const EdgeInsets.only(left: 62));
+
+  Widget _row(IconData icon, Color color, String title, String sub, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         child: Row(children: [
-          Container(width: 32, height: 32,
-              decoration: BoxDecoration(color: item.color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-              child: Icon(item.icon, color: item.color, size: 18)),
-          const SizedBox(width: 16),
-          Expanded(child: Text(item.title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500))),
-          const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
+          Container(width: 34, height: 34,
+              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: color, size: 19)),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Text(sub, style: const TextStyle(color: kSub, fontSize: 12)),
+          ])),
+          const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF), size: 18),
         ]),
       ),
     );
   }
-
-  // ---------- 退出登录 ----------
-  Widget _buildLogoutButton() {
-    return GestureDetector(
-      onTap: () async {
-        final ok = await Get.dialog<bool>(AlertDialog(
-          backgroundColor: const Color(0xFF1A1A2E),
-          title: const Text('退出登录', style: TextStyle(color: Colors.white)),
-          content: const Text('确定要退出当前虎牙账号吗？', style: TextStyle(color: Colors.white70)),
-          actions: [
-            TextButton(onPressed: () => Get.back(result: false), child: const Text('取消', style: TextStyle(color: Colors.white54))),
-            TextButton(onPressed: () => Get.back(result: true), child: const Text('退出', style: TextStyle(color: Color(0xFFE5484D)))),
-          ],
-        ));
-        if (ok == true) {
-          try { HuyaLoginManager().logout(); } catch (_) {}
-          await UserProfile.to.clear();
-          Get.snackbar('提示', '已退出登录', snackPosition: SnackPosition.BOTTOM);
-        }
-      },
-      child: GlassContainer(
-        shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        quality: GlassQuality.standard,
-        settings: LiquidGlassSettings(blur: 10, thickness: 20, glassColor: const Color(0x22E5484D)),
-        child: const Center(child: Text('退出登录', style: TextStyle(color: Color(0xFFE5484D), fontSize: 15, fontWeight: FontWeight.w600))),
-      ),
-    );
-  }
-}
-
-class _MenuItemData {
-  final IconData icon;
-  final String title;
-  final Color color;
-  final VoidCallback? onTap;
-  _MenuItemData(this.icon, this.title, this.color, {this.onTap});
 }
