@@ -3,10 +3,9 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/src/huya/huya_search.dart';
 
 import 'search_controller.dart';
+import '../home/home_page.dart'; // ★ 引入浅色色板 (kBg, kCard, kText, kSub, kLine, kAccent)
 
-const Color kHuyaAccent = Color(0xFFFF8800);
-
-/// 搜索页（Apple Messages 同款玻璃搜索条 + dtv 风格卡片）
+/// 搜索页（Apple Messages 同款玻璃搜索条 + 浅色卡片）
 class SearchPage extends StatefulWidget {
   final void Function(String roomId, String nickname, String avatarUrl) onOpenRoom;
   final Future<void> Function(
@@ -59,7 +58,7 @@ class _SearchPageState extends State<SearchPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Column(
         children: [
-          // ★ 1. Messages 同款：单个玻璃胶囊，放大镜在内，Cancel 滑入，无外部圆钮
+          // ★ 1. Messages 同款：单个玻璃胶囊，放大镜在内，Cancel 滑入
           GlassSearchBar(
             controller: _text,
             focusNode: _focus,
@@ -72,14 +71,24 @@ class _SearchPageState extends State<SearchPage> {
               _ctrl.setKeyword('');
               _focus.unfocus();
             },
-            searchIconColor: kHuyaAccent,
-            clearIconColor: Colors.white54,
-            cancelButtonColor: kHuyaAccent,
-            textStyle: const TextStyle(color: Colors.white, fontSize: 15),
-            placeholderStyle: const TextStyle(color: Colors.white38, fontSize: 15),
+            searchIconColor: kAccent,
+            clearIconColor: kSub,
+            cancelButtonColor: kAccent,
+            textStyle: const TextStyle(color: kText, fontSize: 15),
+            placeholderStyle: const TextStyle(color: kSub, fontSize: 15),
             height: 50,
             useOwnLayer: true,
-            settings: LiquidGlassSettings(blur: 8, thickness: 30),
+            quality: GlassQuality.premium,
+            settings: LiquidGlassSettings(
+              glassColor: const Color(0xB3FFFFFF),
+              thickness: 26,
+              blur: 14,
+              lightIntensity: 0.6,
+              specularSharpness: GlassSpecularSharpness.medium,
+              fresnelStrength: 1.0,
+              refractiveIndex: 1.15,
+              saturation: 1.3,
+            ),
           ),
           const SizedBox(height: 14),
           Expanded(child: _buildBody()),
@@ -91,22 +100,19 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildBody() {
     if (_ctrl.loading) {
       return const Center(
-        child: CircularProgressIndicator(color: kHuyaAccent, strokeWidth: 2.5),
+        child: CircularProgressIndicator(color: kAccent, strokeWidth: 2.5),
       );
     }
     final err = _ctrl.error;
     if (err != null) {
-      return Center(
-          child: Text(err, style: const TextStyle(color: Colors.white38)));
+      return Center(child: Text(err, style: const TextStyle(color: kSub)));
     }
     if (!_ctrl.searched) {
       return const Center(
-          child: Text('搜索主播，或直接输入房间号进入',
-              style: TextStyle(color: Colors.white24)));
+          child: Text('搜索主播，或直接输入房间号进入', style: TextStyle(color: kSub)));
     }
     if (_ctrl.items.isEmpty) {
-      return const Center(
-          child: Text('未找到相关主播', style: TextStyle(color: Colors.white38)));
+      return const Center(child: Text('未找到相关主播', style: const TextStyle(color: kSub)));
     }
     return ListView.separated(
       itemCount: _ctrl.items.length,
@@ -124,9 +130,9 @@ class _SearchPageState extends State<SearchPage> {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF16161E),
+            color: kCard,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.06)),
+            border: Border.all(color: kLine),
           ),
           child: Row(
             children: [
@@ -144,18 +150,18 @@ class _SearchPageState extends State<SearchPage> {
                     left: 6,
                     top: 6,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
+                        // ★ 直播中用虎牙橙，未开播用深灰，保证在封面图上的对比度
+                        color: it.isLive ? kAccent : const Color(0xFF8A9099),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
                         it.isLive ? '直播中' : '未开播',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 10,
-                          // ★ 3. 直播中用虎牙橙
-                          color: it.isLive ? kHuyaAccent : Colors.white70,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -172,7 +178,7 @@ class _SearchPageState extends State<SearchPage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: kText,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
@@ -183,7 +189,7 @@ class _SearchPageState extends State<SearchPage> {
                       it.nickname,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white54, fontSize: 13),
+                      style: const TextStyle(color: kSub, fontSize: 13),
                     ),
                   ],
                 ),
@@ -206,9 +212,9 @@ class _SearchPageState extends State<SearchPage> {
   Widget _coverPlaceholder() => Container(
         width: 96,
         height: 72,
-        color: Colors.white10,
+        color: const Color(0xFFF2F3F5),
         alignment: Alignment.center,
-        child: const Icon(Icons.live_tv, color: Colors.white30),
+        child: const Icon(Icons.live_tv, color: Color(0xFFC4C9CF)),
       );
 }
 
@@ -253,7 +259,7 @@ class _HeartButtonState extends State<_HeartButton> {
     return IconButton(
       icon: Icon(
         followed ? Icons.favorite : Icons.favorite_border,
-        color: followed ? const Color(0xFFE5484D) : Colors.white38,
+        color: followed ? const Color(0xFFE5484D) : kSub,
       ),
       onPressed: widget.onToggle == null
           ? null
