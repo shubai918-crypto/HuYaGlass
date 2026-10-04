@@ -65,7 +65,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     _nameWorker?.dispose();
     _avatarWorker?.dispose();
     _tab.dispose();
-    Get.delete<LivePlayController>();
+    Get.delete();
     super.dispose();
   }
 
@@ -199,22 +199,26 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 图一双 pill 底栏（清晰度入口改为 GlassSheet）
+  // ★ 酷安同款物理拖拽底栏：GlassButtonGroup 液态耦合 + 通透玻璃
   Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       child: Row(children: [
+        // 左：发弹幕触发 pill
         Expanded(
-          child: GestureDetector(
+          child: GlassButton.custom(
             onTap: () => _openComposeSheet(),
-            child: GlassContainer(
-              shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              useOwnLayer: true,
-              quality: GlassQuality.premium,
-              settings: _pillGlass(),
+            height: 48,
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+            settings: _clearGlass(),
+            stretch: 0.25,
+            resistance: 0.1,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(children: [
-                const Icon(Icons.edit_note, color: Colors.white54, size: 18),
+                const Icon(Icons.edit_note, color: Colors.white60, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: ValueListenableBuilder<TextEditingValue>(
@@ -222,7 +226,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                     builder: (context, v, _) => Text(
                       v.text.isEmpty ? '发弹幕...' : v.text,
                       maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white70, fontSize: 13),
+                      style: TextStyle(color: v.text.isEmpty ? Colors.white38 : Colors.white80, fontSize: 13),
                     ),
                   ),
                 ),
@@ -231,50 +235,78 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           ),
         ),
         const SizedBox(width: 8),
-        GlassContainer(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        // 右：图标组 —— 横扫时液态耦合物理位移
+        GlassButtonGroup.icons(
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          settings: _pillGlass(),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            _barIcon(Icons.speed, _openQualitySheet),
-            _barIcon(Icons.tune, _showDanmakuSettingsSheet),
-            _barIcon(Icons.emoji_emotions_outlined, () => _openComposeSheet(focusEmoji: true)),
-            _barIcon(Icons.send, () => _openComposeSheet(), accent: true),
-          ]),
+          borderRadius: 24,
+          iconSize: 20,
+          itemPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          settings: _clearGlass(),
+          items: [
+            GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Colors.white70), onTap: _openQualitySheet),
+            GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Colors.white70), onTap: _showDanmakuSettingsSheet),
+            GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.white70), onTap: () => _openComposeSheet(focusEmoji: true)),
+          ],
+        ),
+        const SizedBox(width: 8),
+        // 发送：橙色实心玻璃圆
+        GlassButton.custom(
+          onTap: () => _openComposeSheet(),
+          width: 48,
+          height: 48,
+          useOwnLayer: true,
+          quality: GlassQuality.premium,
+          shape: const LiquidOval(),
+          settings: _sendGlass(),
+          stretch: 0.4,
+          child: const Center(child: Icon(Icons.send, color: Colors.white, size: 20)),
         ),
       ]),
     );
   }
 
-  LiquidGlassSettings _pillGlass() => LiquidGlassSettings(
-        glassColor: const Color(0xCC141419),
-        thickness: 30,
+  // ★ 通透玻璃：8% 白 + blur 2 + 高饱和
+  LiquidGlassSettings _clearGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x14FFFFFF),
+        thickness: 22,
         blur: 2,
-        lightIntensity: 0.18,
-        chromaticAberration: 0.01,
-        saturation: 1.2,
-        fresnelStrength: 0.0,
+        lightIntensity: 0.3,
+        ambientStrength: 0.1,
+        fresnelStrength: 0.8,
+        refractiveIndex: 1.15,
+        saturation: 1.4,
+        chromaticAberration: 0.012,
       );
 
-  Widget _barIcon(IconData icon, VoidCallback onTap, {bool active = false, bool accent = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: accent ? const BoxDecoration(color: Color(0xFFFF8800), shape: BoxShape.circle) : null,
-        child: Icon(icon, color: accent ? Colors.white : (active ? const Color(0xFF00D2FF) : Colors.white70), size: 20),
-      ),
+  // ★ 发送键：虎牙橙实心玻璃
+  LiquidGlassSettings _sendGlass() => LiquidGlassSettings(
+        glassColor: const Color(0xE6FF8800),
+        thickness: 24,
+        blur: 2,
+        lightIntensity: 0.35,
+        saturation: 1.5,
+        refractiveIndex: 1.2,
+      );
+
+  // ★ 评论 Sheet：GlassModalSheet（half ↔ full 可拖拽）
+  void _openComposeSheet({bool focusEmoji = false}) {
+    GlassModalSheet.show(
+      context: context,
+      initialState: GlassSheetState.half,
+      mode: GlassSheetMode.dismissible,
+      showDragIndicator: true,
+      builder: (_) => _DanmakuComposeBody(c: c, showEmojiInitial: focusEmoji),
     );
   }
 
-  // ★ 修复3：清晰度/线路改用官方 GlassSheet（可拖拽关闭 + 玻璃面）
+  // ★ 清晰度/线路 Sheet：同样可拖拽
   void _openQualitySheet() {
-    GlassSheet.show(
+    GlassModalSheet.show(
       context: context,
-      settings: RecommendedGlassSettings.sheet,
+      initialState: GlassSheetState.half,
+      mode: GlassSheetMode.dismissible,
+      showDragIndicator: true,
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -312,7 +344,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     ]);
   }
 
-  // ★ Sheet 内部 chip 用实色 Container（官方规则：glass 只做表面，内容行不实色）
   Widget _chip(String label, bool selected, Color tint, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -328,20 +359,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           Text(label, style: TextStyle(color: selected ? tint : Colors.white70, fontSize: 12, fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
         ]),
       ),
-    );
-  }
-
-  // ★ 修复1：评论 Sheet 改用 GlassModalSheet（half↔full 可拖拽 + grabber + 弹簧）
-  void _openComposeSheet({bool focusEmoji = false}) {
-    GlassModalSheet.show(
-      context: context,
-      initialState: GlassSheetState.half,
-      halfSize: 0.55,
-      mode: GlassSheetMode.dismissible,
-      showDragIndicator: true,
-      quality: GlassQuality.premium,
-      settings: RecommendedGlassSettings.sheet,
-      builder: (_) => _DanmakuComposeBody(c: c, showEmojiInitial: focusEmoji),
     );
   }
 
@@ -447,7 +464,7 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
     setState(() {});
   }
 
-  // ★ 修复2：智能退格 —— 光标前若是完整 [表情] token 则整块删除
+  // ★ 智能退格：光标前是完整 [表情] token 则整块删除
   void _backspace() {
     final tc = widget.c.inputController;
     final text = tc.text;
@@ -517,7 +534,7 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        // ★ 隐藏的真 TextField（负责键盘与光标）+ 富文本镜面（负责显示表情图）
+        // 隐藏的真 TextField（负责键盘与光标）
         Opacity(
           opacity: 0,
           child: SizedBox(
@@ -533,6 +550,7 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
             ),
           ),
         ),
+        // 富文本镜面（实时渲染表情图）
         GestureDetector(
           onTap: () => FocusScope.of(context).requestFocus(_fn),
           child: Container(
