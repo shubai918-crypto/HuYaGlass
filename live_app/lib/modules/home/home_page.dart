@@ -49,9 +49,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    HistoryStore.init(); // ★ 加载观看历史
-    ProfilePage.onJumpTab = _select; // ★ 我的页跳底部 Tab
-    NowWatching.notifier.addListener(_onNowWatching); // ★ 自动记录观看历史
+    HistoryStore.init();
+    ProfilePage.onJumpTab = _select;
+    NowWatching.notifier.addListener(_onNowWatching);
   }
 
   void _onNowWatching() {
@@ -81,7 +81,6 @@ class _HomePageState extends State<HomePage> {
         }
         return false;
       },
-      // ★ 监听迷你条数据：有/无房间时切换 bottomAccessory，避免预留空白
       child: ValueListenableBuilder<NowRoom?>(
         valueListenable: NowWatching.notifier,
         builder: (context, room, _) => Material(
@@ -154,32 +153,48 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                   const FollowPage(),
-                  const ProfilePage(), // ★ 第四个 Tab 改为"我的"
+                  const ProfilePage(),
                 ],
               ),
             ),
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
-              // ★ iOS 26 tabViewBottomAccessory：必须传 height，收拢时自动 inline
               bottomAccessory: room != null ? _buildMiniBar(room) : null,
               bottomAccessoryHeight: room != null ? 56 : null,
               bottomAccessorySpacing: 8,
+              // ★ Apple Music Demo 同款 pill 玻璃参数
               settings: LiquidGlassSettings(
-                blur: 24, thickness: 30, glassColor: Colors.black.withOpacity(0.45),
+                glassColor: const Color(0xCC141419),
+                thickness: 30,
+                blur: 2,
+                lightIntensity: 0.18,
+                chromaticAberration: 0.01,
+                saturation: 1.2,
+                fresnelStrength: 0.0,
               ),
+              barHeight: 64,
+              minimizedBarHeight: 50,
+              horizontalPadding: 16,
+              verticalPadding: 10,
+              spacing: 6,
               selectedIndex: _selectedIndex,
               onTabSelected: _select,
+              indicatorColor: Colors.white.withOpacity(0.10),
               selectedIconColor: const Color(0xFFFF8800),
               selectedLabelColor: const Color(0xFFFF8800),
-              unselectedIconColor: Colors.white.withOpacity(0.5),
-              unselectedLabelColor: Colors.white.withOpacity(0.5),
-              indicatorColor: const Color(0xFFFF8800).withOpacity(0.15),
+              unselectedIconColor: Colors.white.withOpacity(0.75),
+              unselectedLabelColor: Colors.white.withOpacity(0.75),
+              iconSize: 26,
+              labelFontSize: 10,
+              iconLabelSpacing: 2,
+              quality: GlassQuality.premium,
+              interactionBehavior: GlassInteractionBehavior.full,
               tabs: const [
-                GlassTab(icon: Icon(Icons.home), label: '首页'),
+                GlassTab(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: '首页'),
                 GlassTab(icon: Icon(Icons.search), label: '搜索'),
-                GlassTab(icon: Icon(Icons.subscriptions_outlined), label: '订阅'),
-                GlassTab(icon: Icon(Icons.person_outline), label: '我的'),
+                GlassTab(icon: Icon(Icons.subscriptions_outlined), activeIcon: Icon(Icons.subscriptions), label: '订阅'),
+                GlassTab(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: '我的'),
               ],
             ),
           ),
@@ -188,7 +203,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 快捷设置 Sheet（深色/调试开关）
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -216,7 +230,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 迷你播放条：读 placement scope 自适应 expanded/inline 两种布局
   Widget _buildMiniBar(NowRoom room) {
     return Builder(builder: (context) {
       final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
@@ -228,12 +241,10 @@ class _HomePageState extends State<HomePage> {
         useOwnLayer: true,
         quality: GlassQuality.premium,
         settings: LiquidGlassSettings(
-          blur: 20,
-          thickness: 25,
+          blur: 20, thickness: 25,
           platformViewMode: PlatformViewGlassMode.passthrough,
           glassColor: const Color(0xFF1A1A24).withOpacity(0.6),
         ),
-        // 内容 48 + padding 8 = 56 == bottomAccessoryHeight
         child: SizedBox(
           height: 48,
           child: Row(children: [
