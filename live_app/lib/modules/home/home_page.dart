@@ -12,6 +12,7 @@ import 'follow_store.dart';
 import 'history_store.dart';
 import 'profile_page.dart';
 
+// ★ 浅色色板（酷安式白底 + 虎牙橙）
 const kBg = Color(0xFFF4F5F6);
 const kCard = Colors.white;
 const kText = Color(0xFF1F2329);
@@ -73,6 +74,32 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  // ★ 可见玻璃配方（官方示例同款）：60% 白霜 + 投影，浅色背景下轮廓清晰
+  LiquidGlassSettings _visibleGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x99FFFFFF),
+        thickness: 20,
+        blur: 10,
+        shadowElevation: 1.0,
+        lightIntensity: 0.7,
+        specularSharpness: GlassSpecularSharpness.medium,
+        fresnelStrength: 1.0,
+        saturation: 1.3,
+      );
+
+  // ★ 通透底栏配方：内容穿栏模糊
+  LiquidGlassSettings _barGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x2EFFFFFF),
+        thickness: 28,
+        blur: 28,
+        lightIntensity: 0.7,
+        specularSharpness: GlassSpecularSharpness.medium,
+        fresnelStrength: 1.2,
+        refractiveIndex: 1.2,
+        saturation: 1.5,
+        chromaticAberration: 0.015,
+        shadowElevation: 2.0,
+      );
+
   @override
   Widget build(BuildContext context) {
     return NotificationListener<ScrollNotification>(
@@ -102,15 +129,17 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
                 useOwnLayer: true,
                 quality: GlassQuality.premium,
-                settings: _barGlass(),
+                settings: _visibleGlass(), // ★ 可见白霜胶囊
                 child: const Text('HuyaLive',
                     style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
               ),
               actions: [
-                // ★ 主题切换已删除，只保留设置
                 GlassIconButton(
-                  icon: const Icon(Icons.settings, color: Color(0xFF3C4248)),
+                  icon: const Icon(Icons.settings, color: Color(0xFF1F2329)),
                   size: 44,
+                  useOwnLayer: true, // ★ 独立层才能带投影
+                  quality: GlassQuality.premium,
+                  settings: _visibleGlass(), // ★ 图同款可见圆钮
                   glowColor: kAccent.withOpacity(0.35),
                   onPressed: () => _showQuickSettings(context),
                 ),
@@ -119,7 +148,7 @@ class _HomePageState extends State<HomePage> {
             body: Padding(
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + 60,
-                bottom: 120,
+                bottom: 0, // ★ 列表穿到底栏后面，玻璃通透
               ),
               child: IndexedStack(
                 index: _selectedIndex,
@@ -179,20 +208,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 通透磨砂玻璃：18% 白 + 高模糊 + 零 whiten，悬浮感对齐酷安
-  LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x2EFFFFFF),
-        thickness: 28,
-        blur: 28,
-        lightIntensity: 0.7,
-        specularSharpness: GlassSpecularSharpness.medium,
-        fresnelStrength: 1.2,
-        refractiveIndex: 1.2,
-        saturation: 1.5,
-        chromaticAberration: 0.015,
-        shadowElevation: 2.0,
-      );
-
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -225,7 +240,7 @@ class _HomePageState extends State<HomePage> {
         padding: EdgeInsets.symmetric(horizontal: inline ? 10 : 12, vertical: 4),
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        settings: _barGlass(),
+        settings: _visibleGlass(), // ★ 迷你条也用可见白霜，跟图一致
         child: SizedBox(
           height: 42,
           child: Row(children: [
@@ -286,7 +301,7 @@ class _HomeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
       children: [
         Container(
           padding: const EdgeInsets.all(24),
@@ -305,6 +320,7 @@ class _HomeView extends StatelessWidget {
             Text('看直播 · 弹幕 · 订阅 · 真实发送',
                 style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
             const SizedBox(height: 18),
+            // ★ CTA：可见白霜玻璃 + 橙字，轮廓清晰如图
             GlassButton.custom(
               onTap: () => _openEnterRoom(context),
               width: 176,
@@ -314,17 +330,17 @@ class _HomeView extends StatelessWidget {
               quality: GlassQuality.premium,
               stretch: 0.3,
               settings: LiquidGlassSettings(
-                glassColor: Colors.white.withOpacity(0.22),
-                bodyMode: GlassBodyMode.clear,
-                thickness: 24,
-                blur: 2,
-                lightIntensity: 0.6,
+                glassColor: const Color(0x99FFFFFF),
+                thickness: 20,
+                blur: 10,
+                shadowElevation: 1.0,
+                lightIntensity: 0.7,
                 specularSharpness: GlassSpecularSharpness.medium,
               ),
               child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.play_arrow, color: Colors.white, size: 20),
+                Icon(Icons.play_arrow, color: kAccent, size: 20),
                 SizedBox(width: 6),
-                Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                Text('进入直播间', style: TextStyle(color: kAccent, fontSize: 15, fontWeight: FontWeight.w700)),
               ]),
             ),
           ]),
