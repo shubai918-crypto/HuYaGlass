@@ -31,24 +31,15 @@ class _SettingsPageState extends State<SettingsPage> {
           _section('播放设置'),
           const SizedBox(height: 8),
           _group([
-            Obx(() => _switchRow(
-                  '自动播放弹幕',
-                  '进入直播间后自动开启弹幕显示',
-                  AppSettings.to.autoPlayDanmaku.value,
-                  (v) => AppSettings.to.setAutoPlayDanmaku(v),
-                )),
+            _row(Icons.play_circle_outline, kAccent, '播放设置', '清晰度与线路自动优选'),
             _divider(),
-            Obx(() => _switchRow(
-                  '默认静音',
-                  '进入直播间时默认静音',
-                  AppSettings.to.defaultMuted.value,
-                  (v) => AppSettings.to.setDefaultMuted(v),
-                )),
+            _row(Icons.route_outlined, const Color(0xFF4CB7FF), '网络线路', '优先使用网页 FLV 直连'),
           ]),
           const SizedBox(height: 20),
           _section('开发者'),
           const SizedBox(height: 8),
           _group([
+            // ★ 仅保留 AppSettings 中真实存在的 debugEnabled
             Obx(() => _switchRow(
                   '调试模式',
                   '显示协议日志与调试信息',
