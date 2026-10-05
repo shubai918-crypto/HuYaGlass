@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
@@ -372,9 +373,11 @@ class _HomeViewState extends State<_HomeView> {
           return '';
         }
 
+        // ★ 直接用 profileRoom（数字房间号），这是解析器需要的格式
+        final profileRoom = pickStr(['profileRoom']);
         final host = pickStr(['privateHost', 'sPrivateHost']);
         final uid = pickStr(['uid', 'lUid', 'sUid']);
-        final roomId = host.isNotEmpty ? host : uid;
+        final roomId = profileRoom.isNotEmpty ? profileRoom : (host.isNotEmpty ? host : uid);
         if (roomId.isEmpty) continue;
         final nick = pickStr(['nickName', 'sNick', 'sNickname', 'nick']);
         final intro = pickStr(['introduction', 'sIntroduction']);
@@ -395,32 +398,6 @@ class _HomeViewState extends State<_HomeView> {
     } finally {
       client.close(force: true);
     }
-  }
-
-  // ★ 根因修复：LiveList 无数字房间号 → 点按时先抓房间页里的 lProfileId（搜索同源格式）
-  Future<String> _resolveRoomId(_RecItem it) async {
-    try {
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
-      final req = await client
-          .getUrl(Uri.parse('https://www.huya.com/${it.roomId}'))
-          .timeout(const Duration(seconds: 5));
-      req.headers.set('User-Agent',
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
-      req.headers.set('Referer', 'https://www.huya.com/');
-      final resp = await req.close().timeout(const Duration(seconds: 5));
-      final body = await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
-      client.close(force: true);
-      final m = RegExp(r'"lProfileId"\s*:\s*(\d+)').firstMatch(body) ??
-          RegExp(r'"profileRoom"\s*:\s*(\d+)').firstMatch(body) ??
-          RegExp(r'data-roomid\s*=\s*"(\d+)"').firstMatch(body);
-      if (m != null && (m.group(1) ?? '').isNotEmpty) return m.group(1)!;
-    } catch (_) {}
-    return it.roomId;
-  }
-
-  Future<void> _openRec(_RecItem it) async {
-    final id = await _resolveRoomId(it);
-    goLive(id, nickname: it.nick, avatarUrl: it.avatar);
   }
 
   void _append(List<_RecItem> items) {
@@ -503,6 +480,86 @@ class _HomeViewState extends State<_HomeView> {
     }
     setState(() {});
   }
+
+  // ★ 长按工具栏：左圆钮关闭 + 中间玻璃胶囊(带标签) + 右圆钮确认
+  void _showRoomBar(_RecItem it) {
+    final followed = _followed.contains(it.roomId);
+    showDialog(
+      context: context,
+      barrierColor: Colors.black26,
+      builder: (ctx) {
+        final nav = Navigator.of(ctx);
+        return Center(
+          child: Material(
+            type: MaterialType.transparency,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                _circleBtn(Icons.close, false, () => nav.pop()),
+                const SizedBox(width: 10),
+                GlassButtonGroup(
+                  showDividers: true,
+                  borderRadius: 28,
+                  useOwnLayer: true,
+                  quality: GlassQuality.premium,
+                  settings: LiquidGlassSettings(
+                    glassColor: const Color(0xCCF2F2F7),
+                    thickness: 26, blur: 16, lightIntensity: 0.3,
+                    saturation: 1.2, specularSharpness: GlassSpecularSharpness.medium,
+                    shadowElevation: 2.0,
+                  ),
+                  children: [
+                    _barAction(Icons.link, '复制', () {
+                      Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${it.roomId}'));
+                      nav.pop();
+                      Get.snackbar('提示', '房间链接已复制', snackPosition: SnackPosition.BOTTOM);
+                    }),
+                    _barAction(followed ? Icons.favorite : Icons.favorite_border, followed ? '取关' : '订阅', () {
+                      nav.pop();
+                      _toggleFollow(it);
+                    }),
+                    _barAction(Icons.block, '屏蔽', () {
+                      nav.pop();
+                      Get.snackbar('屏蔽', '已本地屏蔽 ${it.nick}', snackPosition: SnackPosition.BOTTOM);
+                    }),
+                  ],
+                ),
+                const SizedBox(width: 10),
+                _circleBtn(Icons.check, true, () { nav.pop(); goLive(it.roomId, nickname: it.nick, avatarUrl: it.avatar); }),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _circleBtn(IconData icon, bool accent, VoidCallback onTap) => GlassButton.custom(
+        onTap: onTap,
+        width: 56, height: 56,
+        shape: const LiquidOval(),
+        useOwnLayer: true,
+        quality: GlassQuality.premium,
+        stretch: 0.6,
+        settings: LiquidGlassSettings(
+          glassColor: accent ? const Color(0xE6FF8800) : const Color(0xCCF2F2F7),
+          bodyMode: accent ? GlassBodyMode.clear : GlassBodyMode.adaptive,
+          thickness: 24, blur: 12, lightIntensity: 0.5,
+          specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 2.0,
+        ),
+        child: Center(child: Icon(icon, color: accent ? Colors.white : const Color(0xFF1F2329), size: 22)),
+      );
+
+  Widget _barAction(IconData icon, String label, VoidCallback onTap) => GlassButton(
+        onTap: onTap,
+        style: GlassButtonStyle.transparent,
+        width: 74, height: 62,
+        icon: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: const Color(0xFF1F2329), size: 20),
+          const SizedBox(height: 3),
+          Text(label, style: const TextStyle(color: Color(0xFF1F2329), fontSize: 11, fontWeight: FontWeight.w600)),
+        ]),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -588,8 +645,12 @@ class _HomeViewState extends State<_HomeView> {
     return Row(children: [
       Expanded(child: _quickCard(Icons.subscriptions_outlined, kAccent, '我的订阅', widget.onOpenFollows)),
       const SizedBox(width: 10),
+      // ★ 修复：已登录跳"我的"Tab，未登录去登录页
       Expanded(child: _quickCard(Icons.account_circle, const Color(0xFFFFB25E),
-          HuyaLoginManager().isLoggedIn ? '已登录' : '登录', () => Get.toNamed('/huya_login'))),
+          HuyaLoginManager().isLoggedIn ? '已登录' : '登录',
+          () => HuyaLoginManager().isLoggedIn
+              ? ProfilePage.onJumpTab?.call(3)
+              : Get.toNamed('/huya_login'))),
     ]);
   }
 
@@ -663,8 +724,8 @@ class _HomeViewState extends State<_HomeView> {
   Widget _recCard(_RecItem it) {
     final followed = _followed.contains(it.roomId);
     return GestureDetector(
-      onTap: () => _openRec(it), // ★ 走预解析流程
-      onLongPress: () => _toggleFollow(it),
+      onTap: () => goLive(it.roomId, nickname: it.nick, avatarUrl: it.avatar),
+      onLongPress: () => _showRoomBar(it),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
