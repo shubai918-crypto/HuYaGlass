@@ -167,7 +167,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                 // ★ 修复1：保留 GlassPullDownButton，玻璃换浅色磨砂，图标改深色
                 GlassPullDownButton(
                   icon: const Icon(Icons.more_horiz, color: Color(0xFF1F2329)),
-                  settings: _pullGlass(),
                   items: [
                     GlassMenuItem(title: '复制房间链接', onTap: _copyUrl),
                     GlassMenuItem(title: '刷新线路', onTap: c.refreshPlay),
@@ -181,17 +180,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         ));
   }
 
-  // ★ 浅色磨砂菜单玻璃（iOS 亮色菜单同款），文字自动解析为深色
-  LiquidGlassSettings _pullGlass() => LiquidGlassSettings(
-        glassColor: const Color(0xE6F2F2F7),
-        thickness: 26,
-        blur: 18,
-        lightIntensity: 0.3,
-        saturation: 1.2,
-        refractiveIndex: 1.15,
-        specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 2.0,
-      );
+
 
   void _copyUrl() {
     Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${c.roomId}'));
