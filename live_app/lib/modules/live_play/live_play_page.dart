@@ -89,16 +89,19 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: kBg,
       resizeToAvoidBottomInset: false,
-      body: Column(children: [
-        SizedBox(height: top),
-        GlassMaterialize(visible: _chromeVisible, child: _header()),
-        AspectRatio(aspectRatio: 16 / 9, child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)])),
-        _tabs(),
-        Expanded(child: TabBarView(controller: _tab, children: [
-          _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
-        ])),
-        GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
-      ]),
+      // ★ 1.9.0 GlassBackdropGroup：头部/Tab/底栏共享一次 backdrop 读取，视频页 GPU 负载大降
+      body: GlassBackdropGroup(
+        child: Column(children: [
+          SizedBox(height: top),
+          GlassMaterialize(visible: _chromeVisible, child: _header()),
+          AspectRatio(aspectRatio: 16 / 9, child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)])),
+          _tabs(),
+          Expanded(child: TabBarView(controller: _tab, children: [
+            _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
+          ])),
+          GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
+        ]),
+      ),
     );
   }
 
@@ -164,38 +167,26 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                   ),
                 ),
                 const Spacer(),
-                // ★ 修复2：GlassPullDownButton 无 settings 参数（见官方文档），
-                // 改用同引擎的 GlassMenu + triggerBuilder，菜单玻璃换成浅色磨砂
                 GlassMenu(
                   settings: _menuLightGlass(),
                   quality: GlassQuality.premium,
                   menuWidth: 210,
                   triggerBuilder: (context, toggle) => GlassButton.custom(
                     onTap: toggle,
-                    width: 40,
-                    height: 40,
+                    width: 40, height: 40,
                     shape: const LiquidOval(),
                     quality: GlassQuality.standard,
                     useOwnLayer: true,
-                    settings: LiquidGlassSettings(
-                      glassColor: Colors.white.withOpacity(0.14),
-                      thickness: 18,
-                      blur: 8,
-                      lightIntensity: 0.4,
-                    ),
+                    settings: LiquidGlassSettings(glassColor: Colors.white.withOpacity(0.14), thickness: 18, blur: 8, lightIntensity: 0.4),
                     child: const Center(child: Icon(Icons.more_horiz, color: Colors.white, size: 20)),
                   ),
                   items: [
                     GlassMenuItem(title: '复制房间链接', icon: const Icon(Icons.link), onTap: _copyUrl),
                     GlassMenuItem(title: '刷新线路', icon: const Icon(Icons.refresh), onTap: c.refreshPlay),
-                    GlassMenuItem(
-                        title: c.isMuted.value ? '取消静音' : '静音',
-                        icon: Icon(c.isMuted.value ? Icons.volume_up : Icons.volume_off),
-                        onTap: c.toggleMute),
-                    GlassMenuItem(
-                        title: c.isFullscreen.value ? '退出全屏' : '全屏',
-                        icon: Icon(c.isFullscreen.value ? Icons.fullscreen_exit : Icons.fullscreen),
-                        onTap: c.toggleFullscreen),
+                    GlassMenuItem(title: c.isMuted.value ? '取消静音' : '静音',
+                        icon: Icon(c.isMuted.value ? Icons.volume_up : Icons.volume_off), onTap: c.toggleMute),
+                    GlassMenuItem(title: c.isFullscreen.value ? '退出全屏' : '全屏',
+                        icon: Icon(c.isFullscreen.value ? Icons.fullscreen_exit : Icons.fullscreen), onTap: c.toggleFullscreen),
                   ],
                 ),
               ]),
@@ -204,16 +195,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         ));
   }
 
-  // ★ 浅色磨砂菜单玻璃：白霜 + 投影，深色文字自动可读
   LiquidGlassSettings _menuLightGlass() => LiquidGlassSettings(
         glassColor: const Color(0xE6F2F2F7),
-        thickness: 26,
-        blur: 18,
-        lightIntensity: 0.3,
-        saturation: 1.2,
-        refractiveIndex: 1.15,
-        specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 2.0,
+        thickness: 26, blur: 18, lightIntensity: 0.3, saturation: 1.2,
+        refractiveIndex: 1.15, specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 2.0,
       );
 
   void _copyUrl() {
@@ -250,7 +235,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 修复1：酷安同款 Q 弹 —— 左 pill 与组内每个按钮独立拉满果冻物理
+  // ★ 底栏：左 pill + 右 GlassButtonGroup（children 果冻模式）
   Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
@@ -267,11 +252,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             resistance: 0.04,
             interactionScale: 1.06,
             anchorStretchSettings: const AnchorStretchSettings(
-              intensity: 0.9,
-              squashFactor: 0.25,
-              translationDamping: 0.06,
-              bounciness: 0.4,
-            ),
+                intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Row(children: [
@@ -292,7 +273,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           ),
         ),
         const SizedBox(width: 12),
-        // ★ children 全控件模式：每个按钮独立 stretch/回弹（icons 轻量模式无独立物理）
         GlassButtonGroup(
           showDividers: false,
           borderRadius: 29,
@@ -312,62 +292,41 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   Widget _groupBtn(IconData icon, VoidCallback onTap) => GlassButton(
         onTap: onTap,
         style: GlassButtonStyle.transparent,
-        width: 46,
-        height: 46,
+        width: 46, height: 46,
         iconSize: 22,
         iconColor: const Color(0xFF3C4248),
         stretch: 1.0,
         resistance: 0.04,
         interactionScale: 1.08,
         anchorStretchSettings: const AnchorStretchSettings(
-          intensity: 0.9,
-          squashFactor: 0.25,
-          translationDamping: 0.06,
-          bounciness: 0.4,
-        ),
+            intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
         icon: Icon(icon),
       );
 
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0x99FFFFFF),
-        thickness: 24,
-        blur: 3,
-        lightIntensity: 0.25,
-        ambientStrength: 0.15,
-        fresnelStrength: 0.4,
-        refractiveIndex: 1.1,
-        saturation: 1.1,
-        specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 2.0,
+        thickness: 24, blur: 3, lightIntensity: 0.25, ambientStrength: 0.15,
+        fresnelStrength: 0.4, refractiveIndex: 1.1, saturation: 1.1,
+        specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 2.0,
       );
 
   LiquidGlassSettings _hdrGlass() => LiquidGlassSettings(
         glassColor: const Color(0x80FFFFFF),
-        thickness: 26,
-        blur: 4,
-        lightIntensity: 1.1,
-        specularSharpness: GlassSpecularSharpness.sharp,
-        fresnelStrength: 1.4,
-        refractiveIndex: 1.25,
-        saturation: 1.7,
-        chromaticAberration: 0.015,
-        shadowElevation: 2.5,
+        thickness: 26, blur: 4, lightIntensity: 1.1,
+        specularSharpness: GlassSpecularSharpness.sharp, fresnelStrength: 1.4,
+        refractiveIndex: 1.25, saturation: 1.7, chromaticAberration: 0.015, shadowElevation: 2.5,
       );
 
   void _openQualitySheet() {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (_) => _LightSheet(child: _qualityContent()),
     );
   }
 
   void _openComposeSheet({bool focusEmoji = false}) {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (_) => _LightSheet(child: _DanmakuComposeBody(c: c, showEmojiInitial: focusEmoji)),
     );
   }
@@ -455,10 +414,7 @@ class _LightSheet extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        decoration: const BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+        decoration: const BoxDecoration(color: kCard, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10),
               decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
@@ -510,13 +466,8 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   @override
   void dispose() { _fn.removeListener(_onFocus); _fn.dispose(); super.dispose(); }
 
-  void _toggleEmoji() {
-    setState(() { _emojiOpen = !_emojiOpen; if (_emojiOpen) { _phraseOpen = false; _fn.unfocus(); } });
-  }
-
-  void _togglePhrase() {
-    setState(() { _phraseOpen = !_phraseOpen; if (_phraseOpen) { _emojiOpen = false; _fn.unfocus(); } });
-  }
+  void _toggleEmoji() { setState(() { _emojiOpen = !_emojiOpen; if (_emojiOpen) { _phraseOpen = false; _fn.unfocus(); } }); }
+  void _togglePhrase() { setState(() { _phraseOpen = !_phraseOpen; if (_phraseOpen) { _emojiOpen = false; _fn.unfocus(); } }); }
 
   void _insert(String s) {
     final tc = widget.c.inputController;
@@ -607,8 +558,7 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
             ? TextField(
                 controller: widget.c.inputController,
                 focusNode: _fn,
-                maxLines: 3,
-                minLines: 1,
+                maxLines: 3, minLines: 1,
                 style: const TextStyle(color: Color(0xFF23272E), fontSize: 15),
                 cursorColor: kAccent,
                 keyboardAppearance: Brightness.light,
@@ -655,10 +605,7 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: can ? kAccent : const Color(0xFFF2F3F5),
-                  borderRadius: BorderRadius.circular(999),
-                ),
+                decoration: BoxDecoration(color: can ? kAccent : const Color(0xFFF2F3F5), borderRadius: BorderRadius.circular(999)),
                 child: Text('发布', style: TextStyle(color: can ? Colors.white : const Color(0xFFA6ADB5), fontSize: 14, fontWeight: FontWeight.w600)),
               ),
             );
@@ -880,12 +827,8 @@ class _DanmakuListState extends State<_DanmakuList> {
 
   LiquidGlassSettings _menuGlass() => LiquidGlassSettings(
         glassColor: const Color(0xCC1C1C1E),
-        thickness: 22,
-        blur: 12,
-        lightIntensity: 0.25,
-        saturation: 1.1,
-        refractiveIndex: 1.1,
-        specularSharpness: GlassSpecularSharpness.medium,
+        thickness: 22, blur: 12, lightIntensity: 0.25, saturation: 1.1,
+        refractiveIndex: 1.1, specularSharpness: GlassSpecularSharpness.medium,
       );
 
   void _showDanmakuMenu(DanmakuMessage m, Offset pos) {
@@ -904,10 +847,7 @@ class _DanmakuListState extends State<_DanmakuList> {
       context: context,
       barrierColor: Colors.black38,
       builder: (_) => Center(
-        child: Material(
-          type: MaterialType.transparency,
-          child: _UserInfoCard(m: m, c: widget.c, menuGlass: _menuGlass()),
-        ),
+        child: Material(type: MaterialType.transparency, child: _UserInfoCard(m: m, c: widget.c, menuGlass: _menuGlass())),
       ),
     );
   }
@@ -1053,10 +993,7 @@ class _UserInfoCardState extends State<_UserInfoCard> {
         final dyn = u as dynamic;
         final uUid = (dyn.uid is int) ? dyn.uid as int : 0;
         if ((nick.isNotEmpty && u.nickname == nick) || (uid > 0 && uUid == uid)) {
-          if (u.avatar.isNotEmpty && mounted) {
-            setState(() => _avatar = u.avatar);
-            return;
-          }
+          if (u.avatar.isNotEmpty && mounted) { setState(() => _avatar = u.avatar); return; }
         }
       }
     } catch (_) {}
@@ -1095,10 +1032,8 @@ class _UserInfoCardState extends State<_UserInfoCard> {
           backgroundColor: const Color(0xFF2A2A34),
           backgroundImage: _avatar.isNotEmpty ? NetworkImage(_avatar) : null,
           child: _avatar.isEmpty
-              ? Text(
-                  m.nickname.isNotEmpty ? m.nickname[0].toUpperCase() : '?',
-                  style: const TextStyle(color: Colors.white70, fontSize: 28, fontWeight: FontWeight.w800),
-                )
+              ? Text(m.nickname.isNotEmpty ? m.nickname[0].toUpperCase() : '?',
+                  style: const TextStyle(color: Colors.white70, fontSize: 28, fontWeight: FontWeight.w800))
               : null,
         ),
         const SizedBox(height: 12),
@@ -1209,8 +1144,7 @@ class _DanmakuMenuState extends State<_DanmakuMenu> {
     final top = (widget.pos.dy - 60).clamp(80.0, size.height - h - 140);
     return Stack(children: [
       Positioned(
-        left: left,
-        top: top,
+        left: left, top: top,
         child: AnimatedSize(
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutCubic,
@@ -1322,11 +1256,7 @@ class _HighEnergyBodyState extends State<_HighEnergyBody> with SingleTickerProvi
 
   Widget _list(List<VipUser> users, String emptyText) {
     if (users.isEmpty) return Center(child: Text(emptyText, style: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 13)));
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: users.length,
-      itemBuilder: (_, i) => _row(users[i], i),
-    );
+    return ListView.builder(padding: const EdgeInsets.symmetric(vertical: 8), itemCount: users.length, itemBuilder: (_, i) => _row(users[i], i));
   }
 
   @override
