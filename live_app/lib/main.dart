@@ -4,11 +4,16 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'modules/home/home_page.dart';
-import 'modules/home/notice_page.dart';
-import 'modules/settings/huya_login_page.dart'; // ★ 请确认你的登录页实际路径，若不是这个请修改
 
-void main() {
+// ★ 请根据你项目的实际路径修改这两个 import！
+// 如果报错找不到，请改成类似 'modules/home/notice_page.dart' 或 'modules/login/huya_login_page.dart'
+import 'modules/notice/notice_page.dart'; 
+import 'modules/settings/huya_login_page.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // ★ 预热 Shader，防止首帧白屏卡顿
+  await LiquidGlassWidgets.initialize(); 
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]).then((_) {
     runApp(const HuyaLiveApp());
   });
@@ -19,27 +24,26 @@ class HuyaLiveApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassWidgets(
-      child: GetMaterialApp(
-        title: 'HuyaLive',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData.light(useMaterial3: true).copyWith(
-          scaffoldBackgroundColor: const Color(0xFFF4F5F6),
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF8800), brightness: Brightness.light),
-          useMaterial3: true,
-        ),
-        home: const SplashPage(), // ★ 恢复 Splash 启动页
-        getPages: [
-          GetPage(name: '/notice', page: () => const NoticePage()),
-          GetPage(name: '/huya_login', page: () => const HuyaLoginPage()), // ★ 确保登录路由注册
-        ],
+    // ★ 直接返回 GetMaterialApp，避免和 LiquidGlassWidgets.wrap 冲突导致嵌套 MaterialApp
+    return GetMaterialApp(
+      title: 'HuyaLive',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.light(useMaterial3: true).copyWith(
+        scaffoldBackgroundColor: const Color(0xFFF4F5F6),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF8800), brightness: Brightness.light),
+        useMaterial3: true,
       ),
+      home: const SplashPage(),
+      getPages: [
+        GetPage(name: '/notice', page: () => const NoticePage()),
+        GetPage(name: '/huya_login', page: () => const HuyaLoginPage()),
+      ],
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Splash 启动页：虎牙橙渐变 + Logo 缩放动画，遮住首帧 shader 编译卡顿
+// Splash 启动页
 // ─────────────────────────────────────────────────────────────────────────────
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
