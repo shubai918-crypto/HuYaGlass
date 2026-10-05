@@ -7,7 +7,7 @@ import 'modules/home/home_page.dart';
 
 // ★ 请根据你项目的实际路径修改这两个 import！
 // 如果报错找不到，请改成类似 'modules/home/notice_page.dart' 或 'modules/login/huya_login_page.dart'
-import 'modules/notice/notice_page.dart'; 
+import 'modules/home/notice_page.dart'; 
 import 'modules/settings/huya_login_page.dart';
 
 void main() async {
