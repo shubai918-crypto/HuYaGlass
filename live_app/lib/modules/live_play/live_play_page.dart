@@ -40,12 +40,17 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   late final LivePlayController c = Get.put(LivePlayController());
   late final TabController _tab = TabController(length: 3, vsync: this);
   bool _chromeVisible = false;
+  bool _videoReady = false;
   Worker? _nameWorker;
   Worker? _avatarWorker;
 
   @override
   void initState() {
     super.initState();
+    // ★ 首帧掩码定时淡出，防 PlatformView 黑面暴露
+    Future.delayed(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _videoReady = true);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _chromeVisible = true); });
     final args = Get.arguments;
     final roomId = (args is Map ? args['roomId'] : null)?.toString() ?? '';
@@ -94,13 +99,37 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           Column(children: [
             SizedBox(height: top),
             GlassMaterialize(visible: _chromeVisible, child: _header()),
-            AspectRatio(aspectRatio: 16 / 9, child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)])),
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Stack(children: [
+                c.videoHost(false),
+                // ★ 进出场掩码：遮住 PlatformView 黑面，淡出后露出画面
+                AnimatedOpacity(
+                  opacity: _videoReady ? 0 : 1,
+                  duration: const Duration(milliseconds: 350),
+                  child: IgnorePointer(
+                    ignoring: _videoReady,
+                    child: Container(
+                      color: kBg,
+                      child: Center(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          const SizedBox(width: 28, height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: kAccent)),
+                          const SizedBox(height: 10),
+                          const Text('连接直播中...', style: TextStyle(color: kSub, fontSize: 12)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
             _tabs(),
             Expanded(child: TabBarView(controller: _tab, children: [
               _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
             ])),
           ]),
-          // ★ 酷安同款悬浮：底栏浮在列表上方，内容从玻璃下穿过
+          // ★ 酷安同款悬浮：底栏浮在列表上方
           Positioned(
             left: 14, right: 14, bottom: 12,
             child: GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
@@ -240,7 +269,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 悬浮底栏：左 pill 54高 + 右 icons 组 54高
+  // ★ 统一 54 高：左 pill 与右 icons 组同尺寸悬浮；右组用内置轻量 icons 模式
   Widget _bottomBar() {
     return Row(children: [
       Expanded(
@@ -294,13 +323,17 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     ]);
   }
 
+  // ★ 酷安级通透：18% 白 + blur 12，内容从玻璃下透出
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x59FFFFFF),
-        thickness: 22,
-        blur: 14,
-        lightIntensity: 0.3,
-        saturation: 1.3,
-        refractiveIndex: 1.1,
+        glassColor: const Color(0x2EFFFFFF),
+        thickness: 18,
+        blur: 12,
+        lightIntensity: 0.2,
+        ambientStrength: 0,
+        fresnelStrength: 0.5,
+        refractiveIndex: 1.15,
+        saturation: 1.4,
+        chromaticAberration: 0.012,
         specularSharpness: GlassSpecularSharpness.medium,
         shadowElevation: 1.5,
       );
@@ -883,7 +916,7 @@ class _DanmakuListState extends State<_DanmakuList> {
             if (m.fansName.isNotEmpty)
               Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
-                    child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+                  child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
             if (guard != null && guard.guardIcon.isNotEmpty)
               Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
             for (final url in shownBadges)
@@ -905,45 +938,24 @@ class _DanmakuListState extends State<_DanmakuList> {
       final list = c.danmakuList.where((m) => !m.isGift || c.showGiftList.value).toList();
       if (list.isEmpty) return Center(child: Text(c.danmakuStatus.value, style: const TextStyle(color: Color(0xFFA6ADB5))));
       return Stack(children: [
-        // ★ 底部 padding 84 给悬浮底栏让位
         Scrollbar(controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
             child: ListView.builder(controller: _sc, padding: const EdgeInsets.fromLTRB(12, 8, 12, 84), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
-        
-        // ★ 右侧竖栏：使用原生 GlassButtonGroup.icons (垂直方向)
-        Positioned(
-          right: 8, bottom: 84, // ★ 底部 84 给悬浮底栏让位
-          child: GlassButtonGroup.icons(
-            direction: Axis.vertical, // ★ 垂直排列
-            useOwnLayer: true,
-            quality: GlassQuality.premium,
-            borderRadius: 22,
-            iconSize: 20,
-            showDividers: false,
-            itemPadding: const EdgeInsets.all(10),
-            settings: LiquidGlassSettings(
-              glassColor: const Color(0x99FFFFFF),
-              thickness: 22,
-              blur: 12,
-              lightIntensity: 0.4,
-              saturation: 1.2,
-              shadowElevation: 1.5,
-            ),
-            items: [
-              GlassButtonGroupItem(
-                icon: const Icon(Icons.tune, color: Color(0xFF3C4248)),
-                onTap: () => _showDanmakuSettingsLocal(c),
-              ),
-              GlassButtonGroupItem(
-                icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)),
-                onTap: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null,
-              ),
-              GlassButtonGroupItem(
-                icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)),
-                onTap: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null,
-              ),
-            ],
-          ),
-        ),
+        Positioned(right: 8, bottom: 84, child: GlassContainer(
+          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+          useOwnLayer: true,
+          quality: GlassQuality.standard,
+          settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 20, blur: 8, lightIntensity: 0.5, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.1),
+          child: Column(children: [
+            GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
+            const SizedBox(height: 4),
+            GlassIconButton(icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)), size: 38,
+                onPressed: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
+            const SizedBox(height: 4),
+            GlassIconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)), size: 38,
+                onPressed: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
+          ]),
+        )),
       ]);
     });
   }
@@ -1287,7 +1299,6 @@ class _DetailTab extends StatelessWidget {
   const _DetailTab({required this.c});
   @override
   Widget build(BuildContext context) {
-    // ★ 底部 padding 84 给悬浮底栏让位
     return Obx(() => ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 84), children: [
       Container(padding: const EdgeInsets.all(12), decoration: _card(), child: Row(children: [
         CircleAvatar(radius: 26, backgroundColor: const Color(0xFFF2F3F5), backgroundImage: c.streamerAvatar.value.isNotEmpty ? NetworkImage(c.streamerAvatar.value) : null, child: c.streamerAvatar.value.isEmpty ? const Icon(Icons.person, color: Color(0xFFA6ADB5)) : null),
@@ -1351,22 +1362,23 @@ class _DebugTab extends StatelessWidget {
   const _DebugTab({required this.c});
   @override
   Widget build(BuildContext context) {
-    // ★ 底部 padding 84 给悬浮底栏让位
-    return Obx(() => ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 84), children: [
-      if (!AppSettings.to.debugEnabled.value) ...[
-        const SizedBox(height: 40),
-        const Center(child: Icon(Icons.bug_report_outlined, color: Color(0xFFC4C9CF), size: 40)),
-        const SizedBox(height: 8),
-        const Center(child: Text('调试模式已关闭', style: TextStyle(color: kSub))),
-        const SizedBox(height: 12),
-        Center(child: GlassButton(icon: const Icon(Icons.power_settings_new), label: '开启调试', onTap: () => AppSettings.to.setDebug(true))),
-      ] else ...[
+    return Obx(() {
+      if (!AppSettings.to.debugEnabled.value) {
+        return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.bug_report_outlined, color: Color(0xFFC4C9CF), size: 40),
+          const SizedBox(height: 8),
+          const Text('调试模式已关闭', style: TextStyle(color: kSub)),
+          const SizedBox(height: 12),
+          GlassButton(icon: const Icon(Icons.power_settings_new), label: '开启调试', onTap: () => AppSettings.to.setDebug(true)),
+        ]));
+      }
+      return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 84), children: [
         const Text('协议调试日志', style: TextStyle(color: Color(0xFF00B8D4), fontSize: 14, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         SelectableText(c.debugInfo.value.isEmpty ? '（暂无日志）' : c.debugInfo.value, style: const TextStyle(color: Color(0xFF576066), fontSize: 12, height: 1.7)),
         const SizedBox(height: 12),
         Text('状态：${c.danmakuStatus.value}', style: const TextStyle(color: kSub, fontSize: 12)),
-      ]
-    ]));
+      ]);
+    });
   }
 }
