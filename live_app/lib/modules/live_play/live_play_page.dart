@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -100,7 +102,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 头部：深色玻璃，内部高能/订阅恢复为 standard 液态玻璃（保帧率）
   Widget _header() {
     return Obx(() => Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -134,7 +135,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
               ]),
               const SizedBox(height: 6),
               Row(children: [
-                // ★ 恢复高能 pill
                 GestureDetector(
                   onTap: _showHighEnergySheet,
                   child: GlassContainer(
@@ -151,7 +151,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(width: 6),
-                // ★ 恢复订阅 pill
                 GestureDetector(
                   onTap: c.toggleFollow,
                   child: GlassContainer(
@@ -165,8 +164,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                   ),
                 ),
                 const Spacer(),
+                // ★ 修复1：保留 GlassPullDownButton，玻璃换浅色磨砂，图标改深色
                 GlassPullDownButton(
-                  icon: const Icon(Icons.more_horiz, color: Colors.white),
+                  icon: const Icon(Icons.more_horiz, color: Color(0xFF1F2329)),
+                  settings: _pullGlass(),
                   items: [
                     GlassMenuItem(title: '复制房间链接', onTap: _copyUrl),
                     GlassMenuItem(title: '刷新线路', onTap: c.refreshPlay),
@@ -179,6 +180,18 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           ),
         ));
   }
+
+  // ★ 浅色磨砂菜单玻璃（iOS 亮色菜单同款），文字自动解析为深色
+  LiquidGlassSettings _pullGlass() => LiquidGlassSettings(
+        glassColor: const Color(0xE6F2F2F7),
+        thickness: 26,
+        blur: 18,
+        lightIntensity: 0.3,
+        saturation: 1.2,
+        refractiveIndex: 1.15,
+        specularSharpness: GlassSpecularSharpness.medium,
+        shadowElevation: 2.0,
+      );
 
   void _copyUrl() {
     Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${c.roomId}'));
@@ -214,34 +227,33 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 底栏：恢复 premium 极致画质 + 酷安同款果冻拖拽物理
   Widget _bottomBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
       child: Row(children: [
         Expanded(
           child: GlassButton.custom(
             onTap: () => _openComposeSheet(),
-            height: 52,
+            height: 58,
             useOwnLayer: true,
-            quality: GlassQuality.premium, // ★ 恢复 premium
-            shape: const LiquidRoundedSuperellipse(borderRadius: 26),
+            quality: GlassQuality.premium,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 29),
             settings: _hdrGlass(),
-            stretch: 0.5,           // ★ 恢复果冻拉伸
-            resistance: 0.08,       // ★ 恢复阻尼
-            interactionScale: 1.04, // ★ 恢复按压放大
+            stretch: 0.8,
+            resistance: 0.05,
+            interactionScale: 1.06,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Row(children: [
-                const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 18),
-                const SizedBox(width: 8),
+                const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 20),
+                const SizedBox(width: 10),
                 Expanded(
                   child: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: c.inputController,
                     builder: (context, v, _) => Text(
                       v.text.isEmpty ? '发弹幕...' : v.text,
                       maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
+                      style: TextStyle(color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 14),
                     ),
                   ),
                 ),
@@ -249,13 +261,13 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 12),
         GlassButtonGroup.icons(
           useOwnLayer: true,
-          quality: GlassQuality.premium, // ★ 恢复 premium（自带液态耦合物理）
-          borderRadius: 26,
-          iconSize: 20,
-          itemPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+          quality: GlassQuality.premium,
+          borderRadius: 29,
+          iconSize: 22,
+          itemPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           settings: _hdrGlass(),
           items: [
             GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
@@ -267,7 +279,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // 通透底栏玻璃（Tab 胶囊用）
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0x99FFFFFF),
         thickness: 24,
@@ -280,7 +291,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         specularSharpness: GlassSpecularSharpness.medium,
       );
 
-  // ★ HDR 高亮玻璃：恢复色散、锐利高光、投影，拖拽时高光跟手
   LiquidGlassSettings _hdrGlass() => LiquidGlassSettings(
         glassColor: const Color(0x80FFFFFF),
         thickness: 26,
@@ -290,8 +300,8 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         fresnelStrength: 1.4,
         refractiveIndex: 1.25,
         saturation: 1.7,
-        chromaticAberration: 0.015, // ★ 恢复色散
-        shadowElevation: 1.5,       // ★ 恢复投影
+        chromaticAberration: 0.015,
+        shadowElevation: 1.5,
       );
 
   void _openQualitySheet() {
@@ -410,6 +420,9 @@ class _LightSheet extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 评论 Sheet 内容
+// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuComposeBody extends StatefulWidget {
   final LivePlayController c;
   final bool showEmojiInitial;
@@ -790,6 +803,9 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 弹幕列表
+// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuList extends StatefulWidget {
   final LivePlayController c;
   const _DanmakuList({required this.c});
@@ -839,70 +855,15 @@ class _DanmakuListState extends State<_DanmakuList> {
     );
   }
 
+  // ★ 修复2：用户卡改用 _UserInfoCard（真实头像解析）
   void _showUserInfo(DanmakuMessage m) {
-    final fc = _fansColor(m.fansLevel);
     showDialog(
       context: context,
       barrierColor: Colors.black38,
       builder: (_) => Center(
         child: Material(
           type: MaterialType.transparency,
-          child: GlassContainer(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 28),
-            padding: const EdgeInsets.all(24),
-            useOwnLayer: true,
-            quality: GlassQuality.standard,
-            settings: _menuGlass(),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              CircleAvatar(
-                radius: 36,
-                backgroundColor: const Color(0xFF2A2A34),
-                child: Text(
-                  m.nickname.isNotEmpty ? m.nickname[0].toUpperCase() : '?',
-                  style: const TextStyle(color: Colors.white70, fontSize: 28, fontWeight: FontWeight.w800),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(m.nickname.isEmpty ? '神秘用户' : m.nickname,
-                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 10),
-              Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
-                _infoChip('UID: ${m.uid > 0 ? m.uid : '未知'}', const Color(0xFF8A9099)),
-                if (m.fansName.isNotEmpty) _infoChip('${m.fansLevel} ${m.fansName}', fc),
-                if (m.managerType > 0) _infoChip('房管', const Color(0xFFE5484D)),
-              ]),
-              const SizedBox(height: 18),
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                GlassButton.custom(
-                  onTap: () {
-                    widget.c.inputController.text = '@${m.nickname} ';
-                    Navigator.of(context).pop();
-                    Get.snackbar('打招呼', '已填入 @${m.nickname}', snackPosition: SnackPosition.BOTTOM);
-                  },
-                  height: 40,
-                  shape: const LiquidRoundedRectangle(borderRadius: 20),
-                  quality: GlassQuality.standard,
-                  settings: LiquidGlassSettings(glassColor: const Color(0x66FF8800), thickness: 18, blur: 2, bodyMode: GlassBodyMode.clear),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('打招呼', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                GlassButton.custom(
-                  onTap: () => Navigator.of(context).pop(),
-                  height: 40,
-                  shape: const LiquidRoundedRectangle(borderRadius: 20),
-                  quality: GlassQuality.standard,
-                  settings: LiquidGlassSettings(glassColor: const Color(0x33FFFFFF), thickness: 18, blur: 2),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('关闭', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ]),
-            ]),
-          ),
+          child: _UserInfoCard(m: m, c: widget.c, menuGlass: _menuGlass()),
         ),
       ),
     );
@@ -1032,6 +993,154 @@ class _DanmakuListState extends State<_DanmakuList> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ 修复2：用户信息卡（守护/贵宾缓存 → HTTP 抓取 → 首字母占位）
+// ─────────────────────────────────────────────────────────────────────────────
+class _UserInfoCard extends StatefulWidget {
+  final DanmakuMessage m;
+  final LivePlayController c;
+  final LiquidGlassSettings menuGlass;
+  const _UserInfoCard({required this.m, required this.c, required this.menuGlass});
+  @override
+  State<_UserInfoCard> createState() => _UserInfoCardState();
+}
+
+class _UserInfoCardState extends State<_UserInfoCard> {
+  String _avatar = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveAvatar();
+  }
+
+  Future<void> _resolveAvatar() async {
+    final nick = widget.m.nickname;
+    final uid = widget.m.uid;
+    // 1) 守护/贵宾缓存匹配
+    try {
+      final pool = [...widget.c.client.guardList, ...widget.c.client.vipList];
+      for (final u in pool) {
+        final dyn = u as dynamic;
+        final uUid = (dyn.uid is int) ? dyn.uid as int : 0;
+        if ((nick.isNotEmpty && u.nickname == nick) || (uid > 0 && uUid == uid)) {
+          if (u.avatar.isNotEmpty && mounted) {
+            setState(() => _avatar = u.avatar);
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+    // 2) HTTP 抓取 huya 页面 avatar 字段
+    if (uid > 0) {
+      try {
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+        final req = await client.getUrl(Uri.parse('https://www.huya.com/$uid')).timeout(const Duration(seconds: 5));
+        req.headers.set('User-Agent',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
+        req.headers.set('Referer', 'https://www.huya.com/');
+        final resp = await req.close().timeout(const Duration(seconds: 5));
+        final body = await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
+        client.close(force: true);
+        final m2 = RegExp(r'"avatar"\s*:\s*"((?:[^"\\]|\\.)*)"').firstMatch(body);
+        if (m2 != null) {
+          final url = m2.group(1)!.replaceAll(r'\/', '/');
+          if (url.isNotEmpty && mounted) setState(() => _avatar = url);
+        }
+      } catch (_) {}
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.m;
+    final fc = _fansColorLocal(m.fansLevel);
+    return GlassContainer(
+      shape: const LiquidRoundedSuperellipse(borderRadius: 28),
+      padding: const EdgeInsets.all(24),
+      useOwnLayer: true,
+      quality: GlassQuality.standard,
+      settings: widget.menuGlass,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // ★ 真实头像
+        CircleAvatar(
+          radius: 36,
+          backgroundColor: const Color(0xFF2A2A34),
+          backgroundImage: _avatar.isNotEmpty ? NetworkImage(_avatar) : null,
+          child: _avatar.isEmpty
+              ? Text(
+                  m.nickname.isNotEmpty ? m.nickname[0].toUpperCase() : '?',
+                  style: const TextStyle(color: Colors.white70, fontSize: 28, fontWeight: FontWeight.w800),
+                )
+              : null,
+        ),
+        const SizedBox(height: 12),
+        Text(m.nickname.isEmpty ? '神秘用户' : m.nickname,
+            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+          _chipLocal('UID: ${m.uid > 0 ? m.uid : '未知'}', const Color(0xFF8A9099)),
+          if (m.fansName.isNotEmpty) _chipLocal('${m.fansLevel} ${m.fansName}', fc),
+          if (m.managerType > 0) _chipLocal('房管', const Color(0xFFE5484D)),
+        ]),
+        const SizedBox(height: 18),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          GlassButton.custom(
+            onTap: () {
+              widget.c.inputController.text = '@${m.nickname} ';
+              Navigator.of(context).pop();
+              Get.snackbar('打招呼', '已填入 @${m.nickname}', snackPosition: SnackPosition.BOTTOM);
+            },
+            height: 40,
+            shape: const LiquidRoundedRectangle(borderRadius: 20),
+            quality: GlassQuality.standard,
+            settings: LiquidGlassSettings(glassColor: const Color(0x66FF8800), thickness: 18, blur: 2, bodyMode: GlassBodyMode.clear),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text('打招呼', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          GlassButton.custom(
+            onTap: () => Navigator.of(context).pop(),
+            height: 40,
+            shape: const LiquidRoundedRectangle(borderRadius: 20),
+            quality: GlassQuality.standard,
+            settings: LiquidGlassSettings(glassColor: const Color(0x33FFFFFF), thickness: 18, blur: 2),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text('关闭', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Color _fansColorLocal(int lv) {
+    if (lv <= 6) return const Color(0xFF2E9BF5);
+    if (lv <= 12) return const Color(0xFF00B8D4);
+    if (lv <= 19) return const Color(0xFFE09300);
+    if (lv <= 25) return const Color(0xFFE05586);
+    if (lv <= 31) return const Color(0xFF9A4FE0);
+    if (lv <= 40) return const Color(0xFFFF8800);
+    return const Color(0xFFE5484D);
+  }
+
+  Widget _chipLocal(String label, Color tint) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: tint.withOpacity(0.18),
+          border: Border.all(color: tint.withOpacity(0.55)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(label, style: TextStyle(color: tint, fontSize: 11, fontWeight: FontWeight.w700)),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 长按菜单
+// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuMenu extends StatefulWidget {
   final LivePlayController c;
   final DanmakuMessage m;
@@ -1147,6 +1256,9 @@ class _DanmakuMenuState extends State<_DanmakuMenu> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ 修复3：高能榜列表可滚动
+// ─────────────────────────────────────────────────────────────────────────────
 class _HighEnergyBody extends StatefulWidget {
   final LivePlayController c;
   const _HighEnergyBody({required this.c});
@@ -1187,17 +1299,25 @@ class _HighEnergyBodyState extends State<_HighEnergyBody> with SingleTickerProvi
     ]));
   }
 
+  // ★ 恢复可滚动
   Widget _list(List<VipUser> users, String emptyText) {
     if (users.isEmpty) return Center(child: Text(emptyText, style: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 13)));
-    return ListView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), padding: const EdgeInsets.symmetric(vertical: 8), itemCount: users.length, itemBuilder: (_, i) => _row(users[i], i));
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: users.length,
+      itemBuilder: (_, i) => _row(users[i], i),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       TabBar(controller: _tab, labelColor: kAccent, unselectedLabelColor: const Color(0xFF5F6672), indicatorColor: kAccent, dividerColor: Colors.transparent, tabs: [Tab(text: '守护 (${_guard.length})'), Tab(text: '贵宾 (${_vip.length})')]),
-      ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
-          child: TabBarView(controller: _tab, children: [_list(_guard, '暂无守护'), _list(_vip, '暂无贵宾')])),
+      // ★ 固定高度 + 内部可滚动
+      SizedBox(
+        height: MediaQuery.of(context).size.height * 0.45,
+        child: TabBarView(controller: _tab, children: [_list(_guard, '暂无守护'), _list(_vip, '暂无贵宾')]),
+      ),
     ]);
   }
 }
