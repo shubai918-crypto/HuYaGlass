@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -41,6 +44,30 @@ void goLive(String roomId, {String nickname = '', String avatarUrl = ''}) {
   Get.to(() => const LivePlayPage(), arguments: {'roomId': roomId});
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 推荐流数据模型
+// ─────────────────────────────────────────────────────────────────────────────
+class _RecItem {
+  final String roomId;
+  final String nick;
+  final String avatar;
+  final String title;
+  final String screenshot;
+  final String game;
+  final int viewers;
+  final double aspect; // ★ 封面宽高比（哈希分配 → 瀑布流错落感）
+  _RecItem({
+    required this.roomId,
+    required this.nick,
+    required this.avatar,
+    required this.title,
+    required this.screenshot,
+    required this.game,
+    required this.viewers,
+    required this.aspect,
+  });
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
@@ -76,9 +103,9 @@ class _HomePageState extends State<HomePage> {
 
   // ★ Apple Music Demo 同款玻璃配方 + 酷安悬浮投影
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0xAAF2F2F7), // Demo 原值：67% 浅灰白
+        glassColor: const Color(0xAAF2F2F7),
         thickness: 30,
-        blur: 2, // Demo 原值：低模糊，内容清晰透出
+        blur: 2,
         chromaticAberration: 0.01,
         lightAngle: GlassDefaults.lightAngle,
         lightIntensity: 0.2,
@@ -87,10 +114,9 @@ class _HomePageState extends State<HomePage> {
         fresnelStrength: 0.0,
         saturation: 1.2,
         specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 2.0, // ★ 悬浮投影
+        shadowElevation: 2.0,
       );
 
-  // 顶栏小件：稍透一点的白霜
   LiquidGlassSettings _visibleGlass() => LiquidGlassSettings(
         glassColor: const Color(0x99F2F2F7),
         thickness: 24,
@@ -149,7 +175,7 @@ class _HomePageState extends State<HomePage> {
             body: Padding(
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + 60,
-                bottom: 0, // ★ 内容穿到底栏后，blur 2 让列表清晰透出
+                bottom: 0,
               ),
               child: IndexedStack(
                 index: _selectedIndex,
@@ -172,7 +198,6 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-            // ★ Apple Music Demo 规格：64/50 高 + 20/16 内边距 + 8 间距
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
@@ -232,7 +257,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 迷你播放条：Apple Music play pill 同款（50 高 + 同配方玻璃）
   Widget _buildMiniBar(NowRoom room) {
     return Builder(builder: (context) {
       final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
@@ -297,105 +321,412 @@ class _HomePageState extends State<HomePage> {
       );
 }
 
-class _HomeView extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// 首页： slim banner + 快捷入口 + ★直播推荐瀑布流
+// ─────────────────────────────────────────────────────────────────────────────
+class _HomeView extends StatefulWidget {
   final VoidCallback onOpenFollows;
   const _HomeView({required this.onOpenFollows});
+  @override
+  State<_HomeView> createState() => _HomeViewState();
+}
+
+class _HomeViewState extends State<_HomeView> {
+  final List<_RecItem> _left = [];
+  final List<_RecItem> _right = [];
+  final Set<String> _followed = {};
+  double _hLeft = 0;
+  double _hRight = 0;
+  int _page = 0;
+  bool _loading = false;
+  bool _loadingMore = false;
+  bool _end = false;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFirst();
+  }
+
+  String _fmtView(int v) {
+    if (v >= 100000000) return '${(v / 100000000).toStringAsFixed(1)}亿';
+    if (v >= 10000) return '${(v / 10000).toStringAsFixed(1)}万';
+    return '$v';
+  }
+
+  // ★ 虎牙公开推荐接口分页拉取
+  Future<List<_RecItem>> _fetchRecPage(int page) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
+    try {
+      final req = await client
+          .getUrl(Uri.parse('https://www.huya.com/cache.php?m=LiveList&do=getLiveListByPage&tagAll=0&page=$page'))
+          .timeout(const Duration(seconds: 7));
+      req.headers.set('User-Agent',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
+      req.headers.set('Referer', 'https://www.huya.com/');
+      final resp = await req.close().timeout(const Duration(seconds: 7));
+      final body = await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
+      final dyn = jsonDecode(body);
+      final datas = (dyn['data']?['datas'] as List?) ?? const [];
+      const aspects = [0.75, 1.0, 1.33, 0.85];
+      final out = <_RecItem>[];
+      for (final d in datas) {
+        final m = d as Map<String, dynamic>;
+        final uid = '${m['uid'] ?? ''}';
+        final host = '${m['privateHost'] ?? ''}';
+        final roomId = host.isNotEmpty ? host : uid;
+        if (roomId.isEmpty) continue;
+        final nick = '${m['nickName'] ?? ''}';
+        final intro = '${m['introduction'] ?? ''}';
+        final tc = m['totalCount'];
+        final viewers = tc is int ? tc : (int.tryParse('$tc') ?? 0);
+        out.add(_RecItem(
+          roomId: roomId,
+          nick: nick,
+          avatar: '${m['avatar180'] ?? ''}',
+          title: intro.isNotEmpty ? intro : (nick.isNotEmpty ? '$nick 的直播间' : '直播间'),
+          screenshot: '${m['screenshot'] ?? ''}',
+          game: '${m['gameFullName'] ?? ''}',
+          viewers: viewers,
+          aspect: aspects[(roomId.hashCode & 0x7fffffff) % aspects.length],
+        ));
+      }
+      return out;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  // ★ 瀑布流分配：新卡片进当前较矮的一列
+  void _append(List<_RecItem> items) {
+    final colW = (MediaQuery.of(context).size.width - 32 - 10) / 2;
+    for (final it in items) {
+      final h = colW / it.aspect + 108;
+      if (_hLeft <= _hRight) {
+        _left.add(it);
+        _hLeft += h + 10;
+      } else {
+        _right.add(it);
+        _hRight += h + 10;
+      }
+    }
+  }
+
+  Future<void> _seedFollows(List<_RecItem> items) async {
+    for (final it in items) {
+      if (_followed.contains(it.roomId)) continue;
+      try {
+        if (await FollowStore.contains(it.roomId)) _followed.add(it.roomId);
+      } catch (_) {}
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadFirst() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = false;
+      _end = false;
+      _page = 0;
+      _left.clear();
+      _right.clear();
+      _hLeft = 0;
+      _hRight = 0;
+    });
+    try {
+      final items = await _fetchRecPage(1);
+      if (!mounted) return;
+      _page = 1;
+      _append(items);
+      setState(() => _loading = false);
+      _seedFollows(items);
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _error = true; });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _loading || _end || _page == 0) return;
+    setState(() => _loadingMore = true);
+    try {
+      final items = await _fetchRecPage(_page + 1);
+      if (!mounted) return;
+      if (items.isEmpty) {
+        _end = true;
+      } else {
+        _page++;
+        _append(items);
+        _seedFollows(items);
+      }
+      setState(() => _loadingMore = false);
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  Future<void> _toggleFollow(_RecItem it) async {
+    final has = _followed.contains(it.roomId);
+    if (has) {
+      await FollowStore.remove(it.roomId);
+      _followed.remove(it.roomId);
+      Get.snackbar('已取消订阅', it.nick, snackPosition: SnackPosition.BOTTOM);
+    } else {
+      await FollowStore.add(FollowItem(roomId: it.roomId, name: it.nick, avatar: it.avatar));
+      _followed.add(it.roomId);
+      Get.snackbar('已订阅', it.nick, snackPosition: SnackPosition.BOTTOM);
+    }
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-                colors: [Color(0xFFFF8800), Color(0xFFFF5A00)],
-                begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(children: [
-            const Icon(Icons.live_tv, size: 56, color: Colors.white),
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n is ScrollUpdateNotification &&
+            n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
+          _loadMore();
+        }
+        return false;
+      },
+      child: RefreshIndicator(
+        color: kAccent,
+        onRefresh: _loadFirst,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
+          children: [
+            _banner(),
             const SizedBox(height: 12),
-            const Text('虎牙直播 · 液态玻璃',
-                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            Text('看直播 · 弹幕 · 订阅 · 真实发送',
-                style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
-            const SizedBox(height: 18),
-            // ★ CTA：Demo 同款果冻拖拽参数
-            GlassButton.custom(
-              onTap: () => _openEnterRoom(context),
-              width: 176,
-              height: 48,
-              shape: const LiquidRoundedRectangle(borderRadius: 24),
-              useOwnLayer: true,
-              quality: GlassQuality.premium,
-              stretch: 0.5,
-              anchorStretchSettings: const AnchorStretchSettings(
-                intensity: 0.6,
-                squashFactor: 0.15,
-                translationDamping: 0.12,
-                bounciness: 0.15,
-              ),
-              settings: LiquidGlassSettings(
-                glassColor: Colors.white.withOpacity(0.22),
-                bodyMode: GlassBodyMode.clear,
-                thickness: 24,
-                blur: 2,
-                lightIntensity: 0.6,
-                chromaticAberration: 0.01,
-                saturation: 1.2,
-                specularSharpness: GlassSpecularSharpness.medium,
-              ),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.play_arrow, color: Colors.white, size: 20),
-                SizedBox(width: 6),
-                Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-              ]),
-            ),
-          ]),
+            _quickRow(),
+            const SizedBox(height: 20),
+            _feedHeader(),
+            const SizedBox(height: 10),
+            _masonry(),
+            _footer(),
+          ],
         ),
-        const SizedBox(height: 16),
-        _card(icon: Icons.subscriptions_outlined, color: kAccent,
-            label: '我的订阅', sub: '点击查看已收藏的主播', onTap: onOpenFollows),
-        const SizedBox(height: 12),
-        _card(icon: Icons.account_circle, color: const Color(0xFFFFB25E),
-            label: HuyaLoginManager().isLoggedIn ? '已登录虎牙账号' : '登录虎牙账号',
-            sub: '登录后可发真实弹幕 / 看真实订阅数', onTap: () => Get.toNamed('/huya_login')),
-      ],
+      ),
     );
   }
 
-  Widget _card({required IconData icon, required Color color, required String label,
-      required String sub, required VoidCallback onTap}) {
+  // ★ slim 渐变 banner + 玻璃 CTA
+  Widget _banner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+            colors: [Color(0xFFFF8800), Color(0xFFFF5A00)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(children: [
+        const Icon(Icons.live_tv, size: 30, color: Colors.white),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('虎牙直播 · 液态玻璃',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text('看直播 · 弹幕 · 订阅 · 真实发送',
+              style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11)),
+        ])),
+        GlassButton.custom(
+          onTap: () => _openEnterRoom(context),
+          height: 38,
+          shape: const LiquidRoundedRectangle(borderRadius: 19),
+          useOwnLayer: true,
+          quality: GlassQuality.premium,
+          stretch: 0.5,
+          anchorStretchSettings: const AnchorStretchSettings(
+            intensity: 0.6, squashFactor: 0.15, translationDamping: 0.12, bounciness: 0.15),
+          settings: LiquidGlassSettings(
+            glassColor: Colors.white.withOpacity(0.22),
+            bodyMode: GlassBodyMode.clear,
+            thickness: 24,
+            blur: 2,
+            lightIntensity: 0.6,
+            chromaticAberration: 0.01,
+            saturation: 1.2,
+            specularSharpness: GlassSpecularSharpness.medium,
+          ),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.play_arrow, color: Colors.white, size: 16),
+              SizedBox(width: 4),
+              Text('进直播间', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _quickRow() {
+    return Row(children: [
+      Expanded(child: _quickCard(Icons.subscriptions_outlined, kAccent, '我的订阅', widget.onOpenFollows)),
+      const SizedBox(width: 10),
+      Expanded(child: _quickCard(
+          Icons.account_circle, const Color(0xFFFFB25E),
+          HuyaLoginManager().isLoggedIn ? '已登录' : '登录',
+          () => Get.toNamed('/huya_login'))),
+    ]);
+  }
+
+  Widget _quickCard(IconData icon, Color color, String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: kLine),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
         child: Row(children: [
           Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
-            child: Icon(icon, color: color, size: 24),
+            width: 32, height: 32,
+            decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(sub, style: const TextStyle(color: kSub, fontSize: 12)),
-            ]),
-          ),
-          const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w600))),
+          const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF), size: 16),
         ]),
       ),
     );
+  }
+
+  Widget _feedHeader() {
+    return Row(children: [
+      const Icon(Icons.whatshot, color: kAccent, size: 18),
+      const SizedBox(width: 6),
+      Text('直播推荐 (${_left.length + _right.length})',
+          style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w800)),
+      const Spacer(),
+      GlassIconButton(
+        icon: const Icon(Icons.refresh, color: kAccent),
+        size: 38,
+        settings: LiquidGlassSettings(
+          glassColor: const Color(0x99F2F2F7), thickness: 20, blur: 4,
+          lightIntensity: 0.3, specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 1.0),
+        onPressed: _loadFirst,
+      ),
+    ]);
+  }
+
+  Widget _masonry() {
+    if (_loading && _left.isEmpty && _right.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 60),
+        child: Center(child: CircularProgressIndicator(color: kAccent, strokeWidth: 2.5)),
+      );
+    }
+    if (_error && _left.isEmpty) {
+      return GestureDetector(
+        onTap: _loadFirst,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 40),
+          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+          child: const Column(children: [
+            Icon(Icons.wifi_off_outlined, color: Color(0xFFC4C9CF), size: 36),
+            SizedBox(height: 8),
+            Text('加载失败，点击重试', style: TextStyle(color: kSub, fontSize: 13)),
+          ]),
+        ),
+      );
+    }
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: Column(children: _left.map(_recCard).toList())),
+      const SizedBox(width: 10),
+      Expanded(child: Column(children: _right.map(_recCard).toList())),
+    ]);
+  }
+
+  // ★ 瀑布流卡片：白卡 + 错落封面 + 直播角标 + 人气 + 长按订阅
+  Widget _recCard(_RecItem it) {
+    final followed = _followed.contains(it.roomId);
+    return GestureDetector(
+      onTap: () => goLive(it.roomId, nickname: it.nick, avatarUrl: it.avatar),
+      onLongPress: () => _toggleFollow(it),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
+            child: Stack(children: [
+              AspectRatio(
+                aspectRatio: it.aspect,
+                child: it.screenshot.isNotEmpty
+                    ? Image.network(it.screenshot, fit: BoxFit.cover, gaplessPlayback: true,
+                        errorBuilder: (_, __, ___) => _coverPh())
+                    : _coverPh(),
+              ),
+              Positioned(
+                left: 8, top: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(8)),
+                  child: const Text('直播中', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              Positioned(
+                right: 8, bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.remove_red_eye, size: 10, color: Colors.white70),
+                    const SizedBox(width: 3),
+                    Text(_fmtView(it.viewers), style: const TextStyle(color: Colors.white, fontSize: 9)),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(it.title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3)),
+              const SizedBox(height: 8),
+              Row(children: [
+                CircleAvatar(radius: 9, backgroundColor: const Color(0xFFF2F3F5),
+                    backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+                    child: it.avatar.isEmpty ? const Icon(Icons.person, size: 10, color: Color(0xFFA6ADB5)) : null),
+                const SizedBox(width: 6),
+                Expanded(child: Text(it.game.isNotEmpty ? '${it.nick} · ${it.game}' : it.nick,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: kSub, fontSize: 10))),
+                Icon(followed ? Icons.favorite : Icons.favorite_border,
+                    size: 15, color: followed ? const Color(0xFFE5484D) : const Color(0xFFC4C9CF)),
+              ]),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _coverPh() => Container(
+        color: const Color(0xFFF2F3F5),
+        alignment: Alignment.center,
+        child: const Icon(Icons.live_tv, color: Color(0xFFC4C9CF), size: 28),
+      );
+
+  Widget _footer() {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: SizedBox(width: 22, height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2, color: kAccent))),
+      );
+    }
+    if (_end) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: Text('— 到底啦 —', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 11))),
+      );
+    }
+    return const SizedBox(height: 8);
   }
 
   void _openEnterRoom(BuildContext context) {
