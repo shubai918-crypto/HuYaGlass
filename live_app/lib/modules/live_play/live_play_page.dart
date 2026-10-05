@@ -164,14 +164,38 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                   ),
                 ),
                 const Spacer(),
-                // ★ 修复1：保留 GlassPullDownButton，玻璃换浅色磨砂，图标改深色
-                GlassPullDownButton(
-                  icon: const Icon(Icons.more_horiz, color: Color(0xFF1F2329)),
+                // ★ 修复2：GlassPullDownButton 无 settings 参数（见官方文档），
+                // 改用同引擎的 GlassMenu + triggerBuilder，菜单玻璃换成浅色磨砂
+                GlassMenu(
+                  settings: _menuLightGlass(),
+                  quality: GlassQuality.premium,
+                  menuWidth: 210,
+                  triggerBuilder: (context, toggle) => GlassButton.custom(
+                    onTap: toggle,
+                    width: 40,
+                    height: 40,
+                    shape: const LiquidOval(),
+                    quality: GlassQuality.standard,
+                    useOwnLayer: true,
+                    settings: LiquidGlassSettings(
+                      glassColor: Colors.white.withOpacity(0.14),
+                      thickness: 18,
+                      blur: 8,
+                      lightIntensity: 0.4,
+                    ),
+                    child: const Center(child: Icon(Icons.more_horiz, color: Colors.white, size: 20)),
+                  ),
                   items: [
-                    GlassMenuItem(title: '复制房间链接', onTap: _copyUrl),
-                    GlassMenuItem(title: '刷新线路', onTap: c.refreshPlay),
-                    GlassMenuItem(title: c.isMuted.value ? '取消静音' : '静音', onTap: c.toggleMute),
-                    GlassMenuItem(title: c.isFullscreen.value ? '退出全屏' : '全屏', onTap: c.toggleFullscreen),
+                    GlassMenuItem(title: '复制房间链接', icon: const Icon(Icons.link), onTap: _copyUrl),
+                    GlassMenuItem(title: '刷新线路', icon: const Icon(Icons.refresh), onTap: c.refreshPlay),
+                    GlassMenuItem(
+                        title: c.isMuted.value ? '取消静音' : '静音',
+                        icon: Icon(c.isMuted.value ? Icons.volume_up : Icons.volume_off),
+                        onTap: c.toggleMute),
+                    GlassMenuItem(
+                        title: c.isFullscreen.value ? '退出全屏' : '全屏',
+                        icon: Icon(c.isFullscreen.value ? Icons.fullscreen_exit : Icons.fullscreen),
+                        onTap: c.toggleFullscreen),
                   ],
                 ),
               ]),
@@ -180,7 +204,17 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         ));
   }
 
-
+  // ★ 浅色磨砂菜单玻璃：白霜 + 投影，深色文字自动可读
+  LiquidGlassSettings _menuLightGlass() => LiquidGlassSettings(
+        glassColor: const Color(0xE6F2F2F7),
+        thickness: 26,
+        blur: 18,
+        lightIntensity: 0.3,
+        saturation: 1.2,
+        refractiveIndex: 1.15,
+        specularSharpness: GlassSpecularSharpness.medium,
+        shadowElevation: 2.0,
+      );
 
   void _copyUrl() {
     Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${c.roomId}'));
@@ -216,6 +250,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
+  // ★ 修复1：酷安同款 Q 弹 —— 左 pill 与组内每个按钮独立拉满果冻物理
   Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
@@ -228,9 +263,15 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             quality: GlassQuality.premium,
             shape: const LiquidRoundedSuperellipse(borderRadius: 29),
             settings: _hdrGlass(),
-            stretch: 0.8,
-            resistance: 0.05,
+            stretch: 1.0,
+            resistance: 0.04,
             interactionScale: 1.06,
+            anchorStretchSettings: const AnchorStretchSettings(
+              intensity: 0.9,
+              squashFactor: 0.25,
+              translationDamping: 0.06,
+              bounciness: 0.4,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Row(children: [
@@ -251,33 +292,53 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
           ),
         ),
         const SizedBox(width: 12),
-        GlassButtonGroup.icons(
+        // ★ children 全控件模式：每个按钮独立 stretch/回弹（icons 轻量模式无独立物理）
+        GlassButtonGroup(
+          showDividers: false,
+          borderRadius: 29,
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          borderRadius: 29,
-          iconSize: 22,
-          itemPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           settings: _hdrGlass(),
-          items: [
-            GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
-            GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
-            GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
+          children: [
+            _groupBtn(Icons.speed, _openQualitySheet),
+            _groupBtn(Icons.tune, _showDanmakuSettingsSheet),
+            _groupBtn(Icons.emoji_emotions_outlined, () => _openComposeSheet(focusEmoji: true)),
           ],
         ),
       ]),
     );
   }
 
+  Widget _groupBtn(IconData icon, VoidCallback onTap) => GlassButton(
+        onTap: onTap,
+        style: GlassButtonStyle.transparent,
+        width: 46,
+        height: 46,
+        iconSize: 22,
+        iconColor: const Color(0xFF3C4248),
+        stretch: 1.0,
+        resistance: 0.04,
+        interactionScale: 1.08,
+        anchorStretchSettings: const AnchorStretchSettings(
+          intensity: 0.9,
+          squashFactor: 0.25,
+          translationDamping: 0.06,
+          bounciness: 0.4,
+        ),
+        icon: Icon(icon),
+      );
+
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0x99FFFFFF),
         thickness: 24,
         blur: 3,
         lightIntensity: 0.25,
-        ambientStrength: 0.1,
+        ambientStrength: 0.15,
         fresnelStrength: 0.4,
         refractiveIndex: 1.1,
         saturation: 1.1,
         specularSharpness: GlassSpecularSharpness.medium,
+        shadowElevation: 2.0,
       );
 
   LiquidGlassSettings _hdrGlass() => LiquidGlassSettings(
@@ -290,7 +351,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         refractiveIndex: 1.25,
         saturation: 1.7,
         chromaticAberration: 0.015,
-        shadowElevation: 1.5,
+        shadowElevation: 2.5,
       );
 
   void _openQualitySheet() {
@@ -409,9 +470,6 @@ class _LightSheet extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 评论 Sheet 内容
-// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuComposeBody extends StatefulWidget {
   final LivePlayController c;
   final bool showEmojiInitial;
@@ -792,9 +850,6 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 弹幕列表
-// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuList extends StatefulWidget {
   final LivePlayController c;
   const _DanmakuList({required this.c});
@@ -844,7 +899,6 @@ class _DanmakuListState extends State<_DanmakuList> {
     );
   }
 
-  // ★ 修复2：用户卡改用 _UserInfoCard（真实头像解析）
   void _showUserInfo(DanmakuMessage m) {
     showDialog(
       context: context,
@@ -857,16 +911,6 @@ class _DanmakuListState extends State<_DanmakuList> {
       ),
     );
   }
-
-  Widget _infoChip(String label, Color tint) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: tint.withOpacity(0.18),
-          border: Border.all(color: tint.withOpacity(0.55)),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(label, style: TextStyle(color: tint, fontSize: 11, fontWeight: FontWeight.w700)),
-      );
 
   Widget _item(LivePlayController c, DanmakuMessage m) {
     final fc = _fansColor(m.fansLevel);
@@ -982,9 +1026,6 @@ class _DanmakuListState extends State<_DanmakuList> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ★ 修复2：用户信息卡（守护/贵宾缓存 → HTTP 抓取 → 首字母占位）
-// ─────────────────────────────────────────────────────────────────────────────
 class _UserInfoCard extends StatefulWidget {
   final DanmakuMessage m;
   final LivePlayController c;
@@ -1006,7 +1047,6 @@ class _UserInfoCardState extends State<_UserInfoCard> {
   Future<void> _resolveAvatar() async {
     final nick = widget.m.nickname;
     final uid = widget.m.uid;
-    // 1) 守护/贵宾缓存匹配
     try {
       final pool = [...widget.c.client.guardList, ...widget.c.client.vipList];
       for (final u in pool) {
@@ -1020,7 +1060,6 @@ class _UserInfoCardState extends State<_UserInfoCard> {
         }
       }
     } catch (_) {}
-    // 2) HTTP 抓取 huya 页面 avatar 字段
     if (uid > 0) {
       try {
         final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
@@ -1051,7 +1090,6 @@ class _UserInfoCardState extends State<_UserInfoCard> {
       quality: GlassQuality.standard,
       settings: widget.menuGlass,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        // ★ 真实头像
         CircleAvatar(
           radius: 36,
           backgroundColor: const Color(0xFF2A2A34),
@@ -1127,9 +1165,6 @@ class _UserInfoCardState extends State<_UserInfoCard> {
       );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 长按菜单
-// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuMenu extends StatefulWidget {
   final LivePlayController c;
   final DanmakuMessage m;
@@ -1245,9 +1280,6 @@ class _DanmakuMenuState extends State<_DanmakuMenu> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ★ 修复3：高能榜列表可滚动
-// ─────────────────────────────────────────────────────────────────────────────
 class _HighEnergyBody extends StatefulWidget {
   final LivePlayController c;
   const _HighEnergyBody({required this.c});
@@ -1288,7 +1320,6 @@ class _HighEnergyBodyState extends State<_HighEnergyBody> with SingleTickerProvi
     ]));
   }
 
-  // ★ 恢复可滚动
   Widget _list(List<VipUser> users, String emptyText) {
     if (users.isEmpty) return Center(child: Text(emptyText, style: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 13)));
     return ListView.builder(
@@ -1302,7 +1333,6 @@ class _HighEnergyBodyState extends State<_HighEnergyBody> with SingleTickerProvi
   Widget build(BuildContext context) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       TabBar(controller: _tab, labelColor: kAccent, unselectedLabelColor: const Color(0xFF5F6672), indicatorColor: kAccent, dividerColor: Colors.transparent, tabs: [Tab(text: '守护 (${_guard.length})'), Tab(text: '贵宾 (${_vip.length})')]),
-      // ★ 固定高度 + 内部可滚动
       SizedBox(
         height: MediaQuery.of(context).size.height * 0.45,
         child: TabBarView(controller: _tab, children: [_list(_guard, '暂无守护'), _list(_vip, '暂无贵宾')]),
