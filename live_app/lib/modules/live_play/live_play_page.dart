@@ -89,7 +89,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: kBg,
       resizeToAvoidBottomInset: false,
-      // ★ 1.9.0 GlassBackdropGroup：头部/Tab/底栏共享一次 backdrop 读取，视频页 GPU 负载大降
+      // ★ 1.9.0 GlassBackdropGroup：头部/Tab/底栏共享一次 backdrop 读取
       body: GlassBackdropGroup(
         child: Column(children: [
           SizedBox(height: top),
@@ -235,7 +235,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 底栏：左 pill + 右 GlassButtonGroup（children 果冻模式）
+  // ★ 统一底栏：左 pill 48 高（小）+ 右组 54 按钮（大），同一种半透明模糊玻璃
   Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
@@ -243,28 +243,29 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         Expanded(
           child: GlassButton.custom(
             onTap: () => _openComposeSheet(),
-            height: 58,
+            height: 48,
             useOwnLayer: true,
             quality: GlassQuality.premium,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 29),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
             settings: _hdrGlass(),
-            stretch: 1.0,
-            resistance: 0.04,
-            interactionScale: 1.06,
+            stretch: 0.8,
+            resistance: 0.05,
+            interactionScale: 1.05,
             anchorStretchSettings: const AnchorStretchSettings(
-                intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
+                intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(children: [
-                const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 20),
-                const SizedBox(width: 10),
+                const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 17),
+                const SizedBox(width: 8),
                 Expanded(
                   child: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: c.inputController,
                     builder: (context, v, _) => Text(
                       v.text.isEmpty ? '发弹幕...' : v.text,
                       maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 14),
+                      style: TextStyle(
+                          color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
                     ),
                   ),
                 ),
@@ -272,10 +273,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         GlassButtonGroup(
           showDividers: false,
-          borderRadius: 29,
+          borderRadius: 27,
           useOwnLayer: true,
           quality: GlassQuality.premium,
           settings: _hdrGlass(),
@@ -292,8 +293,9 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   Widget _groupBtn(IconData icon, VoidCallback onTap) => GlassButton(
         onTap: onTap,
         style: GlassButtonStyle.transparent,
-        width: 46, height: 46,
-        iconSize: 22,
+        width: 54,
+        height: 54,
+        iconSize: 24,
         iconColor: const Color(0xFF3C4248),
         stretch: 1.0,
         resistance: 0.04,
@@ -303,19 +305,19 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         icon: Icon(icon),
       );
 
+  // ★ 统一半透明模糊玻璃（酷安同款通透感）
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x99FFFFFF),
-        thickness: 24, blur: 3, lightIntensity: 0.25, ambientStrength: 0.15,
-        fresnelStrength: 0.4, refractiveIndex: 1.1, saturation: 1.1,
-        specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 2.0,
+        glassColor: const Color(0x59FFFFFF),
+        thickness: 22,
+        blur: 14,
+        lightIntensity: 0.3,
+        saturation: 1.3,
+        refractiveIndex: 1.1,
+        specularSharpness: GlassSpecularSharpness.medium,
+        shadowElevation: 1.5,
       );
 
-  LiquidGlassSettings _hdrGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x80FFFFFF),
-        thickness: 26, blur: 4, lightIntensity: 1.1,
-        specularSharpness: GlassSpecularSharpness.sharp, fresnelStrength: 1.4,
-        refractiveIndex: 1.25, saturation: 1.7, chromaticAberration: 0.015, shadowElevation: 2.5,
-      );
+  LiquidGlassSettings _hdrGlass() => _barGlass();
 
   void _openQualitySheet() {
     showModalBottomSheet(
@@ -893,7 +895,7 @@ class _DanmakuListState extends State<_DanmakuList> {
             if (m.fansName.isNotEmpty)
               Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
-                  child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+                    child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
             if (guard != null && guard.guardIcon.isNotEmpty)
               Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
             for (final url in shownBadges)
