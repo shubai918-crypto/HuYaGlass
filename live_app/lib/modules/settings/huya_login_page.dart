@@ -34,8 +34,8 @@ class _HuyaLoginPageState extends State<HuyaLoginPage> {
     }
     setState(() => _saving = true);
     try {
-      // ★ 若你的 HuyaLoginManager 保存方法名不同（login / setCookie），只改这一行
-      await HuyaLoginManager().saveCookie(v);
+      // ★ 修正：调用真实的 setCookie 方法，同步执行无需 await
+      HuyaLoginManager().setCookie(v);
       Get.snackbar('成功', '登录信息已保存', snackPosition: SnackPosition.BOTTOM);
       Get.back();
     } catch (e) {
@@ -46,7 +46,8 @@ class _HuyaLoginPageState extends State<HuyaLoginPage> {
   }
 
   Future<void> _clear() async {
-    await HuyaLoginManager().logout();
+    // ★ 修正：logout 返回 void，去掉 await
+    HuyaLoginManager().logout();
     _ctrl.clear();
     Get.snackbar('提示', '已清除登录', snackPosition: SnackPosition.BOTTOM);
   }
