@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:live_core/live_core.dart';
-import '../../common/widgets/liquid_glass.dart';
+
+import '../home/home_page.dart';
 
 class HuyaLoginPage extends StatefulWidget {
   const HuyaLoginPage({super.key});
@@ -10,123 +11,121 @@ class HuyaLoginPage extends StatefulWidget {
 }
 
 class _HuyaLoginPageState extends State<HuyaLoginPage> {
-  final _controller = TextEditingController();
-  final _manager = HuyaLoginManager();
+  final _ctrl = TextEditingController();
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _controller.text = _manager.cookie;
+    _ctrl.text = HuyaLoginManager().cookie;
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ctrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _save() async {
+    final v = _ctrl.text.trim();
+    if (v.isEmpty) {
+      Get.snackbar('提示', '请先粘贴 Cookie', snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      // ★ 若你的 HuyaLoginManager 保存方法名不同（login / setCookie），只改这一行
+      await HuyaLoginManager().saveCookie(v);
+      Get.snackbar('成功', '登录信息已保存', snackPosition: SnackPosition.BOTTOM);
+      Get.back();
+    } catch (e) {
+      Get.snackbar('错误', '$e', snackPosition: SnackPosition.BOTTOM);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _clear() async {
+    await HuyaLoginManager().logout();
+    _ctrl.clear();
+    Get.snackbar('提示', '已清除登录', snackPosition: SnackPosition.BOTTOM);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: kBg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('虎牙登录', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: const IconThemeData(color: kText),
+        title: const Text('虎牙登录', style: TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w700)),
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LiquidGlass(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('如何获取 Cookie？',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text(
-                      '1. 在浏览器打开 huya.com 并登录你的账号\n'
-                      '2. 按 F12 打开开发者工具，切换到 Network 面板\n'
-                      '3. 刷新页面，点击第一个请求\n'
-                      '4. 在 Request Headers 中找到 Cookie，复制其值',
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 13,
-                          height: 1.5),
-                    ),
-                  ],
-                ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('如何获取 Cookie？', style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              Text(
+                '1. 在浏览器打开 huya.com 并登录你的账号\n2. 按 F12 打开开发者工具，切换到 Network 面板\n3. 刷新页面，点击第一个请求\n4. 在 Request Headers 中找到 Cookie，复制其值',
+                style: TextStyle(color: kSub, fontSize: 13, height: 1.7),
               ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: LiquidGlass(
-                  padding: const EdgeInsets.all(12),
-                  child: TextField(
-                    controller: _controller,
-                    maxLines: null,
-                    expands: true,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: '在此粘贴完整的虎牙 Cookie...',
-                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: LiquidGlassButton(
-                      text: _manager.isLoggedIn ? '更新并保存' : '保存登录',
-                      selected: true,
-                      fontSize: 14,
-                      onTap: () {
-                        _manager.setCookie(_controller.text);
-                        setState(() {});
-                        Get.snackbar('成功', 'Cookie 已保存，返回直播间自动刷新真实粉丝数',
-                            snackPosition: SnackPosition.BOTTOM);
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: LiquidGlassButton(
-                      text: '清除登录',
-                      selected: false,
-                      fontSize: 14,
-                      onTap: () {
-                        _manager.logout();
-                        _controller.clear();
-                        setState(() {});
-                        Get.snackbar('成功', '已退出登录',
-                            snackPosition: SnackPosition.BOTTOM);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              if (_manager.isLoggedIn)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Center(
-                    child: Text('✅ 当前已登录，发弹幕与订阅已解锁',
-                        style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
-                  ),
-                ),
-            ],
+            ]),
           ),
-        ),
+          const SizedBox(height: 14),
+          Container(
+            height: 260,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+            child: TextField(
+              controller: _ctrl,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              style: const TextStyle(color: kText, fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: '在此粘贴完整的虎牙 Cookie...',
+                hintStyle: TextStyle(color: Color(0xFFA6ADB5), fontSize: 13),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: _saving ? null : _save,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(16)),
+                  child: Center(
+                    child: _saving
+                        ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('保存登录',
+                            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: _clear,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
+                  child: const Center(
+                      child: Text('清除登录', style: TextStyle(color: kSub, fontSize: 15, fontWeight: FontWeight.w600))),
+                ),
+              ),
+            ),
+          ]),
+        ],
       ),
     );
   }
