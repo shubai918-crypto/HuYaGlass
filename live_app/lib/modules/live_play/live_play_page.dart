@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
@@ -100,15 +100,16 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
+  // ★ 头部：深色玻璃，内部高能/订阅恢复为 standard 液态玻璃（保帧率）
   Widget _header() {
     return Obx(() => Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: GlassContainer(
             shape: const LiquidRoundedSuperellipse(borderRadius: 24),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            useOwnLayer: true, quality: GlassQuality.premium,
+            useOwnLayer: true, quality: GlassQuality.standard,
             settings: LiquidGlassSettings(
-              blur: 20, thickness: 30, refractiveIndex: 1.2, saturation: 1.3,
+              blur: 10, thickness: 24, refractiveIndex: 1.1, saturation: 1.1,
               glassColor: const Color(0xCC101014),
               platformViewMode: PlatformViewGlassMode.passthrough,
               bodyMode: GlassBodyMode.clear,
@@ -133,12 +134,15 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
               ]),
               const SizedBox(height: 6),
               Row(children: [
+                // ★ 恢复高能 pill
                 GestureDetector(
                   onTap: _showHighEnergySheet,
                   child: GlassContainer(
                     shape: const LiquidRoundedSuperellipse(borderRadius: 999),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    settings: LiquidGlassSettings(blur: 8, thickness: 16, glassColor: const Color(0x55FFB25E)),
+                    useOwnLayer: true,
+                    quality: GlassQuality.standard,
+                    settings: LiquidGlassSettings(blur: 8, thickness: 16, glassColor: const Color(0x66FFB25E), lightIntensity: 0.6),
                     child: const Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.local_fire_department, color: Color(0xFFFFB25E), size: 12),
                       SizedBox(width: 3),
@@ -147,13 +151,16 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(width: 6),
+                // ★ 恢复订阅 pill
                 GestureDetector(
                   onTap: c.toggleFollow,
                   child: GlassContainer(
                     shape: const LiquidRoundedSuperellipse(borderRadius: 999),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    useOwnLayer: true,
+                    quality: GlassQuality.standard,
                     settings: LiquidGlassSettings(blur: 8, thickness: 16,
-                        glassColor: c.isFollowed.value ? Colors.white.withOpacity(0.10) : const Color(0x66E5484D)),
+                        glassColor: c.isFollowed.value ? Colors.white.withOpacity(0.15) : const Color(0x88E5484D), lightIntensity: 0.6),
                     child: Text(c.isFollowed.value ? '已订阅' : '订阅', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
                   ),
                 ),
@@ -185,7 +192,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 黑线修复：dividerColor 透明 + indicator 只跟标签宽
   Widget _tabs() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
@@ -208,7 +214,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 底栏高性能方案：premium + 拖拽物理 + HDR 级高光
+  // ★ 底栏：恢复 premium 极致画质 + 酷安同款果冻拖拽物理
   Widget _bottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -218,12 +224,12 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
             onTap: () => _openComposeSheet(),
             height: 52,
             useOwnLayer: true,
-            quality: GlassQuality.premium,
+            quality: GlassQuality.premium, // ★ 恢复 premium
             shape: const LiquidRoundedSuperellipse(borderRadius: 26),
             settings: _hdrGlass(),
-            stretch: 0.5,
-            resistance: 0.08,
-            interactionScale: 1.04,
+            stretch: 0.5,           // ★ 恢复果冻拉伸
+            resistance: 0.08,       // ★ 恢复阻尼
+            interactionScale: 1.04, // ★ 恢复按压放大
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(children: [
@@ -246,7 +252,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         const SizedBox(width: 8),
         GlassButtonGroup.icons(
           useOwnLayer: true,
-          quality: GlassQuality.premium,
+          quality: GlassQuality.premium, // ★ 恢复 premium（自带液态耦合物理）
           borderRadius: 26,
           iconSize: 20,
           itemPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
@@ -261,32 +267,31 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // 通透底栏玻璃
+  // 通透底栏玻璃（Tab 胶囊用）
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x2EFFFFFF),
-        thickness: 28,
-        blur: 28,
-        lightIntensity: 0.7,
+        glassColor: const Color(0x99FFFFFF),
+        thickness: 24,
+        blur: 3,
+        lightIntensity: 0.25,
+        ambientStrength: 0.1,
+        fresnelStrength: 0.4,
+        refractiveIndex: 1.1,
+        saturation: 1.1,
         specularSharpness: GlassSpecularSharpness.medium,
-        fresnelStrength: 1.2,
-        refractiveIndex: 1.2,
-        saturation: 1.5,
-        chromaticAberration: 0.015,
-        shadowElevation: 2.0,
       );
 
-  // ★ HDR 高亮玻璃：sharp 镜面 + 高饱和 + 色散，拖拽时高光跟手
+  // ★ HDR 高亮玻璃：恢复色散、锐利高光、投影，拖拽时高光跟手
   LiquidGlassSettings _hdrGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x40FFFFFF),
+        glassColor: const Color(0x80FFFFFF),
         thickness: 26,
-        blur: 20,
+        blur: 4,
         lightIntensity: 1.1,
         specularSharpness: GlassSpecularSharpness.sharp,
         fresnelStrength: 1.4,
         refractiveIndex: 1.25,
         saturation: 1.7,
-        chromaticAberration: 0.02,
-        shadowElevation: 1.5,
+        chromaticAberration: 0.015, // ★ 恢复色散
+        shadowElevation: 1.5,       // ★ 恢复投影
       );
 
   void _openQualitySheet() {
@@ -382,7 +387,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   }
 }
 
-// ★ 酷安同款实色白 Sheet 外壳 + 键盘避让
 class _LightSheet extends StatelessWidget {
   final Widget child;
   const _LightSheet({required this.child});
@@ -406,9 +410,6 @@ class _LightSheet extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 评论 Sheet 内容（单面输入：聚焦 TextField / 失焦富文本渲染）
-// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuComposeBody extends StatefulWidget {
   final LivePlayController c;
   final bool showEmojiInitial;
@@ -789,9 +790,6 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 弹幕列表（长按胶囊菜单 + 点昵称用户卡）
-// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuList extends StatefulWidget {
   final LivePlayController c;
   const _DanmakuList({required this.c});
@@ -822,11 +820,11 @@ class _DanmakuListState extends State<_DanmakuList> {
 
   LiquidGlassSettings _menuGlass() => LiquidGlassSettings(
         glassColor: const Color(0xCC1C1C1E),
-        thickness: 26,
-        blur: 18,
+        thickness: 22,
+        blur: 12,
         lightIntensity: 0.25,
         saturation: 1.1,
-        refractiveIndex: 1.15,
+        refractiveIndex: 1.1,
         specularSharpness: GlassSpecularSharpness.medium,
       );
 
@@ -853,7 +851,7 @@ class _DanmakuListState extends State<_DanmakuList> {
             shape: const LiquidRoundedSuperellipse(borderRadius: 28),
             padding: const EdgeInsets.all(24),
             useOwnLayer: true,
-            quality: GlassQuality.premium,
+            quality: GlassQuality.standard,
             settings: _menuGlass(),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               CircleAvatar(
@@ -883,8 +881,8 @@ class _DanmakuListState extends State<_DanmakuList> {
                   },
                   height: 40,
                   shape: const LiquidRoundedRectangle(borderRadius: 20),
-                  quality: GlassQuality.premium,
-                  settings: LiquidGlassSettings(glassColor: const Color(0x66FF8800), thickness: 20, blur: 2, bodyMode: GlassBodyMode.clear),
+                  quality: GlassQuality.standard,
+                  settings: LiquidGlassSettings(glassColor: const Color(0x66FF8800), thickness: 18, blur: 2, bodyMode: GlassBodyMode.clear),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text('打招呼', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
@@ -895,8 +893,8 @@ class _DanmakuListState extends State<_DanmakuList> {
                   onTap: () => Navigator.of(context).pop(),
                   height: 40,
                   shape: const LiquidRoundedRectangle(borderRadius: 20),
-                  quality: GlassQuality.premium,
-                  settings: LiquidGlassSettings(glassColor: const Color(0x33FFFFFF), thickness: 20, blur: 2),
+                  quality: GlassQuality.standard,
+                  settings: LiquidGlassSettings(glassColor: const Color(0x33FFFFFF), thickness: 18, blur: 2),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text('关闭', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w700)),
@@ -989,8 +987,8 @@ class _DanmakuListState extends State<_DanmakuList> {
           shape: const LiquidRoundedSuperellipse(borderRadius: 999),
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
           useOwnLayer: true,
-          quality: GlassQuality.premium,
-          settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 24, blur: 12, lightIntensity: 0.6, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.3),
+          quality: GlassQuality.standard,
+          settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 20, blur: 8, lightIntensity: 0.5, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.1),
           child: Column(children: [
             GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
             const SizedBox(height: 4),
@@ -1034,9 +1032,6 @@ class _DanmakuListState extends State<_DanmakuList> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 长按菜单：图一横向胶囊 → 点 > 展开图二竖排
-// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuMenu extends StatefulWidget {
   final LivePlayController c;
   final DanmakuMessage m;
@@ -1096,7 +1091,7 @@ class _DanmakuMenuState extends State<_DanmakuMenu> {
   Widget _capsule() {
     return GlassButtonGroup.icons(
       useOwnLayer: true,
-      quality: GlassQuality.premium,
+      quality: GlassQuality.standard,
       borderRadius: 26,
       iconSize: 18,
       itemPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -1115,7 +1110,7 @@ class _DanmakuMenuState extends State<_DanmakuMenu> {
     return GlassContainer(
       shape: const LiquidRoundedSuperellipse(borderRadius: 24),
       useOwnLayer: true,
-      quality: GlassQuality.premium,
+      quality: GlassQuality.standard,
       settings: widget.menuGlass,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         _row(Icons.copy, Colors.white70, '复制内容', _copy),
@@ -1152,9 +1147,6 @@ class _DanmakuMenuState extends State<_DanmakuMenu> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 高能榜
-// ─────────────────────────────────────────────────────────────────────────────
 class _HighEnergyBody extends StatefulWidget {
   final LivePlayController c;
   const _HighEnergyBody({required this.c});
