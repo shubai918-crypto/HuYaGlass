@@ -89,17 +89,22 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: kBg,
       resizeToAvoidBottomInset: false,
-      // ★ 1.9.0 GlassBackdropGroup：头部/Tab/底栏共享一次 backdrop 读取
       body: GlassBackdropGroup(
-        child: Column(children: [
-          SizedBox(height: top),
-          GlassMaterialize(visible: _chromeVisible, child: _header()),
-          AspectRatio(aspectRatio: 16 / 9, child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)])),
-          _tabs(),
-          Expanded(child: TabBarView(controller: _tab, children: [
-            _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
-          ])),
-          GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
+        child: Stack(children: [
+          Column(children: [
+            SizedBox(height: top),
+            GlassMaterialize(visible: _chromeVisible, child: _header()),
+            AspectRatio(aspectRatio: 16 / 9, child: Stack(children: [c.videoHost(false), DanmakuOverlay(c: c)])),
+            _tabs(),
+            Expanded(child: TabBarView(controller: _tab, children: [
+              _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
+            ])),
+          ]),
+          // ★ 酷安同款悬浮：底栏浮在列表上方，内容从玻璃下穿过
+          Positioned(
+            left: 14, right: 14, bottom: 12,
+            child: GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
+          ),
         ]),
       ),
     );
@@ -235,77 +240,60 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 统一底栏：左 pill 48 高（小）+ 右组 54 按钮（大），同一种半透明模糊玻璃
+  // ★ 悬浮底栏：左 pill 54高 + 右 icons 组 54高
   Widget _bottomBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
-      child: Row(children: [
-        Expanded(
-          child: GlassButton.custom(
-            onTap: () => _openComposeSheet(),
-            height: 48,
-            useOwnLayer: true,
-            quality: GlassQuality.premium,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-            settings: _hdrGlass(),
-            stretch: 0.8,
-            resistance: 0.05,
-            interactionScale: 1.05,
-            anchorStretchSettings: const AnchorStretchSettings(
-                intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(children: [
-                const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 17),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: c.inputController,
-                    builder: (context, v, _) => Text(
-                      v.text.isEmpty ? '发弹幕...' : v.text,
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
-                    ),
-                  ),
-                ),
-              ]),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        GlassButtonGroup(
-          showDividers: false,
-          borderRadius: 27,
+    return Row(children: [
+      Expanded(
+        child: GlassButton.custom(
+          onTap: () => _openComposeSheet(),
+          height: 54,
           useOwnLayer: true,
           quality: GlassQuality.premium,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 27),
           settings: _hdrGlass(),
-          children: [
-            _groupBtn(Icons.speed, _openQualitySheet),
-            _groupBtn(Icons.tune, _showDanmakuSettingsSheet),
-            _groupBtn(Icons.emoji_emotions_outlined, () => _openComposeSheet(focusEmoji: true)),
-          ],
+          stretch: 0.8,
+          resistance: 0.05,
+          interactionScale: 1.05,
+          anchorStretchSettings: const AnchorStretchSettings(
+              intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: c.inputController,
+                  builder: (context, v, _) => Text(
+                    v.text.isEmpty ? '发弹幕...' : v.text,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
+                  ),
+                ),
+              ),
+            ]),
+          ),
         ),
-      ]),
-    );
+      ),
+      const SizedBox(width: 10),
+      GlassButtonGroup.icons(
+        useOwnLayer: true,
+        quality: GlassQuality.premium,
+        borderRadius: 27,
+        iconSize: 24,
+        showDividers: false,
+        itemPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+        settings: _hdrGlass(),
+        items: [
+          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
+          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
+          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
+        ],
+      ),
+    ]);
   }
 
-  Widget _groupBtn(IconData icon, VoidCallback onTap) => GlassButton(
-        onTap: onTap,
-        style: GlassButtonStyle.transparent,
-        width: 54,
-        height: 54,
-        iconSize: 24,
-        iconColor: const Color(0xFF3C4248),
-        stretch: 1.0,
-        resistance: 0.04,
-        interactionScale: 1.08,
-        anchorStretchSettings: const AnchorStretchSettings(
-            intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
-        icon: Icon(icon),
-      );
-
-  // ★ 统一半透明模糊玻璃（酷安同款通透感）
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0x59FFFFFF),
         thickness: 22,
@@ -917,24 +905,45 @@ class _DanmakuListState extends State<_DanmakuList> {
       final list = c.danmakuList.where((m) => !m.isGift || c.showGiftList.value).toList();
       if (list.isEmpty) return Center(child: Text(c.danmakuStatus.value, style: const TextStyle(color: Color(0xFFA6ADB5))));
       return Stack(children: [
+        // ★ 底部 padding 84 给悬浮底栏让位
         Scrollbar(controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
-            child: ListView.builder(controller: _sc, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
-        Positioned(right: 8, bottom: 12, child: GlassContainer(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-          useOwnLayer: true,
-          quality: GlassQuality.standard,
-          settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 20, blur: 8, lightIntensity: 0.5, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.1),
-          child: Column(children: [
-            GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
-            const SizedBox(height: 4),
-            GlassIconButton(icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)), size: 38,
-                onPressed: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
-            const SizedBox(height: 4),
-            GlassIconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)), size: 38,
-                onPressed: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
-          ]),
-        )),
+            child: ListView.builder(controller: _sc, padding: const EdgeInsets.fromLTRB(12, 8, 12, 84), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
+        
+        // ★ 右侧竖栏：使用原生 GlassButtonGroup.icons (垂直方向)
+        Positioned(
+          right: 8, bottom: 84, // ★ 底部 84 给悬浮底栏让位
+          child: GlassButtonGroup.icons(
+            direction: Axis.vertical, // ★ 垂直排列
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            borderRadius: 22,
+            iconSize: 20,
+            showDividers: false,
+            itemPadding: const EdgeInsets.all(10),
+            settings: LiquidGlassSettings(
+              glassColor: const Color(0x99FFFFFF),
+              thickness: 22,
+              blur: 12,
+              lightIntensity: 0.4,
+              saturation: 1.2,
+              shadowElevation: 1.5,
+            ),
+            items: [
+              GlassButtonGroupItem(
+                icon: const Icon(Icons.tune, color: Color(0xFF3C4248)),
+                onTap: () => _showDanmakuSettingsLocal(c),
+              ),
+              GlassButtonGroupItem(
+                icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)),
+                onTap: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null,
+              ),
+              GlassButtonGroupItem(
+                icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)),
+                onTap: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null,
+              ),
+            ],
+          ),
+        ),
       ]);
     });
   }
@@ -1278,7 +1287,8 @@ class _DetailTab extends StatelessWidget {
   const _DetailTab({required this.c});
   @override
   Widget build(BuildContext context) {
-    return Obx(() => ListView(padding: const EdgeInsets.all(12), children: [
+    // ★ 底部 padding 84 给悬浮底栏让位
+    return Obx(() => ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 84), children: [
       Container(padding: const EdgeInsets.all(12), decoration: _card(), child: Row(children: [
         CircleAvatar(radius: 26, backgroundColor: const Color(0xFFF2F3F5), backgroundImage: c.streamerAvatar.value.isNotEmpty ? NetworkImage(c.streamerAvatar.value) : null, child: c.streamerAvatar.value.isEmpty ? const Icon(Icons.person, color: Color(0xFFA6ADB5)) : null),
         const SizedBox(width: 12),
@@ -1341,23 +1351,22 @@ class _DebugTab extends StatelessWidget {
   const _DebugTab({required this.c});
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      if (!AppSettings.to.debugEnabled.value) {
-        return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.bug_report_outlined, color: Color(0xFFC4C9CF), size: 40),
-          const SizedBox(height: 8),
-          const Text('调试模式已关闭', style: TextStyle(color: kSub)),
-          const SizedBox(height: 12),
-          GlassButton(icon: const Icon(Icons.power_settings_new), label: '开启调试', onTap: () => AppSettings.to.setDebug(true)),
-        ]));
-      }
-      return ListView(padding: const EdgeInsets.all(12), children: [
+    // ★ 底部 padding 84 给悬浮底栏让位
+    return Obx(() => ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 84), children: [
+      if (!AppSettings.to.debugEnabled.value) ...[
+        const SizedBox(height: 40),
+        const Center(child: Icon(Icons.bug_report_outlined, color: Color(0xFFC4C9CF), size: 40)),
+        const SizedBox(height: 8),
+        const Center(child: Text('调试模式已关闭', style: TextStyle(color: kSub))),
+        const SizedBox(height: 12),
+        Center(child: GlassButton(icon: const Icon(Icons.power_settings_new), label: '开启调试', onTap: () => AppSettings.to.setDebug(true))),
+      ] else ...[
         const Text('协议调试日志', style: TextStyle(color: Color(0xFF00B8D4), fontSize: 14, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         SelectableText(c.debugInfo.value.isEmpty ? '（暂无日志）' : c.debugInfo.value, style: const TextStyle(color: Color(0xFF576066), fontSize: 12, height: 1.7)),
         const SizedBox(height: 12),
         Text('状态：${c.danmakuStatus.value}', style: const TextStyle(color: kSub, fontSize: 12)),
-      ]);
-    });
+      ]
+    ]));
   }
 }
