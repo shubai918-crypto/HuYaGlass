@@ -34,6 +34,7 @@ class NowWatching {
   static final ValueNotifier<NowRoom?> notifier = ValueNotifier(null);
 }
 
+// ★ Cupertino 原生滑动转场：进出不闪黑
 void goLive(String roomId, {String nickname = '', String avatarUrl = ''}) {
   if (roomId.isEmpty) return;
   NowWatching.notifier.value = NowRoom(
@@ -41,7 +42,10 @@ void goLive(String roomId, {String nickname = '', String avatarUrl = ''}) {
     nickname: nickname.isEmpty ? '虎牙主播' : nickname,
     avatarUrl: avatarUrl,
   );
-  Get.to(() => const LivePlayPage(), arguments: {'roomId': roomId});
+  Get.to(() => const LivePlayPage(),
+      arguments: {'roomId': roomId},
+      transition: Transition.cupertino,
+      duration: const Duration(milliseconds: 320));
 }
 
 class _RecItem {
@@ -103,7 +107,6 @@ class _HomePageState extends State<HomePage> {
         thickness: 30,
         blur: 2,
         chromaticAberration: 0.01,
-        lightAngle: GlassDefaults.lightAngle,
         lightIntensity: 0.2,
         ambientStrength: 0,
         refractiveIndex: 1.2,
@@ -373,11 +376,10 @@ class _HomeViewState extends State<_HomeView> {
           return '';
         }
 
-        // ★ 直接用 profileRoom（数字房间号），这是解析器需要的格式
-        final profileRoom = pickStr(['profileRoom']);
+        // ★ privateHost 是房间规范 slug（别名或数字 ID），解析器 profileRoom API 直接接受
         final host = pickStr(['privateHost', 'sPrivateHost']);
         final uid = pickStr(['uid', 'lUid', 'sUid']);
-        final roomId = profileRoom.isNotEmpty ? profileRoom : (host.isNotEmpty ? host : uid);
+        final roomId = host.isNotEmpty ? host : uid;
         if (roomId.isEmpty) continue;
         final nick = pickStr(['nickName', 'sNick', 'sNickname', 'nick']);
         final intro = pickStr(['introduction', 'sIntroduction']);
@@ -481,7 +483,7 @@ class _HomeViewState extends State<_HomeView> {
     setState(() {});
   }
 
-  // ★ 长按工具栏：左圆钮关闭 + 中间玻璃胶囊(带标签) + 右圆钮确认
+  // ★ 长按工具栏：左圆钮关闭 + 中间玻璃胶囊(带标签) + 右圆钮进入
   void _showRoomBar(_RecItem it) {
     final followed = _followed.contains(it.roomId);
     showDialog(
@@ -645,7 +647,6 @@ class _HomeViewState extends State<_HomeView> {
     return Row(children: [
       Expanded(child: _quickCard(Icons.subscriptions_outlined, kAccent, '我的订阅', widget.onOpenFollows)),
       const SizedBox(width: 10),
-      // ★ 修复：已登录跳"我的"Tab，未登录去登录页
       Expanded(child: _quickCard(Icons.account_circle, const Color(0xFFFFB25E),
           HuyaLoginManager().isLoggedIn ? '已登录' : '登录',
           () => HuyaLoginManager().isLoggedIn
