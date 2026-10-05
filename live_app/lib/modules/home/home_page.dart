@@ -15,7 +15,6 @@ import 'follow_store.dart';
 import 'history_store.dart';
 import 'profile_page.dart';
 
-// ★ 浅色色板（酷安式白底 + 虎牙橙）
 const kBg = Color(0xFFF4F5F6);
 const kCard = Colors.white;
 const kText = Color(0xFF1F2329);
@@ -44,9 +43,6 @@ void goLive(String roomId, {String nickname = '', String avatarUrl = ''}) {
   Get.to(() => const LivePlayPage(), arguments: {'roomId': roomId});
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 推荐流数据模型
-// ─────────────────────────────────────────────────────────────────────────────
 class _RecItem {
   final String roomId;
   final String nick;
@@ -55,7 +51,7 @@ class _RecItem {
   final String screenshot;
   final String game;
   final int viewers;
-  final double aspect; // ★ 封面宽高比（哈希分配 → 瀑布流错落感）
+  final double aspect;
   _RecItem({
     required this.roomId,
     required this.nick,
@@ -101,7 +97,6 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // ★ Apple Music Demo 同款玻璃配方 + 酷安悬浮投影
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0xAAF2F2F7),
         thickness: 30,
@@ -198,39 +193,81 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-            bottomBar: GlassTabBar.minimizable(
-              minimized: _isMinimized,
-              onMinimizedTabTap: () => setState(() => _isMinimized = false),
-              bottomAccessory: room != null ? _buildMiniBar(room) : null,
-              bottomAccessoryHeight: room != null ? 50 : null,
-              bottomAccessorySpacing: 8,
-              settings: _barGlass(),
-              barHeight: 64,
-              minimizedBarHeight: 52,
-              horizontalPadding: 16,
-              verticalPadding: 12,
-              spacing: 8,
-              selectedIndex: _selectedIndex,
-              onTabSelected: _select,
-              indicatorColor: kAccent.withOpacity(0.14),
-              selectedIconColor: kAccent,
-              selectedLabelColor: kAccent,
-              unselectedIconColor: const Color(0xFF5F6672),
-              unselectedLabelColor: const Color(0xFF5F6672),
-              iconSize: 26,
-              labelFontSize: 10,
-              iconLabelSpacing: 2,
-              quality: GlassQuality.premium,
-              interactionBehavior: GlassInteractionBehavior.full,
-              tabs: const [
-                GlassTab(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: '首页'),
-                GlassTab(icon: Icon(Icons.search), label: '搜索'),
-                GlassTab(icon: Icon(Icons.subscriptions_outlined), activeIcon: Icon(Icons.subscriptions), label: '订阅'),
-                GlassTab(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: '我的'),
-              ],
+            // ★ 自定义果冻 Dock：children 全控件模式，每个 Tab 独立物理
+            bottomBar: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (room != null) ...[
+                  GestureDetector(
+                    onTap: () => setState(() => _isMinimized = false), // 点迷你条展开
+                    child: _buildMiniBar(room),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.bottomCenter,
+                  child: _isMinimized
+                      ? const SizedBox.shrink()
+                      : _jellyDock(MediaQuery.of(context).size.width),
+                ),
+              ]),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ★ 果冻 Dock：4 个独立 GlassButton，拖拽区域大 + 明显回弹
+  Widget _jellyDock(double screenW) {
+    final tabW = (screenW - 28) / 4;
+    const tabs = [
+      (Icons.home_outlined, Icons.home, '首页'),
+      (Icons.search, Icons.search, '搜索'),
+      (Icons.subscriptions_outlined, Icons.subscriptions, '订阅'),
+      (Icons.person_outline, Icons.person, '我的'),
+    ];
+    return GlassButtonGroup(
+      showDividers: false,
+      borderRadius: 29,
+      useOwnLayer: true,
+      quality: GlassQuality.premium,
+      settings: _barGlass(),
+      children: [
+        for (var i = 0; i < tabs.length; i++)
+          _tabBtn(i, tabs[i].$1, tabs[i].$2, tabs[i].$3, tabW),
+      ],
+    );
+  }
+
+  Widget _tabBtn(int i, IconData icon, IconData activeIcon, String label, double w) {
+    final selected = _selectedIndex == i;
+    return GlassButton.custom(
+      onTap: () => _select(i),
+      width: w,
+      height: 60,
+      stretch: 1.0,
+      resistance: 0.04,
+      interactionScale: 1.08,
+      anchorStretchSettings: const AnchorStretchSettings(
+          intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: selected
+            ? BoxDecoration(color: kAccent.withOpacity(0.14), borderRadius: BorderRadius.circular(999))
+            : null,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(selected ? activeIcon : icon,
+              color: selected ? kAccent : const Color(0xFF5F6672), size: 23),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(
+                  color: selected ? kAccent : const Color(0xFF5F6672),
+                  fontSize: 10,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
+        ]),
       ),
     );
   }
@@ -258,57 +295,51 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildMiniBar(NowRoom room) {
-    return Builder(builder: (context) {
-      final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
-          GlassTabBarAccessoryPlacement.inline;
-      final avatarSize = inline ? 30.0 : 38.0;
-      return GlassContainer(
-        shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-        padding: EdgeInsets.symmetric(horizontal: inline ? 10 : 12, vertical: 4),
-        useOwnLayer: true,
-        quality: GlassQuality.premium,
-        settings: _barGlass(),
-        child: SizedBox(
-          height: 42,
-          child: Row(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: room.avatarUrl.isNotEmpty
-                  ? Image.network(room.avatarUrl,
-                      width: avatarSize, height: avatarSize, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _artPlaceholder(avatarSize))
-                  : _artPlaceholder(avatarSize),
+    return GlassContainer(
+      shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      useOwnLayer: true,
+      quality: GlassQuality.premium,
+      settings: _barGlass(),
+      child: SizedBox(
+        height: 46,
+        child: Row(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: room.avatarUrl.isNotEmpty
+                ? Image.network(room.avatarUrl,
+                    width: 34, height: 34, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _artPlaceholder(34))
+                : _artPlaceholder(34),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(room.nickname,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
+                const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(room.nickname,
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
-                  if (!inline)
-                    const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
-                ],
-              ),
-            ),
-            GlassIconButton(
-              icon: const Icon(Icons.play_arrow, color: kAccent),
-              size: inline ? 30 : 34,
-              onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
-            ),
-            const SizedBox(width: 4),
-            GlassIconButton(
-              icon: const Icon(Icons.close, color: Color(0xFF8A9099)),
-              size: inline ? 26 : 30,
-              onPressed: () => NowWatching.notifier.value = null,
-            ),
-          ]),
-        ),
-      );
-    });
+          ),
+          GlassIconButton(
+            icon: const Icon(Icons.play_arrow, color: kAccent),
+            size: 32,
+            onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
+          ),
+          const SizedBox(width: 4),
+          GlassIconButton(
+            icon: const Icon(Icons.close, color: Color(0xFF8A9099)),
+            size: 28,
+            onPressed: () => NowWatching.notifier.value = null,
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _artPlaceholder(double size) => Container(
@@ -322,7 +353,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 首页： slim banner + 快捷入口 + ★直播推荐瀑布流
+// 首页：banner + 快捷入口 + 直播推荐瀑布流
 // ─────────────────────────────────────────────────────────────────────────────
 class _HomeView extends StatefulWidget {
   final VoidCallback onOpenFollows;
@@ -355,7 +386,7 @@ class _HomeViewState extends State<_HomeView> {
     return '$v';
   }
 
-  // ★ 虎牙公开推荐接口分页拉取
+  // ★ 修复：多候选字段解析 roomId（privateHost → lProfileId → uid），解决"无地址"
   Future<List<_RecItem>> _fetchRecPage(int page) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
     try {
@@ -373,21 +404,32 @@ class _HomeViewState extends State<_HomeView> {
       final out = <_RecItem>[];
       for (final d in datas) {
         final m = d as Map<String, dynamic>;
-        final uid = '${m['uid'] ?? ''}';
-        final host = '${m['privateHost'] ?? ''}';
-        final roomId = host.isNotEmpty ? host : uid;
+        String pickStr(List<String> keys) {
+          for (final k in keys) {
+            final v = m[k];
+            if (v != null && '$v'.isNotEmpty) return '$v';
+          }
+          return '';
+        }
+
+        final host = pickStr(['privateHost', 'sPrivateHost']);
+        final lpid = m['lProfileId'] ?? m['iProfileId'] ?? m['lRoomId'];
+        final uid = pickStr(['uid', 'lUid', 'sUid']);
+        final roomId = host.isNotEmpty
+            ? host
+            : (lpid != null && '$lpid'.isNotEmpty && '$lpid' != '0' ? '$lpid' : uid);
         if (roomId.isEmpty) continue;
-        final nick = '${m['nickName'] ?? ''}';
-        final intro = '${m['introduction'] ?? ''}';
-        final tc = m['totalCount'];
+        final nick = pickStr(['nickName', 'sNick', 'sNickname']);
+        final intro = pickStr(['introduction', 'sIntroduction']);
+        final tc = m['totalCount'] ?? m['lTotalCount'] ?? m['sTotalCount'];
         final viewers = tc is int ? tc : (int.tryParse('$tc') ?? 0);
         out.add(_RecItem(
           roomId: roomId,
           nick: nick,
-          avatar: '${m['avatar180'] ?? ''}',
+          avatar: pickStr(['avatar180', 'sAvatar180', 'avatar']),
           title: intro.isNotEmpty ? intro : (nick.isNotEmpty ? '$nick 的直播间' : '直播间'),
-          screenshot: '${m['screenshot'] ?? ''}',
-          game: '${m['gameFullName'] ?? ''}',
+          screenshot: pickStr(['screenshot', 'sScreenshot']),
+          game: pickStr(['gameFullName', 'sGameFullName']),
           viewers: viewers,
           aspect: aspects[(roomId.hashCode & 0x7fffffff) % aspects.length],
         ));
@@ -398,7 +440,6 @@ class _HomeViewState extends State<_HomeView> {
     }
   }
 
-  // ★ 瀑布流分配：新卡片进当前较矮的一列
   void _append(List<_RecItem> items) {
     final colW = (MediaQuery.of(context).size.width - 32 - 10) / 2;
     for (final it in items) {
@@ -484,8 +525,7 @@ class _HomeViewState extends State<_HomeView> {
   Widget build(BuildContext context) {
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
-        if (n is ScrollUpdateNotification &&
-            n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
+        if (n is ScrollUpdateNotification && n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
           _loadMore();
         }
         return false;
@@ -510,7 +550,6 @@ class _HomeViewState extends State<_HomeView> {
     );
   }
 
-  // ★ slim 渐变 banner + 玻璃 CTA
   Widget _banner() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -538,7 +577,7 @@ class _HomeViewState extends State<_HomeView> {
           quality: GlassQuality.premium,
           stretch: 0.5,
           anchorStretchSettings: const AnchorStretchSettings(
-            intensity: 0.6, squashFactor: 0.15, translationDamping: 0.12, bounciness: 0.15),
+              intensity: 0.6, squashFactor: 0.15, translationDamping: 0.12, bounciness: 0.15),
           settings: LiquidGlassSettings(
             glassColor: Colors.white.withOpacity(0.22),
             bodyMode: GlassBodyMode.clear,
@@ -566,10 +605,8 @@ class _HomeViewState extends State<_HomeView> {
     return Row(children: [
       Expanded(child: _quickCard(Icons.subscriptions_outlined, kAccent, '我的订阅', widget.onOpenFollows)),
       const SizedBox(width: 10),
-      Expanded(child: _quickCard(
-          Icons.account_circle, const Color(0xFFFFB25E),
-          HuyaLoginManager().isLoggedIn ? '已登录' : '登录',
-          () => Get.toNamed('/huya_login'))),
+      Expanded(child: _quickCard(Icons.account_circle, const Color(0xFFFFB25E),
+          HuyaLoginManager().isLoggedIn ? '已登录' : '登录', () => Get.toNamed('/huya_login'))),
     ]);
   }
 
@@ -605,8 +642,8 @@ class _HomeViewState extends State<_HomeView> {
         icon: const Icon(Icons.refresh, color: kAccent),
         size: 38,
         settings: LiquidGlassSettings(
-          glassColor: const Color(0x99F2F2F7), thickness: 20, blur: 4,
-          lightIntensity: 0.3, specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 1.0),
+            glassColor: const Color(0x99F2F2F7), thickness: 20, blur: 4,
+            lightIntensity: 0.3, specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 1.0),
         onPressed: _loadFirst,
       ),
     ]);
@@ -640,7 +677,6 @@ class _HomeViewState extends State<_HomeView> {
     ]);
   }
 
-  // ★ 瀑布流卡片：白卡 + 错落封面 + 直播角标 + 人气 + 长按订阅
   Widget _recCard(_RecItem it) {
     final followed = _followed.contains(it.roomId);
     return GestureDetector(
