@@ -97,6 +97,7 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  // ★ Apple Music Demo 同款玻璃 + 酷安悬浮投影
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0xAAF2F2F7),
         thickness: 30,
@@ -193,81 +194,40 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-            // ★ 自定义果冻 Dock：children 全控件模式，每个 Tab 独立物理
-            bottomBar: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                if (room != null) ...[
-                  GestureDetector(
-                    onTap: () => setState(() => _isMinimized = false), // 点迷你条展开
-                    child: _buildMiniBar(room),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.bottomCenter,
-                  child: _isMinimized
-                      ? const SizedBox.shrink()
-                      : _jellyDock(MediaQuery.of(context).size.width),
-                ),
-              ]),
+            // ★ 回退 GlassTabBar.minimizable：整条液态胶囊 + 指示器果冻 + 收拢动画
+            bottomBar: GlassTabBar.minimizable(
+              minimized: _isMinimized,
+              onMinimizedTabTap: () => setState(() => _isMinimized = false),
+              bottomAccessory: room != null ? _buildMiniBar(room) : null,
+              bottomAccessoryHeight: room != null ? 50 : null,
+              bottomAccessorySpacing: 8,
+              settings: _barGlass(),
+              barHeight: 64,
+              minimizedBarHeight: 52,
+              horizontalPadding: 16,
+              verticalPadding: 12,
+              spacing: 8,
+              selectedIndex: _selectedIndex,
+              onTabSelected: _select,
+              indicatorColor: kAccent.withOpacity(0.14),
+              selectedIconColor: kAccent,
+              selectedLabelColor: kAccent,
+              unselectedIconColor: const Color(0xFF5F6672),
+              unselectedLabelColor: const Color(0xFF5F6672),
+              iconSize: 26,
+              labelFontSize: 10,
+              iconLabelSpacing: 2,
+              quality: GlassQuality.premium,
+              interactionBehavior: GlassInteractionBehavior.full,
+              tabs: const [
+                GlassTab(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: '首页'),
+                GlassTab(icon: Icon(Icons.search), label: '搜索'),
+                GlassTab(icon: Icon(Icons.subscriptions_outlined), activeIcon: Icon(Icons.subscriptions), label: '订阅'),
+                GlassTab(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: '我的'),
+              ],
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  // ★ 果冻 Dock：4 个独立 GlassButton，拖拽区域大 + 明显回弹
-  Widget _jellyDock(double screenW) {
-    final tabW = (screenW - 28) / 4;
-    const tabs = [
-      (Icons.home_outlined, Icons.home, '首页'),
-      (Icons.search, Icons.search, '搜索'),
-      (Icons.subscriptions_outlined, Icons.subscriptions, '订阅'),
-      (Icons.person_outline, Icons.person, '我的'),
-    ];
-    return GlassButtonGroup(
-      showDividers: false,
-      borderRadius: 29,
-      useOwnLayer: true,
-      quality: GlassQuality.premium,
-      settings: _barGlass(),
-      children: [
-        for (var i = 0; i < tabs.length; i++)
-          _tabBtn(i, tabs[i].$1, tabs[i].$2, tabs[i].$3, tabW),
-      ],
-    );
-  }
-
-  Widget _tabBtn(int i, IconData icon, IconData activeIcon, String label, double w) {
-    final selected = _selectedIndex == i;
-    return GlassButton.custom(
-      onTap: () => _select(i),
-      width: w,
-      height: 60,
-      stretch: 1.0,
-      resistance: 0.04,
-      interactionScale: 1.08,
-      anchorStretchSettings: const AnchorStretchSettings(
-          intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: selected
-            ? BoxDecoration(color: kAccent.withOpacity(0.14), borderRadius: BorderRadius.circular(999))
-            : null,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(selected ? activeIcon : icon,
-              color: selected ? kAccent : const Color(0xFF5F6672), size: 23),
-          const SizedBox(height: 2),
-          Text(label,
-              style: TextStyle(
-                  color: selected ? kAccent : const Color(0xFF5F6672),
-                  fontSize: 10,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
-        ]),
       ),
     );
   }
@@ -295,51 +255,57 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildMiniBar(NowRoom room) {
-    return GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      useOwnLayer: true,
-      quality: GlassQuality.premium,
-      settings: _barGlass(),
-      child: SizedBox(
-        height: 46,
-        child: Row(children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: room.avatarUrl.isNotEmpty
-                ? Image.network(room.avatarUrl,
-                    width: 34, height: 34, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _artPlaceholder(34))
-                : _artPlaceholder(34),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(room.nickname,
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
-                const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
-              ],
+    return Builder(builder: (context) {
+      final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
+          GlassTabBarAccessoryPlacement.inline;
+      final avatarSize = inline ? 30.0 : 38.0;
+      return GlassContainer(
+        shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+        padding: EdgeInsets.symmetric(horizontal: inline ? 10 : 12, vertical: 4),
+        useOwnLayer: true,
+        quality: GlassQuality.premium,
+        settings: _barGlass(),
+        child: SizedBox(
+          height: 42,
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: room.avatarUrl.isNotEmpty
+                  ? Image.network(room.avatarUrl,
+                      width: avatarSize, height: avatarSize, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _artPlaceholder(avatarSize))
+                  : _artPlaceholder(avatarSize),
             ),
-          ),
-          GlassIconButton(
-            icon: const Icon(Icons.play_arrow, color: kAccent),
-            size: 32,
-            onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
-          ),
-          const SizedBox(width: 4),
-          GlassIconButton(
-            icon: const Icon(Icons.close, color: Color(0xFF8A9099)),
-            size: 28,
-            onPressed: () => NowWatching.notifier.value = null,
-          ),
-        ]),
-      ),
-    );
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(room.nickname,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
+                  if (!inline)
+                    const Text('正在播放 · 虎牙直播', maxLines: 1, style: TextStyle(color: kSub, fontSize: 10)),
+                ],
+              ),
+            ),
+            GlassIconButton(
+              icon: const Icon(Icons.play_arrow, color: kAccent),
+              size: inline ? 30 : 34,
+              onPressed: () => goLive(room.roomId, nickname: room.nickname, avatarUrl: room.avatarUrl),
+            ),
+            const SizedBox(width: 4),
+            GlassIconButton(
+              icon: const Icon(Icons.close, color: Color(0xFF8A9099)),
+              size: inline ? 26 : 30,
+              onPressed: () => NowWatching.notifier.value = null,
+            ),
+          ]),
+        ),
+      );
+    });
   }
 
   Widget _artPlaceholder(double size) => Container(
@@ -386,7 +352,7 @@ class _HomeViewState extends State<_HomeView> {
     return '$v';
   }
 
-  // ★ 修复：多候选字段解析 roomId（privateHost → lProfileId → uid），解决"无地址"
+  // ★ 修复：数字房间号 lProfileId 优先（与搜索页同源），别名 privateHost 兜底
   Future<List<_RecItem>> _fetchRecPage(int page) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
     try {
@@ -412,16 +378,20 @@ class _HomeViewState extends State<_HomeView> {
           return '';
         }
 
+        // ★ 数字房间号优先：lProfileId → lPid → uid → privateHost 别名兜底
+        final lpid = m['lProfileId'] ?? m['lPid'] ?? m['iProfileId'] ?? m['lRoomId'];
+        final lpidNum = int.tryParse('$lpid');
         final host = pickStr(['privateHost', 'sPrivateHost']);
-        final lpid = m['lProfileId'] ?? m['iProfileId'] ?? m['lRoomId'];
         final uid = pickStr(['uid', 'lUid', 'sUid']);
-        final roomId = host.isNotEmpty
-            ? host
-            : (lpid != null && '$lpid'.isNotEmpty && '$lpid' != '0' ? '$lpid' : uid);
+        final roomId = (lpidNum != null && lpidNum > 0)
+            ? '$lpidNum'
+            : (uid.isNotEmpty && int.tryParse(uid) != null
+                ? uid
+                : (host.isNotEmpty ? host : uid));
         if (roomId.isEmpty) continue;
-        final nick = pickStr(['nickName', 'sNick', 'sNickname']);
+        final nick = pickStr(['nickName', 'sNick', 'sNickname', 'nick']);
         final intro = pickStr(['introduction', 'sIntroduction']);
-        final tc = m['totalCount'] ?? m['lTotalCount'] ?? m['sTotalCount'];
+        final tc = m['totalCount'] ?? m['lTotalCount'] ?? m['sTotalCount'] ?? m['lOnlineTotal'];
         final viewers = tc is int ? tc : (int.tryParse('$tc') ?? 0);
         out.add(_RecItem(
           roomId: roomId,
