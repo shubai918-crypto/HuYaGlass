@@ -12,6 +12,7 @@ import 'follow_store.dart';
 import 'history_store.dart';
 import 'profile_page.dart';
 
+// ★ 浅色色板（酷安式白底 + 虎牙橙）
 const kBg = Color(0xFFF4F5F6);
 const kCard = Colors.white;
 const kText = Color(0xFF1F2329);
@@ -73,26 +74,33 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // ★ 性能优化：无色散/无投影/medium 镜面，standard 画质下依旧通透
+  // ★ Apple Music Demo 同款玻璃配方 + 酷安悬浮投影
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x99FFFFFF),
-        thickness: 24,
-        blur: 3,
-        lightIntensity: 0.25,
-        ambientStrength: 0.1,
-        fresnelStrength: 0.4,
-        refractiveIndex: 1.1,
-        saturation: 1.1,
+        glassColor: const Color(0xAAF2F2F7), // Demo 原值：67% 浅灰白
+        thickness: 30,
+        blur: 2, // Demo 原值：低模糊，内容清晰透出
+        chromaticAberration: 0.01,
+        lightAngle: GlassDefaults.lightAngle,
+        lightIntensity: 0.2,
+        ambientStrength: 0,
+        refractiveIndex: 1.2,
+        fresnelStrength: 0.0,
+        saturation: 1.2,
         specularSharpness: GlassSpecularSharpness.medium,
+        shadowElevation: 2.0, // ★ 悬浮投影
       );
 
+  // 顶栏小件：稍透一点的白霜
   LiquidGlassSettings _visibleGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x99FFFFFF),
-        thickness: 18,
-        blur: 6,
-        lightIntensity: 0.5,
+        glassColor: const Color(0x99F2F2F7),
+        thickness: 24,
+        blur: 4,
+        chromaticAberration: 0.01,
+        lightIntensity: 0.3,
+        refractiveIndex: 1.15,
+        saturation: 1.2,
         specularSharpness: GlassSpecularSharpness.medium,
-        saturation: 1.1,
+        shadowElevation: 1.5,
       );
 
   @override
@@ -123,7 +131,7 @@ class _HomePageState extends State<HomePage> {
                 shape: const LiquidRoundedSuperellipse(borderRadius: 999),
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
                 useOwnLayer: true,
-                quality: GlassQuality.standard, // ★ 降级
+                quality: GlassQuality.premium,
                 settings: _visibleGlass(),
                 child: const Text('HuyaLive',
                     style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
@@ -141,7 +149,7 @@ class _HomePageState extends State<HomePage> {
             body: Padding(
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + 60,
-                bottom: 0,
+                bottom: 0, // ★ 内容穿到底栏后，blur 2 让列表清晰透出
               ),
               child: IndexedStack(
                 index: _selectedIndex,
@@ -164,29 +172,31 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+            // ★ Apple Music Demo 规格：64/50 高 + 20/16 内边距 + 8 间距
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
               bottomAccessory: room != null ? _buildMiniBar(room) : null,
               bottomAccessoryHeight: room != null ? 50 : null,
-              bottomAccessorySpacing: 6,
+              bottomAccessorySpacing: 8,
               settings: _barGlass(),
-              barHeight: 56,
-              minimizedBarHeight: 48,
-              horizontalPadding: 12,
-              verticalPadding: 6,
-              spacing: 4,
+              barHeight: 64,
+              minimizedBarHeight: 52,
+              horizontalPadding: 16,
+              verticalPadding: 12,
+              spacing: 8,
               selectedIndex: _selectedIndex,
               onTabSelected: _select,
-              indicatorColor: kAccent.withOpacity(0.12),
+              indicatorColor: kAccent.withOpacity(0.14),
               selectedIconColor: kAccent,
               selectedLabelColor: kAccent,
               unselectedIconColor: const Color(0xFF5F6672),
               unselectedLabelColor: const Color(0xFF5F6672),
-              iconSize: 22,
+              iconSize: 26,
               labelFontSize: 10,
               iconLabelSpacing: 2,
-              quality: GlassQuality.standard, // ★ 降级（移除 interactionBehavior: full）
+              quality: GlassQuality.premium,
+              interactionBehavior: GlassInteractionBehavior.full,
               tabs: const [
                 GlassTab(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: '首页'),
                 GlassTab(icon: Icon(Icons.search), label: '搜索'),
@@ -222,6 +232,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ★ 迷你播放条：Apple Music play pill 同款（50 高 + 同配方玻璃）
   Widget _buildMiniBar(NowRoom room) {
     return Builder(builder: (context) {
       final inline = GlassTabBarAccessoryPlacementScope.of(context) ==
@@ -231,7 +242,7 @@ class _HomePageState extends State<HomePage> {
         shape: const LiquidRoundedSuperellipse(borderRadius: 999),
         padding: EdgeInsets.symmetric(horizontal: inline ? 10 : 12, vertical: 4),
         useOwnLayer: true,
-        quality: GlassQuality.standard, // ★ 降级
+        quality: GlassQuality.premium,
         settings: _barGlass(),
         child: SizedBox(
           height: 42,
@@ -312,25 +323,35 @@ class _HomeView extends StatelessWidget {
             Text('看直播 · 弹幕 · 订阅 · 真实发送',
                 style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13)),
             const SizedBox(height: 18),
+            // ★ CTA：Demo 同款果冻拖拽参数
             GlassButton.custom(
               onTap: () => _openEnterRoom(context),
               width: 176,
               height: 48,
               shape: const LiquidRoundedRectangle(borderRadius: 24),
               useOwnLayer: true,
-              quality: GlassQuality.standard, // ★ 降级
-              stretch: 0.3,
+              quality: GlassQuality.premium,
+              stretch: 0.5,
+              anchorStretchSettings: const AnchorStretchSettings(
+                intensity: 0.6,
+                squashFactor: 0.15,
+                translationDamping: 0.12,
+                bounciness: 0.15,
+              ),
               settings: LiquidGlassSettings(
-                glassColor: const Color(0x99FFFFFF),
-                thickness: 18,
-                blur: 6,
-                lightIntensity: 0.5,
+                glassColor: Colors.white.withOpacity(0.22),
+                bodyMode: GlassBodyMode.clear,
+                thickness: 24,
+                blur: 2,
+                lightIntensity: 0.6,
+                chromaticAberration: 0.01,
+                saturation: 1.2,
                 specularSharpness: GlassSpecularSharpness.medium,
               ),
               child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.play_arrow, color: kAccent, size: 20),
+                Icon(Icons.play_arrow, color: Colors.white, size: 20),
                 SizedBox(width: 6),
-                Text('进入直播间', style: TextStyle(color: kAccent, fontSize: 15, fontWeight: FontWeight.w700)),
+                Text('进入直播间', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
               ]),
             ),
           ]),
