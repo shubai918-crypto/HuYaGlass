@@ -97,7 +97,6 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // ★ Apple Music Demo 同款玻璃 + 酷安悬浮投影
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0xAAF2F2F7),
         thickness: 30,
@@ -194,7 +193,6 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-            // ★ 回退 GlassTabBar.minimizable：整条液态胶囊 + 指示器果冻 + 收拢动画
             bottomBar: GlassTabBar.minimizable(
               minimized: _isMinimized,
               onMinimizedTabTap: () => setState(() => _isMinimized = false),
@@ -318,9 +316,6 @@ class _HomePageState extends State<HomePage> {
       );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 首页：banner + 快捷入口 + 直播推荐瀑布流
-// ─────────────────────────────────────────────────────────────────────────────
 class _HomeView extends StatefulWidget {
   final VoidCallback onOpenFollows;
   const _HomeView({required this.onOpenFollows});
@@ -352,7 +347,6 @@ class _HomeViewState extends State<_HomeView> {
     return '$v';
   }
 
-  // ★ 修复：数字房间号 lProfileId 优先（与搜索页同源），别名 privateHost 兜底
   Future<List<_RecItem>> _fetchRecPage(int page) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
     try {
@@ -378,16 +372,9 @@ class _HomeViewState extends State<_HomeView> {
           return '';
         }
 
-        // ★ 数字房间号优先：lProfileId → lPid → uid → privateHost 别名兜底
-        final lpid = m['lProfileId'] ?? m['lPid'] ?? m['iProfileId'] ?? m['lRoomId'];
-        final lpidNum = int.tryParse('$lpid');
         final host = pickStr(['privateHost', 'sPrivateHost']);
         final uid = pickStr(['uid', 'lUid', 'sUid']);
-        final roomId = (lpidNum != null && lpidNum > 0)
-            ? '$lpidNum'
-            : (uid.isNotEmpty && int.tryParse(uid) != null
-                ? uid
-                : (host.isNotEmpty ? host : uid));
+        final roomId = host.isNotEmpty ? host : uid;
         if (roomId.isEmpty) continue;
         final nick = pickStr(['nickName', 'sNick', 'sNickname', 'nick']);
         final intro = pickStr(['introduction', 'sIntroduction']);
@@ -408,6 +395,32 @@ class _HomeViewState extends State<_HomeView> {
     } finally {
       client.close(force: true);
     }
+  }
+
+  // ★ 根因修复：LiveList 无数字房间号 → 点按时先抓房间页里的 lProfileId（搜索同源格式）
+  Future<String> _resolveRoomId(_RecItem it) async {
+    try {
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+      final req = await client
+          .getUrl(Uri.parse('https://www.huya.com/${it.roomId}'))
+          .timeout(const Duration(seconds: 5));
+      req.headers.set('User-Agent',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36');
+      req.headers.set('Referer', 'https://www.huya.com/');
+      final resp = await req.close().timeout(const Duration(seconds: 5));
+      final body = await resp.transform(const Utf8Decoder(allowMalformed: true)).join();
+      client.close(force: true);
+      final m = RegExp(r'"lProfileId"\s*:\s*(\d+)').firstMatch(body) ??
+          RegExp(r'"profileRoom"\s*:\s*(\d+)').firstMatch(body) ??
+          RegExp(r'data-roomid\s*=\s*"(\d+)"').firstMatch(body);
+      if (m != null && (m.group(1) ?? '').isNotEmpty) return m.group(1)!;
+    } catch (_) {}
+    return it.roomId;
+  }
+
+  Future<void> _openRec(_RecItem it) async {
+    final id = await _resolveRoomId(it);
+    goLive(id, nickname: it.nick, avatarUrl: it.avatar);
   }
 
   void _append(List<_RecItem> items) {
@@ -650,7 +663,7 @@ class _HomeViewState extends State<_HomeView> {
   Widget _recCard(_RecItem it) {
     final followed = _followed.contains(it.roomId);
     return GestureDetector(
-      onTap: () => goLive(it.roomId, nickname: it.nick, avatarUrl: it.avatar),
+      onTap: () => _openRec(it), // ★ 走预解析流程
       onLongPress: () => _toggleFollow(it),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
