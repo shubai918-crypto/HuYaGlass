@@ -94,48 +94,45 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: kBg,
       resizeToAvoidBottomInset: false,
-      body: GlassBackdropGroup(
-        child: Stack(children: [
-          Column(children: [
-            SizedBox(height: top),
-            GlassMaterialize(visible: _chromeVisible, child: _header()),
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(children: [
-                c.videoHost(false),
-                // ★ 进出场掩码：遮住 PlatformView 黑面，淡出后露出画面
-                AnimatedOpacity(
-                  opacity: _videoReady ? 0 : 1,
-                  duration: const Duration(milliseconds: 350),
-                  child: IgnorePointer(
-                    ignoring: _videoReady,
-                    child: Container(
-                      color: kBg,
-                      child: Center(
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          const SizedBox(width: 28, height: 28,
-                              child: CircularProgressIndicator(strokeWidth: 2.5, color: kAccent)),
-                          const SizedBox(height: 10),
-                          const Text('连接直播中...', style: TextStyle(color: kSub, fontSize: 12)),
-                        ]),
-                      ),
+      // ★ 去掉 GlassBackdropGroup：让每个玻璃面独立实时采样背后的弹幕内容 → 真半透明+真模糊
+      body: Stack(children: [
+        Column(children: [
+          SizedBox(height: top),
+          GlassMaterialize(visible: _chromeVisible, child: _header()),
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(children: [
+              c.videoHost(false),
+              AnimatedOpacity(
+                opacity: _videoReady ? 0 : 1,
+                duration: const Duration(milliseconds: 350),
+                child: IgnorePointer(
+                  ignoring: _videoReady,
+                  child: Container(
+                    color: kBg,
+                    child: Center(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        const SizedBox(width: 28, height: 28,
+                            child: CircularProgressIndicator(strokeWidth: 2.5, color: kAccent)),
+                        const SizedBox(height: 10),
+                        const Text('连接直播中...', style: TextStyle(color: kSub, fontSize: 12)),
+                      ]),
                     ),
                   ),
                 ),
-              ]),
-            ),
-            _tabs(),
-            Expanded(child: TabBarView(controller: _tab, children: [
-              _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
-            ])),
-          ]),
-          // ★ 酷安同款悬浮：底栏浮在列表上方
-          Positioned(
-            left: 14, right: 14, bottom: 12,
-            child: GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
+              ),
+            ]),
           ),
+          _tabs(),
+          Expanded(child: TabBarView(controller: _tab, children: [
+            _DanmakuList(c: c), _DetailTab(c: c), _DebugTab(c: c),
+          ])),
         ]),
-      ),
+        Positioned(
+          left: 14, right: 14, bottom: 12,
+          child: GlassMaterialize(visible: _chromeVisible, child: _bottomBar()),
+        ),
+      ]),
     );
   }
 
