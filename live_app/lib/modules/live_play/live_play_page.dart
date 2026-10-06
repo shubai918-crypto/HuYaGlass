@@ -266,39 +266,46 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 统一 54 高悬浮底栏：左 pill + 右 icons 组，clear 体模式真通透
+// ★ 统一 60 高悬浮底栏：居中粗黑字体 + 大拖拽区域 + 丝滑回弹
   Widget _bottomBar() {
     return Row(children: [
       Expanded(
         child: GlassButton.custom(
           onTap: () => _openComposeSheet(),
-          height: 54,
+          height: 60, // ★ 更大点击/拖拽区域
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 27),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 30),
           settings: _hdrGlass(),
-          stretch: 0.8,
-          resistance: 0.05,
-          interactionScale: 1.05,
+          stretch: 0.9,
+          resistance: 0.04,
+          interactionScale: 1.06,
           anchorStretchSettings: const AnchorStretchSettings(
-              intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
+              intensity: 0.9, 
+              squashFactor: 0.25, 
+              translationDamping: 0.04, // ★ 阻尼更小，拖拽更丝滑
+              bounciness: 0.5), // ★ 回弹更强更 Q
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
-              const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ValueListenableBuilder<TextEditingValue>(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center, // ★ 内容居中
+              children: [
+                const Icon(Icons.edit_note, color: Color(0xFF1F2329), size: 20), // ★ 深色图标
+                const SizedBox(width: 8),
+                ValueListenableBuilder<TextEditingValue>(
                   valueListenable: c.inputController,
                   builder: (context, v, _) => Text(
                     v.text.isEmpty ? '发弹幕...' : v.text,
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Color(0xFF1F2329), // ★ 粗黑字体
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700), // ★ 加粗
                   ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           ),
         ),
       ),
@@ -306,26 +313,26 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
       GlassButtonGroup.icons(
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        borderRadius: 27,
-        iconSize: 24,
+        borderRadius: 30,
+        iconSize: 26, // ★ 图标放大
         showDividers: false,
-        itemPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+        itemPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17), // 17*2+26=60 高
         settings: _hdrGlass(),
         items: [
-          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
-          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
-          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
+          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF1F2329)), onTap: _openQualitySheet),
+          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF1F2329)), onTap: _showDanmakuSettingsSheet),
+          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF1F2329)), onTap: () => _openComposeSheet(focusEmoji: true)),
         ],
       ),
     ]);
   }
 
-  // ★ clear 体模式：不做亮度归一化，25% 白纱叠在 blur 12 实时模糊上 → 真·半透明磨砂
+  // ★ clear 体模式：20% 白纱叠在 blur 14 实时模糊上 → 极度通透
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x40FFFFFF),
+        glassColor: const Color(0x33FFFFFF), // ★ 更透 (20%)
         bodyMode: GlassBodyMode.clear,
-        thickness: 18,
-        blur: 12,
+        thickness: 20,
+        blur: 14, // ★ 稍微增加模糊，让背景透出更明显
         lightIntensity: 0.25,
         ambientStrength: 0,
         fresnelStrength: 0.5,
@@ -337,6 +344,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
       );
 
   LiquidGlassSettings _hdrGlass() => _barGlass();
+
 
   void _openQualitySheet() {
     showModalBottomSheet(
