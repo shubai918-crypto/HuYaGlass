@@ -297,7 +297,9 @@ class _FollowPageState extends State<FollowPage> {
       cancelLabel: '保留',
       actions: [
         GlassActionSheetAction(
-            label: '取消订阅', isDestructive: true, onPressed: () => true),
+    label: '取消订阅', 
+    style: GlassActionSheetStyle.destructive, 
+    onPressed: () => true),
       ],
     );
     if (ok == true) await FollowStore.remove(it.roomId);
