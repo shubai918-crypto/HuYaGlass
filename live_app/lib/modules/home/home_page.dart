@@ -715,7 +715,7 @@ class _HomeViewState extends State<_HomeView> {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 60),
         // ★ 玻璃加载圈
-        child: Center(child: GlassProgressIndicator()),
+        child: Center(child: GlassProgressIndicator.circular()),
       );
     }
     if (_error && _left.isEmpty) {
@@ -814,7 +814,7 @@ class _HomeViewState extends State<_HomeView> {
     if (_loadingMore) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: GlassProgressIndicator()),
+        child: Center(child: GlassProgressIndicator.circular()),
       );
     }
     if (_end) {
