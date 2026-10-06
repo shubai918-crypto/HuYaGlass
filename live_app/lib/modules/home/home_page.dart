@@ -234,6 +234,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ★ 快捷设置：GlassSwitch 液态开关
   void _showQuickSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -245,10 +246,20 @@ class _HomePageState extends State<HomePage> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
-            Obx(() => SwitchListTile(
-                  secondary: const Icon(Icons.bug_report_outlined, color: Color(0xFF3C4248)),
-                  title: const Text('调试模式', style: TextStyle(color: kText, fontSize: 15)),
-                  value: AppSettings.to.debugEnabled.value, onChanged: AppSettings.to.setDebug,
+            Obx(() => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.bug_report_outlined, color: Color(0xFF3E9E4C), size: 20),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Text('调试模式', style: TextStyle(color: kText, fontSize: 15))),
+                    GlassSwitch(
+                      value: AppSettings.to.debugEnabled.value,
+                      onChanged: AppSettings.to.setDebug,
+                      activeColor: kAccent,
+                      useOwnLayer: true,
+                      quality: GlassQuality.premium,
+                    ),
+                  ]),
                 )),
           ]),
         ),
@@ -376,10 +387,11 @@ class _HomeViewState extends State<_HomeView> {
           return '';
         }
 
-        // ★ privateHost 是房间规范 slug（别名或数字 ID），解析器 profileRoom API 直接接受
+        // ★ 解析器 profileRoom API 只认数字房间号 → profileRoom 优先，别名/uid 兜底
+        final profileRoom = pickStr(['profileRoom']);
         final host = pickStr(['privateHost', 'sPrivateHost']);
         final uid = pickStr(['uid', 'lUid', 'sUid']);
-        final roomId = host.isNotEmpty ? host : uid;
+        final roomId = profileRoom.isNotEmpty ? profileRoom : (host.isNotEmpty ? host : uid);
         if (roomId.isEmpty) continue;
         final nick = pickStr(['nickName', 'sNick', 'sNickname', 'nick']);
         final intro = pickStr(['introduction', 'sIntroduction']);
@@ -575,18 +587,22 @@ class _HomeViewState extends State<_HomeView> {
       child: RefreshIndicator(
         color: kAccent,
         onRefresh: _loadFirst,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
-          children: [
-            _banner(),
-            const SizedBox(height: 12),
-            _quickRow(),
-            const SizedBox(height: 20),
-            _feedHeader(),
-            const SizedBox(height: 10),
-            _masonry(),
-            _footer(),
-          ],
+        // ★ iOS26 滚动边缘渐隐
+        child: GlassScrollEdgeEffect(
+          style: GlassScrollEdgeStyle.soft,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
+            children: [
+              _banner(),
+              const SizedBox(height: 12),
+              _quickRow(),
+              const SizedBox(height: 20),
+              _feedHeader(),
+              const SizedBox(height: 10),
+              _masonry(),
+              _footer(),
+            ],
+          ),
         ),
       ),
     );
@@ -698,7 +714,8 @@ class _HomeViewState extends State<_HomeView> {
     if (_loading && _left.isEmpty && _right.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 60),
-        child: Center(child: CircularProgressIndicator(color: kAccent, strokeWidth: 2.5)),
+        // ★ 玻璃加载圈
+        child: Center(child: GlassProgressIndicator()),
       );
     }
     if (_error && _left.isEmpty) {
@@ -797,8 +814,7 @@ class _HomeViewState extends State<_HomeView> {
     if (_loadingMore) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: SizedBox(width: 22, height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2, color: kAccent))),
+        child: Center(child: GlassProgressIndicator()),
       );
     }
     if (_end) {
