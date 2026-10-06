@@ -8,7 +8,7 @@ import 'package:live_core/live_core.dart';
 
 import '../live_play/live_play_page.dart';
 import 'follow_store.dart';
-import 'home_page.dart'; // ★ 引入浅色色板 (kBg, kCard, kText, kSub, kLine, kAccent)
+import 'home_page.dart';
 
 class _RoomExtra {
   final String screenshot;
@@ -102,7 +102,7 @@ class _FollowPageState extends State<FollowPage> {
     }));
   }
 
-  // ---------- 网页元数据（仅封面/粉丝，不含预告） ----------
+  // ---------- 网页元数据 ----------
   Future<_RoomExtra> _fetchHttpMeta(String roomId) async {
     try {
       final client = HttpClient()
@@ -189,7 +189,6 @@ class _FollowPageState extends State<FollowPage> {
       final offlineRooms = <String>[];
       final now0 = DateTime.now().millisecondsSinceEpoch;
 
-      // 阶段1：4 路并发拉 流信息+封面/粉丝，完成一个立即显示一个
       await _runPool(snapshot, 4, (e) async {
         final results = await Future.wait<Object?>([
           _resolver.resolveStream(e.roomId).timeout(const Duration(seconds: 6)),
@@ -226,7 +225,6 @@ class _FollowPageState extends State<FollowPage> {
         }
         ids[e.roomId] = [top, sub, uid];
         if (!isLive && uid > 0) offlineRooms.add(e.roomId);
-        // 5 分钟内的预告缓存直接复用，秒出
         final pc = _previewCache[e.roomId];
         if (!isLive && pc != null && now0 - pc.ts < 300000) {
           meta = _RoomExtra(
@@ -241,7 +239,6 @@ class _FollowPageState extends State<FollowPage> {
         if (mounted) setState(() {});
       });
 
-      // 阶段2：单条 WS 连接顺序问所有未开播主播的预告（无重复握手）
       final pending = offlineRooms
           .where((rid) =>
               (_previewCache[rid] == null ||
@@ -287,27 +284,23 @@ class _FollowPageState extends State<FollowPage> {
     }
   }
 
+  // ★ Cupertino 转场进房
   void _open(FollowItem it) =>
-      Get.to(() => const LivePlayPage(), arguments: {'roomId': it.roomId});
+      goLive(it.roomId, nickname: it.name, avatarUrl: it.avatar);
 
+  // ★ 玻璃动作面板替代 AlertDialog
   Future<void> _unfollow(FollowItem it) async {
-    final ok = await Get.dialog<bool>(
-          AlertDialog(
-            backgroundColor: kCard,
-            title: const Text('取消订阅', style: TextStyle(color: kText, fontWeight: FontWeight.w700)),
-            content: Text('不再关注「${it.name}」？', style: const TextStyle(color: kSub)),
-            actions: [
-              TextButton(
-                  onPressed: () => Get.back(result: false),
-                  child: const Text('保留', style: TextStyle(color: kSub))),
-              TextButton(
-                  onPressed: () => Get.back(result: true),
-                  child: const Text('取消订阅', style: TextStyle(color: Color(0xFFE5484D)))),
-            ],
-          ),
-        ) ??
-        false;
-    if (ok) await FollowStore.remove(it.roomId);
+    final ok = await showGlassActionSheet<bool>(
+      context: context,
+      title: '取消订阅',
+      message: '不再关注「${it.name}」？',
+      cancelLabel: '保留',
+      actions: [
+        GlassActionSheetAction(
+            label: '取消订阅', isDestructive: true, onPressed: () => true),
+      ],
+    );
+    if (ok == true) await FollowStore.remove(it.roomId);
   }
 
   // ---------- UI ----------
@@ -324,7 +317,8 @@ class _FollowPageState extends State<FollowPage> {
         Icon(icon, color: iconColor, size: 18),
         const SizedBox(width: 6),
         Text('$title ($count)',
-            style: const TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
+            style: const TextStyle(
+                color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
         const Spacer(),
         if (right != null) right,
       ]),
@@ -346,7 +340,9 @@ class _FollowPageState extends State<FollowPage> {
 
   Widget _empty(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 18),
-        child: Center(child: Text(text, style: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))),
+        child: Center(
+            child: Text(text,
+                style: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))),
       );
 
   String _fansLabel(_RoomExtra? ex) {
@@ -375,23 +371,31 @@ class _FollowPageState extends State<FollowPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(18)),
               child: Stack(
                 children: [
                   cover.isNotEmpty
                       ? Image.network(cover,
-                          width: double.infinity, height: 130, fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: 130,
+                          fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => _coverPh())
                       : _coverPh(),
                   Positioned(
-                    left: 8, top: 8,
+                    left: 8,
+                    top: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                           color: const Color(0xFFE5484D),
                           borderRadius: BorderRadius.circular(8)),
                       child: const Text('直播中',
-                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700)),
                     ),
                   ),
                 ],
@@ -406,9 +410,14 @@ class _FollowPageState extends State<FollowPage> {
                     offset: const Offset(0, -16),
                     child: CircleAvatar(
                       radius: 24,
-                      backgroundColor: kCard, // ★ 白底遮挡封面下边缘
-                      backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
-                      child: it.avatar.isEmpty ? const Icon(Icons.person, size: 22, color: Color(0xFFA6ADB5)) : null,
+                      backgroundColor: kCard,
+                      backgroundImage: it.avatar.isNotEmpty
+                          ? NetworkImage(it.avatar)
+                          : null,
+                      child: it.avatar.isEmpty
+                          ? const Icon(Icons.person,
+                              size: 22, color: Color(0xFFA6ADB5))
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -419,12 +428,21 @@ class _FollowPageState extends State<FollowPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(it.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: kText,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600)),
                           if (fansLabel.isNotEmpty || intro.isNotEmpty)
-                            Text(fansLabel.isNotEmpty ? '粉丝数: $fansLabel' : intro,
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: kSub, fontSize: 12)),
+                            Text(
+                                fansLabel.isNotEmpty
+                                    ? '粉丝数: $fansLabel'
+                                    : intro,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: kSub, fontSize: 12)),
                         ],
                       ),
                     ),
@@ -460,8 +478,11 @@ class _FollowPageState extends State<FollowPage> {
               CircleAvatar(
                 radius: 24,
                 backgroundColor: const Color(0xFFF2F3F5),
-                backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
-                child: it.avatar.isEmpty ? const Icon(Icons.person, size: 22, color: Color(0xFFA6ADB5)) : null,
+                backgroundImage:
+                    it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+                child: it.avatar.isEmpty
+                    ? const Icon(Icons.person, size: 22, color: Color(0xFFA6ADB5))
+                    : null,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -469,11 +490,19 @@ class _FollowPageState extends State<FollowPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(it.name,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: kText,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text(fansLabel.isNotEmpty ? '粉丝数: $fansLabel' : '房间 ${it.roomId}',
-                        style: const TextStyle(color: kSub, fontSize: 12)),
+                    Text(
+                        fansLabel.isNotEmpty
+                            ? '粉丝数: $fansLabel'
+                            : '房间 ${it.roomId}',
+                        style: const TextStyle(
+                            color: kSub, fontSize: 12)),
                   ],
                 ),
               ),
@@ -482,7 +511,8 @@ class _FollowPageState extends State<FollowPage> {
             if (preview.isNotEmpty)
               Container(
                 margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                     color: const Color(0xFF00B8D4).withOpacity(0.10),
                     borderRadius: BorderRadius.circular(12)),
@@ -490,17 +520,22 @@ class _FollowPageState extends State<FollowPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(
                           color: const Color(0xFF00B8D4).withOpacity(0.20),
                           borderRadius: BorderRadius.circular(4)),
                       child: const Text('预告',
-                          style: TextStyle(color: Color(0xFF00B8D4), fontSize: 10, fontWeight: FontWeight.w600)),
+                          style: TextStyle(
+                              color: Color(0xFF00B8D4), fontSize: 10)),
                     ),
                     const SizedBox(width: 6),
                     Expanded(
                         child: Text(preview,
-                            style: const TextStyle(color: Color(0xFF3C4248), fontSize: 12, height: 1.4))),
+                            style: const TextStyle(
+                                color: Color(0xFF3C4248),
+                                fontSize: 12,
+                                height: 1.4))),
                   ],
                 ),
               ),
@@ -524,52 +559,70 @@ class _FollowPageState extends State<FollowPage> {
       return RefreshIndicator(
         color: kAccent,
         onRefresh: _refresh,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          children: [
-            Row(children: [
-              const Text('我的订阅',
-                  style: TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w800)),
-              const Spacer(),
-              GlassIconButton(
-                  icon: const Icon(Icons.refresh, color: kAccent),
-                  size: 40,
-                  onPressed: _refresh),
-            ]),
-            const SizedBox(height: 10),
-            _sectionHeader(
-              icon: Icons.live_tv,
-              iconColor: kAccent,
-              title: '正在直播',
-              count: live.length,
-              right: const Text('最近爱看', style: TextStyle(color: kSub, fontSize: 12)),
-            ),
-            if (live.isEmpty)
-              _empty('暂无开播主播')
-            else
-              ...live.map(_liveCard),
-            const SizedBox(height: 16),
-            _sectionHeader(
-              icon: Icons.schedule,
-              iconColor: const Color(0xFF00B8D4),
-              title: '暂未开播',
-              count: offline.length,
-              right: GestureDetector(
-                onTap: () => setState(() => _offlineByFans = !_offlineByFans),
-                child: Row(children: [
-                  Icon(Icons.sort, size: 14, color: _offlineByFans ? const Color(0xFF00B8D4) : kSub),
-                  Text(' 粉丝数量',
-                      style: TextStyle(
-                          color: _offlineByFans ? const Color(0xFF00B8D4) : kSub,
-                          fontSize: 12)),
-                ]),
+        // ★ iOS26 滚动边缘渐隐
+        child: GlassScrollEdgeEffect(
+          style: GlassScrollEdgeStyle.soft,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 150),
+            children: [
+              Row(children: [
+                const Text('我的订阅',
+                    style: TextStyle(
+                        color: kText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800)),
+                const Spacer(),
+                GlassIconButton(
+                    icon: const Icon(Icons.refresh, color: kAccent),
+                    size: 40,
+                    settings: LiquidGlassSettings(
+                        glassColor: const Color(0x99F2F2F7),
+                        thickness: 20,
+                        blur: 4,
+                        lightIntensity: 0.3,
+                        specularSharpness: GlassSpecularSharpness.medium,
+                        shadowElevation: 1.0),
+                    onPressed: _refresh),
+              ]),
+              const SizedBox(height: 10),
+              _sectionHeader(
+                icon: Icons.live_tv,
+                iconColor: kAccent,
+                title: '正在直播',
+                count: live.length,
+                right: const Text('最近爱看',
+                    style: TextStyle(color: kSub, fontSize: 12)),
               ),
-            ),
-            if (offline.isEmpty)
-              _empty('暂无未开播主播')
-            else
-              ...offline.map(_offlineTile),
-          ],
+              if (live.isEmpty)
+                _empty('暂无开播主播')
+              else
+                ...live.map(_liveCard),
+              const SizedBox(height: 16),
+              _sectionHeader(
+                icon: Icons.schedule,
+                iconColor: const Color(0xFF00B8D4),
+                title: '暂未开播',
+                count: offline.length,
+                right: GestureDetector(
+                  onTap: () => setState(() => _offlineByFans = !_offlineByFans),
+                  child: Row(children: [
+                    Icon(Icons.sort, size: 14,
+                        color: _offlineByFans ? const Color(0xFF00B8D4) : kSub),
+                    Text(' 粉丝数量',
+                        style: TextStyle(
+                            color: _offlineByFans
+                                ? const Color(0xFF00B8D4)
+                                : kSub,
+                            fontSize: 12)),
+                  ]),
+                ),
+              ),
+              if (offline.isEmpty)
+                _empty('暂无未开播主播')
+              else
+                ...offline.map(_offlineTile),
+            ],
+          ),
         ),
       );
     });
