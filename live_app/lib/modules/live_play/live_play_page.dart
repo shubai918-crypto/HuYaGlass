@@ -269,7 +269,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 统一 54 高：左 pill 与右 icons 组同尺寸悬浮；右组用内置轻量 icons 模式
+  // ★ 统一 54 高悬浮底栏：左 pill + 右 icons 组，clear 体模式真通透
   Widget _bottomBar() {
     return Row(children: [
       Expanded(
@@ -323,12 +323,12 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     ]);
   }
 
-// ★ clear 体模式：不做亮度归一化，25% 白纱直接叠在 blur 12 的实时模糊上 → 真·半透明磨砂
+  // ★ clear 体模式：不做亮度归一化，25% 白纱叠在 blur 12 实时模糊上 → 真·半透明磨砂
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x40FFFFFF), // 25% 白纱（想更透改 0x33，想更实改 0x59）
-        bodyMode: GlassBodyMode.clear,       // ★ 关键：关掉 adaptive 的不透明归一化
+        glassColor: const Color(0x40FFFFFF),
+        bodyMode: GlassBodyMode.clear,
         thickness: 18,
-        blur: 12,                            // ★ 背景真实模糊可见
+        blur: 12,
         lightIntensity: 0.25,
         ambientStrength: 0,
         fresnelStrength: 0.5,
