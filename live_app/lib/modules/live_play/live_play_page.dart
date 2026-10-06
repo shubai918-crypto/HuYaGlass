@@ -47,7 +47,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    // ★ 首帧掩码定时淡出，防 PlatformView 黑面暴露
     Future.delayed(const Duration(milliseconds: 700), () {
       if (mounted) setState(() => _videoReady = true);
     });
@@ -94,7 +93,6 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: kBg,
       resizeToAvoidBottomInset: false,
-      // ★ 去掉 GlassBackdropGroup：让每个玻璃面独立实时采样背后的弹幕内容 → 真半透明+真模糊
       body: Stack(children: [
         Column(children: [
           SizedBox(height: top),
@@ -266,85 +264,77 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-// ★ 统一 60 高悬浮底栏：居中粗黑字体 + 大拖拽区域 + 丝滑回弹
+  // ★ 统一 44 高悬浮底栏：左侧紧凑 pill + 右侧紧凑 icons 组
   Widget _bottomBar() {
     return Row(children: [
       Expanded(
         child: GlassButton.custom(
           onTap: () => _openComposeSheet(),
-          height: 60, // ★ 更大点击/拖拽区域
+          height: 44, // ★ 高度减小
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 30),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 22),
           settings: _hdrGlass(),
-          stretch: 0.9,
-          resistance: 0.04,
-          interactionScale: 1.06,
+          stretch: 0.8,
+          resistance: 0.05,
+          interactionScale: 1.05,
           anchorStretchSettings: const AnchorStretchSettings(
-              intensity: 0.9, 
-              squashFactor: 0.25, 
-              translationDamping: 0.04, // ★ 阻尼更小，拖拽更丝滑
-              bounciness: 0.5), // ★ 回弹更强更 Q
+              intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center, // ★ 内容居中
-              children: [
-                const Icon(Icons.edit_note, color: Color(0xFF1F2329), size: 20), // ★ 深色图标
-                const SizedBox(width: 8),
-                ValueListenableBuilder<TextEditingValue>(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(children: [
+              const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
                   valueListenable: c.inputController,
                   builder: (context, v, _) => Text(
                     v.text.isEmpty ? '发弹幕...' : v.text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Color(0xFF1F2329), // ★ 粗黑字体
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700), // ★ 加粗
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ]),
           ),
         ),
       ),
-      const SizedBox(width: 10),
+      const SizedBox(width: 8),
       GlassButtonGroup.icons(
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        borderRadius: 30,
-        iconSize: 26, // ★ 图标放大
+        borderRadius: 22,
+        iconSize: 20, // ★ 图标减小
         showDividers: false,
-        itemPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17), // 17*2+26=60 高
+        itemPadding: const EdgeInsets.all(12), // ★ 12*2+20 = 44 高，与左侧严格对齐
         settings: _hdrGlass(),
         items: [
-          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF1F2329)), onTap: _openQualitySheet),
-          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF1F2329)), onTap: _showDanmakuSettingsSheet),
-          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF1F2329)), onTap: () => _openComposeSheet(focusEmoji: true)),
+          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
+          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
+          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
         ],
       ),
     ]);
   }
 
-  // ★ clear 体模式：20% 白纱叠在 blur 14 实时模糊上 → 极度通透
+  // ★ 隐约透视感：40% 白 + 20 模糊 + 2.0 阴影，在浅色背景上透出底下的字
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x33FFFFFF), // ★ 更透 (20%)
+        glassColor: const Color(0x66FFFFFF), 
         bodyMode: GlassBodyMode.clear,
         thickness: 20,
-        blur: 14, // ★ 稍微增加模糊，让背景透出更明显
-        lightIntensity: 0.25,
+        blur: 20, 
+        lightIntensity: 0.3,
         ambientStrength: 0,
         fresnelStrength: 0.5,
         refractiveIndex: 1.15,
-        saturation: 1.3,
-        chromaticAberration: 0.012,
+        saturation: 1.2,
+        chromaticAberration: 0.01,
         specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 1.5,
+        shadowElevation: 2.0, 
       );
 
   LiquidGlassSettings _hdrGlass() => _barGlass();
-
 
   void _openQualitySheet() {
     showModalBottomSheet(
@@ -826,6 +816,9 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> with SingleTickerProvid
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ 弹幕列表：智能滚动逻辑（自动追底 / 手动上滑暂停 / 点击下拉恢复）
+// ─────────────────────────────────────────────────────────────────────────────
 class _DanmakuList extends StatefulWidget {
   final LivePlayController c;
   const _DanmakuList({required this.c});
@@ -835,8 +828,57 @@ class _DanmakuList extends StatefulWidget {
 
 class _DanmakuListState extends State<_DanmakuList> {
   final ScrollController _sc = ScrollController();
+  bool _autoScroll = true;
+  Worker? _listWorker;
+
   @override
-  void dispose() { _sc.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    _sc.addListener(_onScroll);
+    // ★ 监听列表变化，自动追底
+    _listWorker = ever(widget.c.danmakuList, (_) {
+      if (_autoScroll && _sc.hasClients) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_autoScroll && _sc.hasClients && _sc.position.maxScrollExtent > 0) {
+            _sc.animateTo(_sc.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+          }
+        });
+      }
+    });
+  }
+
+  void _onScroll() {
+    if (!_sc.hasClients) return;
+    final pos = _sc.position;
+    // ★ 如果用户手动上滑超过 50px，暂停自动追底
+    if (pos.pixels < pos.maxScrollExtent - 50) {
+      if (_autoScroll) setState(() => _autoScroll = false);
+    }
+  }
+
+  void _scrollToBottom() {
+    setState(() => _autoScroll = true); // ★ 恢复自动追底
+    if (_sc.hasClients) {
+      _sc.animateTo(_sc.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+  }
+
+  void _scrollToTop() {
+    setState(() => _autoScroll = false); // ★ 上滑肯定暂停
+    if (_sc.hasClients) {
+      _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sc.removeListener(_onScroll);
+    _sc.dispose();
+    _listWorker?.dispose();
+    super.dispose();
+  }
 
   Color _fansColor(int lv) {
     if (lv <= 6) return const Color(0xFF2E9BF5);
@@ -956,10 +998,10 @@ class _DanmakuListState extends State<_DanmakuList> {
             GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
             const SizedBox(height: 4),
             GlassIconButton(icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)), size: 38,
-                onPressed: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
+                onPressed: _scrollToTop), // ★ 快速上拉
             const SizedBox(height: 4),
             GlassIconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)), size: 38,
-                onPressed: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
+                onPressed: _scrollToBottom), // ★ 快速下拉
           ]),
         )),
       ]);
