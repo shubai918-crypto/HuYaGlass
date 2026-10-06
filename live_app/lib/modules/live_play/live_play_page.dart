@@ -264,50 +264,50 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 统一 44 高悬浮底栏：左侧紧凑 pill + 右侧紧凑 icons 组
-  Widget _bottomBar() {
+Widget _bottomBar() {
     return Row(children: [
-      Expanded(
+      // ★ 1. 宽度变小：去掉 Expanded，固定宽度 140
+      SizedBox(
+        width: 140,
         child: GlassButton.custom(
           onTap: () => _openComposeSheet(),
-          height: 44, // ★ 高度减小
+          height: 54,
           useOwnLayer: true,
           quality: GlassQuality.premium,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 22),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 27),
           settings: _hdrGlass(),
           stretch: 0.8,
           resistance: 0.05,
           interactionScale: 1.05,
           anchorStretchSettings: const AnchorStretchSettings(
               intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(children: [
-              const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 16),
-              const SizedBox(width: 6),
-              Expanded(
-                child: ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: c.inputController,
-                  builder: (context, v, _) => Text(
-                    v.text.isEmpty ? '发弹幕...' : v.text,
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
-                  ),
+          // ★ 2. 居中 + 粗黑文字
+          child: Center(
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: c.inputController,
+              builder: (context, v, _) => Text(
+                v.text.isEmpty ? '发弹幕' : v.text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF1F2329), // ★ 纯黑
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700, // ★ 粗体
                 ),
               ),
-            ]),
+            ),
           ),
         ),
       ),
-      const SizedBox(width: 8),
+      const Spacer(), // ★ 中间留白，让左右分开
+      // 右侧图标组保持不变
       GlassButtonGroup.icons(
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        borderRadius: 22,
-        iconSize: 20, // ★ 图标减小
+        borderRadius: 27,
+        iconSize: 24,
         showDividers: false,
-        itemPadding: const EdgeInsets.all(12), // ★ 12*2+20 = 44 高，与左侧严格对齐
+        itemPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         settings: _hdrGlass(),
         items: [
           GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
@@ -318,20 +318,20 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     ]);
   }
 
-  // ★ 隐约透视感：40% 白 + 20 模糊 + 2.0 阴影，在浅色背景上透出底下的字
+// ★ 恢复 iOS 标准浅色磨砂：90% 白纱 + 强模糊，去掉 clear 模式
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x66FFFFFF), 
-        bodyMode: GlassBodyMode.clear,
-        thickness: 20,
-        blur: 20, 
+        glassColor: const Color(0xE6FFFFFF), // 90% 白，明显的磨砂白卡片
+        thickness: 28,
+        blur: 20, // 强模糊，透出背后的轮廓
         lightIntensity: 0.3,
-        ambientStrength: 0,
+        ambientStrength: 0.1,
         fresnelStrength: 0.5,
         refractiveIndex: 1.15,
         saturation: 1.2,
         chromaticAberration: 0.01,
         specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 2.0, 
+        shadowElevation: 2.0,
+        // ★ 移除 bodyMode: GlassBodyMode.clear，恢复默认的自适应亮度
       );
 
   LiquidGlassSettings _hdrGlass() => _barGlass();
