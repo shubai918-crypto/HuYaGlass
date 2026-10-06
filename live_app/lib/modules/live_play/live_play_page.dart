@@ -264,11 +264,10 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-Widget _bottomBar() {
+// ★ 酷安同款：左笔图标 pill + 右单胶囊"图标+标签"，逐图标 Q 弹
+  Widget _bottomBar() {
     return Row(children: [
-      // ★ 1. 宽度变小：去掉 Expanded，固定宽度 140
-      SizedBox(
-        width: 140,
+      Expanded(
         child: GlassButton.custom(
           onTap: () => _openComposeSheet(),
           height: 54,
@@ -276,66 +275,83 @@ Widget _bottomBar() {
           quality: GlassQuality.premium,
           shape: const LiquidRoundedSuperellipse(borderRadius: 27),
           settings: _hdrGlass(),
-          stretch: 0.8,
-          resistance: 0.05,
-          interactionScale: 1.05,
+          stretch: 1.0,
+          resistance: 0.04,
+          interactionScale: 1.06,
           anchorStretchSettings: const AnchorStretchSettings(
-              intensity: 0.8, squashFactor: 0.2, translationDamping: 0.08, bounciness: 0.35),
-          // ★ 2. 居中 + 粗黑文字
-          child: Center(
-            child: ValueListenableBuilder<TextEditingValue>(
-              valueListenable: c.inputController,
-              builder: (context, v, _) => Text(
-                v.text.isEmpty ? '发弹幕' : v.text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF1F2329), // ★ 纯黑
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700, // ★ 粗体
+              intensity: 0.9, squashFactor: 0.25, translationDamping: 0.06, bounciness: 0.4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              const Icon(Icons.edit_note, color: Color(0xFF8A9099), size: 18), // ★ 笔图标
+              const SizedBox(width: 8),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: c.inputController,
+                  builder: (context, v, _) => Text(
+                    v.text.isEmpty ? '发弹幕...' : v.text,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: v.text.isEmpty ? const Color(0xFFA6ADB5) : const Color(0xFF3C4248), fontSize: 13),
+                  ),
                 ),
               ),
-            ),
+            ]),
           ),
         ),
       ),
-      const Spacer(), // ★ 中间留白，让左右分开
-      // 右侧图标组保持不变
-      GlassButtonGroup.icons(
+      const SizedBox(width: 10),
+      // ★ 单一玻璃胶囊（内置 Group），里面每个图标独立果冻回弹 + 底部小标签
+      GlassButtonGroup(
+        showDividers: false,
+        borderRadius: 27,
         useOwnLayer: true,
         quality: GlassQuality.premium,
-        borderRadius: 27,
-        iconSize: 24,
-        showDividers: false,
-        itemPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         settings: _hdrGlass(),
-        items: [
-          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
-          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
-          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
+        children: [
+          _groupBtn(Icons.speed, '清晰度', _openQualitySheet),
+          _groupBtn(Icons.tune, '设置', _showDanmakuSettingsSheet),
+          _groupBtn(Icons.emoji_emotions_outlined, '表情', () => _openComposeSheet(focusEmoji: true)),
         ],
       ),
     ]);
   }
 
-// ★ 恢复 iOS 标准浅色磨砂：90% 白纱 + 强模糊，去掉 clear 模式
+  Widget _groupBtn(IconData icon, String label, VoidCallback onTap) => GlassButton(
+        onTap: onTap,
+        style: GlassButtonStyle.transparent, // ★ 透明按钮嵌在 Group 玻璃里，不叠双层玻璃
+        width: 56,
+        height: 54,
+        stretch: 1.0,
+        resistance: 0.04,
+        interactionScale: 1.1,
+        anchorStretchSettings: const AnchorStretchSettings(
+            intensity: 0.9, squashFactor: 0.3, translationDamping: 0.05, bounciness: 0.45),
+        icon: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: const Color(0xFF3C4248), size: 21),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(color: Color(0xFF5F6672), fontSize: 9)),
+        ]),
+      );
+// ★ passthrough：不画不透明 body，真实内容直接透出 + 玻璃 rim/高光，保证"透过去"
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0xE6FFFFFF), // 90% 白，明显的磨砂白卡片
-        thickness: 28,
-        blur: 20, // 强模糊，透出背后的轮廓
-        lightIntensity: 0.3,
-        ambientStrength: 0.1,
+        glassColor: const Color(0x40FFFFFF),
+        bodyMode: GlassBodyMode.clear,
+        platformViewMode: PlatformViewGlassMode.passthrough, // ★ 关键：与头部同款通透路径
+        thickness: 18,
+        blur: 12,
+        lightIntensity: 0.25,
+        ambientStrength: 0,
         fresnelStrength: 0.5,
         refractiveIndex: 1.15,
-        saturation: 1.2,
-        chromaticAberration: 0.01,
+        saturation: 1.3,
+        chromaticAberration: 0.012,
         specularSharpness: GlassSpecularSharpness.medium,
-        shadowElevation: 2.0,
-        // ★ 移除 bodyMode: GlassBodyMode.clear，恢复默认的自适应亮度
+        shadowElevation: 1.5,
       );
 
   LiquidGlassSettings _hdrGlass() => _barGlass();
-
+  
   void _openQualitySheet() {
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
