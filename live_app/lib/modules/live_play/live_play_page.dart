@@ -323,16 +323,17 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     ]);
   }
 
-  // ★ 酷安级通透：18% 白 + blur 12，内容从玻璃下透出
+// ★ clear 体模式：不做亮度归一化，25% 白纱直接叠在 blur 12 的实时模糊上 → 真·半透明磨砂
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x2EFFFFFF),
+        glassColor: const Color(0x40FFFFFF), // 25% 白纱（想更透改 0x33，想更实改 0x59）
+        bodyMode: GlassBodyMode.clear,       // ★ 关键：关掉 adaptive 的不透明归一化
         thickness: 18,
-        blur: 12,
-        lightIntensity: 0.2,
+        blur: 12,                            // ★ 背景真实模糊可见
+        lightIntensity: 0.25,
         ambientStrength: 0,
         fresnelStrength: 0.5,
         refractiveIndex: 1.15,
-        saturation: 1.4,
+        saturation: 1.3,
         chromaticAberration: 0.012,
         specularSharpness: GlassSpecularSharpness.medium,
         shadowElevation: 1.5,
