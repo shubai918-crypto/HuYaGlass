@@ -3,21 +3,18 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_app/core/app_settings.dart';
 
-import '../home/home_page.dart';
+import '../home/home_page.dart'; // 导入 kBg, kCard, kText, kSub, kLine, kAccent
 
-class SettingsPage extends StatefulWidget {
+class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
 
-class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
+    // ★ 修复黑底：强制使用 kBg (浅灰) 作为背景，拒绝 transparent 穿透
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: kBg, 
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: kBg,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: kText),
@@ -39,7 +36,6 @@ class _SettingsPageState extends State<SettingsPage> {
           _section('开发者'),
           const SizedBox(height: 8),
           _group([
-            // ★ 仅保留 AppSettings 中真实存在的 debugEnabled
             Obx(() => _switchRow(
                   '调试模式',
                   '显示协议日志与调试信息',
@@ -69,7 +65,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _divider() => Container(height: 0.5, color: kLine, margin: const EdgeInsets.only(left: 62));
 
-  // ★ 使用 GlassSwitch
   Widget _switchRow(String title, String sub, bool value, ValueChanged<bool> onChanged) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
