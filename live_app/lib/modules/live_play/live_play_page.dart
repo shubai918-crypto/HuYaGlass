@@ -978,10 +978,160 @@ class _DanmakuListState extends State<_DanmakuList> {
             child: ListView.builder(controller: _sc, padding: const EdgeInsets.fromLTRB(12, 8, 12, 84), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
         // ★ 恢复右侧浮动控制条
         Positioned(right: 8, bottom: 84, child: GlassContainer(
+class _DanmakuList extends StatefulWidget {
+  final LivePlayController c;
+  const _DanmakuList({required this.c});
+  @override
+  State<_DanmakuList> createState() => _DanmakuListState();
+}
+
+class _DanmakuListState extends State<_DanmakuList> {
+  final ScrollController _sc = ScrollController();
+  StreamSubscription? _autoSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoSub = widget.c.danmakuList.listen((_) => _autoDown());
+  }
+
+  @override
+  void dispose() {
+    _autoSub?.cancel();
+    _sc.dispose();
+    super.dispose();
+  }
+
+  void _autoDown() {
+    if (!_sc.hasClients) return;
+    final p = _sc.position;
+    if (p.maxScrollExtent - p.pixels < 120) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_sc.hasClients) _sc.jumpTo(_sc.position.maxScrollExtent);
+      });
+    }
+  }
+
+  Color _fansColor(int lv) {
+    if (lv <= 6) return const Color(0xFF2E9BF5);
+    if (lv <= 12) return const Color(0xFF00B8D4);
+    if (lv <= 19) return const Color(0xFFE09300);
+    if (lv <= 25) return const Color(0xFFE05586);
+    if (lv <= 31) return const Color(0xFF9A4FE0);
+    if (lv <= 40) return const Color(0xFFFF8800);
+    return const Color(0xFFE5484D);
+  }
+
+  Color _contentColor(int rgb) {
+    final c = Color(rgb);
+    final l = (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255;
+    return l > 0.62 ? const Color(0xFF3C4248) : c;
+  }
+
+  // ★ 升级点：官方 GlassContextMenu（自带 lift 预览 + glide-to-select + 触觉反馈）
+  void _showDanmakuMenu(DanmakuMessage m, Offset pos) {
+    final content = m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content;
+    showGlassContextMenu(
+      context: context,
+      position: pos,
+      actions: [
+        GlassContextMenuAction(label: '复制内容', icon: Icons.copy, onTap: () {
+          Clipboard.setData(ClipboardData(text: content));
+          Get.snackbar('提示', '已复制到剪贴板', snackPosition: SnackPosition.BOTTOM);
+        }),
+        GlassContextMenuAction(label: '+1 复读', icon: Icons.send, onTap: () {
+          if (!m.isGift) widget.c.sendDanmaku(m.content);
+        }),
+        GlassContextMenuAction(label: '引用到输入框', icon: Icons.format_quote, onTap: () {
+          widget.c.inputController.text = m.content;
+          Get.snackbar('引用', '内容已填入输入框', snackPosition: SnackPosition.BOTTOM);
+        }),
+        GlassContextMenuAction(label: '查看用户信息', icon: Icons.person, onTap: () => _showUserInfo(m)),
+        GlassContextMenuAction(label: '屏蔽该弹幕', icon: Icons.block, onTap: () {
+          Get.snackbar('屏蔽', '已本地屏蔽 ${m.nickname}', snackPosition: SnackPosition.BOTTOM);
+        }),
+      ],
+    );
+  }
+
+  void _showUserInfo(DanmakuMessage m) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black38,
+      builder: (_) => Center(
+        child: Material(type: MaterialType.transparency,
+            child: _UserInfoCard(m: m, c: widget.c,
+                menuGlass: LiquidGlassSettings(glassColor: const Color(0xCC1C1C1E), thickness: 22, blur: 12,
+                    lightIntensity: 0.25, saturation: 1.1, refractiveIndex: 1.1,
+                    specularSharpness: GlassSpecularSharpness.medium))),
+      ),
+    );
+  }
+
+  Widget _item(LivePlayController c, DanmakuMessage m) {
+    final fc = _fansColor(m.fansLevel);
+    if (m.isGift) {
+      final icon = DanmakuMessage.kGiftIcons[m.giftName];
+      return GestureDetector(
+        onLongPressStart: (d) => _showDanmakuMenu(m, d.globalPosition),
+        child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (m.fansName.isNotEmpty)
+                Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
+                    child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+              GestureDetector(onTap: () => _showUserInfo(m),
+                  child: Text('${m.nickname}: ', style: const TextStyle(color: Color(0xFFFF7A00), fontSize: 14, fontWeight: FontWeight.w600))),
+              const Text('送 ', style: TextStyle(color: Color(0xFF576066), fontSize: 14)),
+              if (icon != null)
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Image.network(icon, width: 20, height: 20, errorBuilder: (_, __, ___) => Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14))))
+              else
+                Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
+              Text(' ${m.giftCount}', style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
+              if (m.comboCount > 1) Text(' ${m.comboCount}连击', style: const TextStyle(color: Color(0xFF8A9099), fontSize: 12)),
+            ])),
+      );
+    }
+    final guard = c.client.guardList.isNotEmpty ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname) : null;
+    final shownBadges = <String>[]; bool mgrShown = false;
+    for (final u in m.badgeUrls) {
+      final isMgr = u.contains('fangguan') || u.contains('manager');
+      if (isMgr) { if (mgrShown) continue; mgrShown = true; }
+      shownBadges.add(u);
+    }
+    if (m.managerType > 0 && !mgrShown) shownBadges.add(DanmakuMessage.kBadgeManager);
+    return GestureDetector(
+      onLongPressStart: (d) => _showDanmakuMenu(m, d.globalPosition),
+      child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+            if (m.fansName.isNotEmpty)
+              Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)),
+                  child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+            if (guard != null && guard.guardIcon.isNotEmpty)
+              Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+            for (final url in shownBadges)
+              Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+            GestureDetector(onTap: () => _showUserInfo(m),
+                child: Text('${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ', style: const TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600))),
+            Text.rich(TextSpan(children: buildEmoteSpans(m.content, textColor: _contentColor(m.fontColor)))),
+          ])),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    return Obx(() {
+      final list = c.danmakuList.where((m) => !m.isGift || c.showGiftList.value).toList();
+      if (list.isEmpty) return Center(child: Text(c.danmakuStatus.value, style: const TextStyle(color: Color(0xFFA6ADB5))));
+      return Stack(children: [
+        Scrollbar(controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4),
+            child: ListView.builder(controller: _sc, padding: const EdgeInsets.fromLTRB(12, 8, 12, 84), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
+        Positioned(right: 8, bottom: 84, child: GlassContainer(
           shape: const LiquidRoundedSuperellipse(borderRadius: 999),
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-          useOwnLayer: true,
-          quality: GlassQuality.standard,
+          useOwnLayer: true, quality: GlassQuality.standard,
           settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 20, blur: 8, lightIntensity: 0.5, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.1),
           child: Column(children: [
             GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
@@ -999,29 +1149,17 @@ class _DanmakuListState extends State<_DanmakuList> {
 
   void _showDanmakuSettingsLocal(LivePlayController c) {
     showModalBottomSheet(
-      context: context,
-      backgroundColor: kCard,
+      context: context, backgroundColor: kCard,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+      builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Align(alignment: Alignment.centerLeft,
-                  child: Text('弹幕设置', style: TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w700))),
-            ),
-            Obx(() => ListTile(
-                  title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: kText, fontSize: 14)),
-                  trailing: Switch(value: c.showGiftOverlay.value, activeColor: kAccent, onChanged: (v) => c.showGiftOverlay.value = v),
-                )),
-            Obx(() => ListTile(
-                  title: const Text('列表显示礼物弹幕', style: TextStyle(color: kText, fontSize: 14)),
-                  trailing: Switch(value: c.showGiftList.value, activeColor: kAccent, onChanged: (v) => c.showGiftList.value = v),
-                )),
-          ]),
-        ),
-      ),
+            const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Align(alignment: Alignment.centerLeft, child: Text('弹幕设置', style: TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w700)))),
+            Obx(() => ListTile(title: const Text('飘屏显示礼物弹幕', style: TextStyle(color: kText, fontSize: 14)),
+                trailing: Switch(value: c.showGiftOverlay.value, activeColor: kAccent, onChanged: (v) => c.showGiftOverlay.value = v))),
+            Obx(() => ListTile(title: const Text('列表显示礼物弹幕', style: TextStyle(color: kText, fontSize: 14)),
+                trailing: Switch(value: c.showGiftList.value, activeColor: kAccent, onChanged: (v) => c.showGiftList.value = v))),
+          ]))),
     );
   }
 }
