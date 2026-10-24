@@ -565,38 +565,57 @@ class _DanmakuListState extends State<_DanmakuList> {
   Color _contentColor(int rgb) { final c = Color(rgb); final l = (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255; return l > 0.62 ? const Color(0xFF3C4248) : c; }
   LiquidGlassSettings _menuGlass() => LiquidGlassSettings(glassColor: const Color(0xCC1C1C1E), thickness: 22, blur: 12, lightIntensity: 0.25, saturation: 1.1, refractiveIndex: 1.1, specularSharpness: GlassSpecularSharpness.medium);
 
-  void _showDanmakuMenu(DanmakuMessage m, Offset pos) {
-    showDialog(context: context, barrierColor: Colors.black26, builder: (_) => _DanmakuMenu(c: widget.c, m: m, pos: pos, menuGlass: _menuGlass(), onUserInfo: () { Navigator.of(context).pop(); _showUserInfo(m); }));
-  }
-
   void _showUserInfo(DanmakuMessage m) {
     showDialog(context: context, barrierColor: Colors.black38, builder: (_) => Center(child: Material(type: MaterialType.transparency, child: _UserInfoCard(m: m, c: widget.c, menuGlass: _menuGlass()))));
   }
 
+  // ★ 1.15.0 终极简化：使用 .glassContextMenu 扩展，自动处理长按、Lift 预览和滑动选择
   Widget _item(LivePlayController c, DanmakuMessage m) {
     final fc = _fansColor(m.fansLevel);
+    final content = m.isGift ? '${m.nickname} 送 ${m.giftName}' : m.content;
+
+    Widget row;
     if (m.isGift) {
       final icon = DanmakuMessage.kGiftIcons[m.giftName];
-      return GestureDetector(onLongPressStart: (d) => _showDanmakuMenu(m, d.globalPosition), child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+      row = Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
         if (m.fansName.isNotEmpty) Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)), child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
         GestureDetector(onTap: () => _showUserInfo(m), child: Text('${m.nickname}: ', style: const TextStyle(color: Color(0xFFFF7A00), fontSize: 14, fontWeight: FontWeight.w600))),
         const Text('送 ', style: TextStyle(color: Color(0xFF576066), fontSize: 14)),
         if (icon != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Image.network(icon, width: 20, height: 20, errorBuilder: (_, __, ___) => Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14)))) else Text(m.giftName, style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
         Text(' ${m.giftCount}', style: const TextStyle(color: Color(0xFF576066), fontSize: 14)),
         if (m.comboCount > 1) Text(' ${m.comboCount}连击', style: const TextStyle(color: Color(0xFF8A9099), fontSize: 12)),
-      ])));
+      ]);
+    } else {
+      final guard = c.client.guardList.isNotEmpty ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname) : null;
+      final shownBadges = <String>[]; bool mgrShown = false;
+      for (final u in m.badgeUrls) { final isMgr = u.contains('fangguan') || u.contains('manager'); if (isMgr) { if (mgrShown) continue; mgrShown = true; } shownBadges.add(u); }
+      if (m.managerType > 0 && !mgrShown) shownBadges.add(DanmakuMessage.kBadgeManager);
+      row = Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+        if (m.fansName.isNotEmpty) Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)), child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
+        if (guard != null && guard.guardIcon.isNotEmpty) Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+        for (final url in shownBadges) Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
+        GestureDetector(onTap: () => _showUserInfo(m), child: Text('${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ', style: const TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600))),
+        Text.rich(TextSpan(children: buildEmoteSpans(m.content, textColor: _contentColor(m.fontColor)))),
+      ]);
     }
-    final guard = c.client.guardList.isNotEmpty ? c.client.guardList.firstWhereOrNull((g) => g.nickname == m.nickname) : null;
-    final shownBadges = <String>[]; bool mgrShown = false;
-    for (final u in m.badgeUrls) { final isMgr = u.contains('fangguan') || u.contains('manager'); if (isMgr) { if (mgrShown) continue; mgrShown = true; } shownBadges.add(u); }
-    if (m.managerType > 0 && !mgrShown) shownBadges.add(DanmakuMessage.kBadgeManager);
-    return GestureDetector(onLongPressStart: (d) => _showDanmakuMenu(m, d.globalPosition), child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-      if (m.fansName.isNotEmpty) Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(gradient: LinearGradient(colors: [fc.withOpacity(0.18), fc.withOpacity(0.08)]), border: Border.all(color: fc.withOpacity(0.5)), borderRadius: BorderRadius.circular(8)), child: Text('${m.fansLevel} ${m.fansName}', style: TextStyle(color: fc, fontSize: 10, fontWeight: FontWeight.w700))),
-      if (guard != null && guard.guardIcon.isNotEmpty) Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(guard.guardIcon, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
-      for (final url in shownBadges) Padding(padding: const EdgeInsets.only(right: 4), child: Image.network(url, width: 18, height: 18, errorBuilder: (_, __, ___) => const SizedBox.shrink())),
-      GestureDetector(onTap: () => _showUserInfo(m), child: Text('${m.nickname.isEmpty ? "神秘用户" : m.nickname}: ', style: const TextStyle(color: Color(0xFF4A5058), fontSize: 14, fontWeight: FontWeight.w600))),
-      Text.rich(TextSpan(children: buildEmoteSpans(m.content, textColor: _contentColor(m.fontColor)))),
-    ])));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: row.glassContextMenu(
+        previewBuilder: (ctx) => Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
+          child: Text(content, maxLines: 2, style: const TextStyle(color: kText, fontSize: 14)),
+        ),
+        actions: [
+          GlassContextMenuAction(child: const Text('复制内容'), icon: const Icon(Icons.copy), onPressed: () { Clipboard.setData(ClipboardData(text: content)); Get.snackbar('提示', '已复制', snackPosition: SnackPosition.BOTTOM); }),
+          if (!m.isGift) GlassContextMenuAction(child: const Text('+1 复读'), icon: const Icon(Icons.send, color: Color(0xFFFF8800)), onPressed: () => c.sendDanmaku(m.content)),
+          GlassContextMenuAction(child: const Text('引用到输入框'), icon: const Icon(Icons.format_quote), onPressed: () { c.inputController.text = m.content; Get.snackbar('引用', '已填入', snackPosition: SnackPosition.BOTTOM); }),
+          GlassContextMenuAction(child: const Text('查看用户信息'), icon: const Icon(Icons.person, color: Color(0xFF00B8D4)), onPressed: () => _showUserInfo(m)),
+          GlassContextMenuAction(child: const Text('屏蔽该弹幕'), icon: const Icon(Icons.block), isDestructive: true, onPressed: () => Get.snackbar('屏蔽', '已本地屏蔽', snackPosition: SnackPosition.BOTTOM)),
+        ],
+      ),
+    );
   }
 
   @override
@@ -673,53 +692,6 @@ class _UserInfoCardState extends State<_UserInfoCard> {
 
   Color _fansColorLocal(int lv) { if (lv <= 6) return const Color(0xFF2E9BF5); if (lv <= 12) return const Color(0xFF00B8D4); if (lv <= 19) return const Color(0xFFE09300); if (lv <= 25) return const Color(0xFFE05586); if (lv <= 31) return const Color(0xFF9A4FE0); if (lv <= 40) return const Color(0xFFFF8800); return const Color(0xFFE5484D); }
   Widget _chipLocal(String label, Color tint) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: tint.withOpacity(0.18), border: Border.all(color: tint.withOpacity(0.55)), borderRadius: BorderRadius.circular(8)), child: Text(label, style: TextStyle(color: tint, fontSize: 11, fontWeight: FontWeight.w700)));
-}
-
-class _DanmakuMenu extends StatefulWidget {
-  final LivePlayController c; final DanmakuMessage m; final Offset pos; final LiquidGlassSettings menuGlass; final VoidCallback onUserInfo;
-  const _DanmakuMenu({required this.c, required this.m, required this.pos, required this.menuGlass, required this.onUserInfo});
-  @override
-  State<_DanmakuMenu> createState() => _DanmakuMenuState();
-}
-
-class _DanmakuMenuState extends State<_DanmakuMenu> {
-  bool _expanded = false;
-  void _done() => Navigator.of(context).pop();
-  String get _content => widget.m.isGift ? '${widget.m.nickname} 送 ${widget.m.giftName}' : widget.m.content;
-  void _copy() { Clipboard.setData(ClipboardData(text: _content)); Get.snackbar('提示', '已复制到剪贴板', snackPosition: SnackPosition.BOTTOM); _done(); }
-  void _repeat() { if (!widget.m.isGift) widget.c.sendDanmaku(widget.m.content); _done(); }
-  void _quote() { widget.c.inputController.text = widget.m.content; Get.snackbar('引用', '内容已填入输入框', snackPosition: SnackPosition.BOTTOM); _done(); }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size; final w = _expanded ? 232.0 : 196.0; final h = _expanded ? 268.0 : 52.0;
-    final left = widget.pos.dx.clamp(8.0, size.width - w - 8); final top = (widget.pos.dy - 60).clamp(80.0, size.height - h - 140);
-    return Stack(children: [Positioned(left: left, top: top, child: AnimatedSize(duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic, alignment: Alignment.topLeft, child: _expanded ? _verticalMenu() : _capsule()))]);
-  }
-
-  Widget _capsule() {
-    return GlassButtonGroup.icons(useOwnLayer: true, quality: GlassQuality.standard, borderRadius: 26, iconSize: 18, itemPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), settings: widget.menuGlass, items: [
-      GlassButtonGroupItem(label: '复制', icon: const Icon(Icons.copy, color: Colors.white70), onTap: _copy),
-      GlassButtonGroupItem(label: '+1', icon: const Icon(Icons.send, color: Color(0xFFFF8800)), onTap: _repeat),
-      GlassButtonGroupItem(label: '引用', icon: const Icon(Icons.format_quote, color: Colors.white70), onTap: _quote),
-      GlassButtonGroupItem(label: '更多', icon: const Icon(Icons.chevron_right, color: Colors.white70), onTap: () => setState(() => _expanded = true)),
-    ]);
-  }
-
-  Widget _verticalMenu() {
-    return GlassContainer(shape: const LiquidRoundedSuperellipse(borderRadius: 24), useOwnLayer: true, quality: GlassQuality.standard, settings: widget.menuGlass, child: Column(mainAxisSize: MainAxisSize.min, children: [
-      _row(Icons.copy, Colors.white70, '复制内容', _copy), _divider(),
-      _row(Icons.send, const Color(0xFFFF8800), '+1 复读', _repeat), _divider(),
-      _row(Icons.format_quote, Colors.white70, '引用到输入框', _quote), _divider(),
-      _row(Icons.person, const Color(0xFF00B8D4), '查看用户信息', widget.onUserInfo), _divider(),
-      _row(Icons.block, const Color(0xFFE5484D), '屏蔽该弹幕', () { Get.snackbar('屏蔽', '已本地屏蔽 ${widget.m.nickname}', snackPosition: SnackPosition.BOTTOM); _done(); }),
-    ]));
-  }
-
-  Widget _divider() => Container(height: 0.5, color: Colors.white.withOpacity(0.08), margin: const EdgeInsets.only(left: 44));
-  Widget _row(IconData icon, Color color, String title, VoidCallback onTap) {
-    return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), child: Row(children: [Icon(icon, color: color, size: 18), const SizedBox(width: 12), Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500))])));
-  }
 }
 
 class _HighEnergyBody extends StatefulWidget {
