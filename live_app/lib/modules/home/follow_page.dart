@@ -274,7 +274,7 @@ class _FollowPageState extends State<FollowPage> {
         child: const Icon(Icons.live_tv, color: Color(0xFFC4C9CF), size: 24),
       );
 
-  // ★ 玻璃行：直播项（可拖拽排序 + 左滑取关 + 上下文菜单）
+// ★ 玻璃行：直播项（长按=拖拽排序，不再挂上下文菜单，避免手势冲突）
   Widget _liveTile(FollowItem it, int index) {
     final ex = _extras[it.roomId];
     final fansLabel = _fansLabel(ex);
@@ -295,7 +295,7 @@ class _FollowPageState extends State<FollowPage> {
       ),
       onTap: () => _open(it),
       trailingSwipeActions: _trailing(it),
-      contextMenuActions: _contextActions(it),
+      // ★ 注意：这里不再写 contextMenuActions，长按留给拖拽排序
     );
   }
 
