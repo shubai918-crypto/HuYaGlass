@@ -221,7 +221,6 @@ class _FollowPageState extends State<FollowPage> {
     setState(() {});
   }
 
-  // ★ 1.15.0 真实 API: onTap, label 是 Widget
   List<GlassSwipeAction> _trailing(FollowItem it) => [
         GlassSwipeAction(
           icon: const Icon(Icons.favorite_border, color: Colors.white),
@@ -230,6 +229,22 @@ class _FollowPageState extends State<FollowPage> {
           onTap: () => _unfollow(it),
         ),
       ];
+
+  List<Widget> _contextActions(FollowItem it) => [
+        GlassContextMenuAction(child: const Text('进入直播间'), icon: const Icon(Icons.play_arrow, color: Color(0xFFFF8800)), onPressed: () => _open(it)),
+        GlassContextMenuAction(child: const Text('复制房间链接'), icon: const Icon(Icons.link), onPressed: () {
+          Clipboard.setData(ClipboardData(text: 'https://www.huya.com/${it.roomId}'));
+          Get.snackbar('提示', '已复制', snackPosition: SnackPosition.BOTTOM);
+        }),
+        GlassContextMenuAction(child: const Text('取消订阅'), icon: const Icon(Icons.block), isDestructive: true, onPressed: () => _unfollow(it)),
+      ];
+
+  String _fansLabel(_RoomExtra? ex) {
+    if (ex == null) return '';
+    if (ex.fansText.isNotEmpty) return ex.fansText;
+    if (ex.fans > 0) return _fmtFans(ex.fans);
+    return '';
+  }
 
   Widget _sectionHeader({required IconData icon, required Color iconColor, required String title, required int count, Widget? right}) {
     return Padding(
@@ -244,103 +259,69 @@ class _FollowPageState extends State<FollowPage> {
     );
   }
 
-  Widget _coverPh() => Container(
-        width: double.infinity, height: 130,
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF2F3F5), Color(0xFFE9EBEF)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+  Widget _coverThumb(String url) => ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: url.isNotEmpty
+            ? Image.network(url, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _thumbPh())
+            : _thumbPh(),
+      );
+
+  Widget _thumbPh() => Container(
+        width: 64, height: 64,
+        color: const Color(0xFFF2F3F5),
         alignment: Alignment.center,
-        child: const Icon(Icons.live_tv, color: Color(0xFFC4C9CF), size: 40),
+        child: const Icon(Icons.live_tv, color: Color(0xFFC4C9CF), size: 24),
       );
 
-  Widget _empty(String text) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        child: Center(child: Text(text, style: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))),
-      );
-
-  String _fansLabel(_RoomExtra? ex) {
-    if (ex == null) return '';
-    if (ex.fansText.isNotEmpty) return ex.fansText;
-    if (ex.fans > 0) return _fmtFans(ex.fans);
-    return '';
-  }
-
-  Widget _liveCard(FollowItem it) {
+  // ★ 玻璃行：直播项（可拖拽排序 + 左滑取关 + 上下文菜单）
+  Widget _liveTile(FollowItem it, int index) {
     final ex = _extras[it.roomId];
-    final cover = ex?.screenshot ?? '';
     final fansLabel = _fansLabel(ex);
-    return GestureDetector(
-      onTap: () => _open(it),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(18), border: Border.all(color: kLine)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-            child: Stack(children: [
-              cover.isNotEmpty
-                  ? Image.network(cover, width: double.infinity, height: 130, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _coverPh())
-                  : _coverPh(),
-              Positioned(left: 8, top: 8,
-                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: const Color(0xFFE5484D), borderRadius: BorderRadius.circular(8)),
-                      child: const Text('直播中', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)))),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Transform.translate(offset: const Offset(0, -16),
-                  child: CircleAvatar(radius: 24, backgroundColor: kCard,
-                      backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
-                      child: it.avatar.isEmpty ? const Icon(Icons.person, size: 22, color: Color(0xFFA6ADB5)) : null)),
-              const SizedBox(width: 8),
-              Expanded(child: Padding(padding: const EdgeInsets.only(bottom: 2),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
-                    if (fansLabel.isNotEmpty) Text('粉丝数: $fansLabel', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kSub, fontSize: 12)),
-                  ]))),
-              const Icon(Icons.drag_indicator, color: Color(0xFFC4C9CF), size: 18),
-            ]),
-          ),
-        ]),
+    return GlassListTile(
+      key: ValueKey(it.roomId),
+      reorderIndex: index,
+      canReorder: true,
+      leading: _coverThumb(ex?.screenshot ?? ''),
+      title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(fansLabel.isNotEmpty ? '粉丝 $fansLabel' : (ex?.intro ?? ''), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kSub, fontSize: 12)),
+      ]),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: const Color(0xFFE5484D), borderRadius: BorderRadius.circular(8)),
+        child: const Text('直播中', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
       ),
+      onTap: () => _open(it),
+      trailingSwipeActions: _trailing(it),
+      contextMenuActions: _contextActions(it),
     );
   }
 
+  // ★ 玻璃行：离线项（不可拖拽，保留滑动/菜单）
   Widget _offlineTile(FollowItem it) {
     final ex = _extras[it.roomId];
     final fansLabel = _fansLabel(ex);
     final preview = ex?.preview ?? '';
-    return GestureDetector(
-      onTap: () => _open(it),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: kLine)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            CircleAvatar(radius: 24, backgroundColor: const Color(0xFFF2F3F5),
-                backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
-                child: it.avatar.isEmpty ? const Icon(Icons.person, size: 22, color: Color(0xFFA6ADB5)) : null),
-            const SizedBox(width: 10),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(fansLabel.isNotEmpty ? '粉丝数: $fansLabel' : '房间 ${it.roomId}', style: const TextStyle(color: kSub, fontSize: 12)),
-            ])),
-            const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF)),
-          ]),
-          if (preview.isNotEmpty)
-            Container(margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.10), borderRadius: BorderRadius.circular(12)),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(color: const Color(0xFF00B8D4).withOpacity(0.20), borderRadius: BorderRadius.circular(4)),
-                      child: const Text('预告', style: TextStyle(color: Color(0xFF00B8D4), fontSize: 10))),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(preview, style: const TextStyle(color: Color(0xFF3C4248), fontSize: 12, height: 1.4))),
-                ])),
-        ]),
+    return GlassListTile(
+      key: ValueKey(it.roomId),
+      canReorder: false,
+      leading: CircleAvatar(
+        radius: 26,
+        backgroundColor: const Color(0xFFF2F3F5),
+        backgroundImage: it.avatar.isNotEmpty ? NetworkImage(it.avatar) : null,
+        child: it.avatar.isEmpty ? const Icon(Icons.person, size: 24, color: Color(0xFFA6ADB5)) : null,
       ),
+      title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(preview.isNotEmpty ? '预告: $preview' : (fansLabel.isNotEmpty ? '粉丝 $fansLabel' : '房间 ${it.roomId}'),
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kSub, fontSize: 12)),
+      ]),
+      trailing: const Icon(Icons.chevron_right, color: Color(0xFFC4C9CF)),
+      onTap: () => _open(it),
+      trailingSwipeActions: _trailing(it),
+      contextMenuActions: _contextActions(it),
     );
   }
 
@@ -369,28 +350,19 @@ class _FollowPageState extends State<FollowPage> {
                         lightIntensity: 0.3, specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 1.0),
                     onPressed: _refresh),
               ]),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _sectionHeader(icon: Icons.live_tv, iconColor: kAccent, title: '正在直播', count: live.length,
                   right: const Text('长按拖拽排序', style: TextStyle(color: kSub, fontSize: 11))),
               if (live.isEmpty)
-                _empty('暂无开播主播')
+                const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: Text('暂无开播主播', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))))
               else
-                // ★ 1.15.0 真实 API: itemCount + itemBuilder
-                GlassReorderableList(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
+                // ★ 玻璃版拖拽：grouped 默认 shrinkWrap + NeverScrollable，可直接嵌入 ListView
+                GlassReorderableList.grouped(
                   itemCount: live.length,
-                  onReorder: _reorderLive,
-                  itemBuilder: (context, index) {
-                    final it = live[index];
-                    return GlassSwipeActions(
-                      key: ValueKey(it.roomId),
-                      trailingActions: _trailing(it),
-                      child: _liveCard(it),
-                    );
-                  },
+                  onReorderItem: _reorderLive,
+                  itemBuilder: (context, index) => _liveTile(live[index], index),
                 ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _sectionHeader(icon: Icons.schedule, iconColor: const Color(0xFF00B8D4), title: '暂未开播', count: offline.length,
                   right: GestureDetector(
                     onTap: () => setState(() => _offlineByFans = !_offlineByFans),
@@ -400,13 +372,12 @@ class _FollowPageState extends State<FollowPage> {
                     ]),
                   )),
               if (offline.isEmpty)
-                _empty('暂无未开播主播')
+                const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: Text('暂无未开播主播', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))))
               else
-                ...offline.map((it) => GlassSwipeActions(
-                      key: ValueKey(it.roomId),
-                      trailingActions: _trailing(it),
-                      child: _offlineTile(it),
-                    )),
+                GlassReorderableList.grouped(
+                  itemCount: offline.length,
+                  itemBuilder: (context, index) => _offlineTile(offline[index]),
+                ),
             ],
           ),
         ),
