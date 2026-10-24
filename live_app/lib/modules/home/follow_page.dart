@@ -274,14 +274,12 @@ class _FollowPageState extends State<FollowPage> {
         child: const Icon(Icons.live_tv, color: Color(0xFFC4C9CF), size: 24),
       );
 
-// ★ 玻璃行：直播项（长按=拖拽排序，不再挂上下文菜单，避免手势冲突）
-  Widget _liveTile(FollowItem it, int index) {
+  // ★ 玻璃行：直播项（长按=框架级拖拽，左滑=取关）
+  Widget _liveTile(FollowItem it) {
     final ex = _extras[it.roomId];
     final fansLabel = _fansLabel(ex);
     return GlassListTile(
       key: ValueKey(it.roomId),
-      reorderIndex: index,
-      canReorder: true,
       leading: _coverThumb(ex?.screenshot ?? ''),
       title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
@@ -295,18 +293,16 @@ class _FollowPageState extends State<FollowPage> {
       ),
       onTap: () => _open(it),
       trailingSwipeActions: _trailing(it),
-      // ★ 注意：这里不再写 contextMenuActions，长按留给拖拽排序
     );
   }
 
-  // ★ 玻璃行：离线项（不可拖拽，保留滑动/菜单）
+  // ★ 玻璃行：离线项（保留上下文菜单）
   Widget _offlineTile(FollowItem it) {
     final ex = _extras[it.roomId];
     final fansLabel = _fansLabel(ex);
     final preview = ex?.preview ?? '';
     return GlassListTile(
       key: ValueKey(it.roomId),
-      canReorder: false,
       leading: CircleAvatar(
         radius: 26,
         backgroundColor: const Color(0xFFF2F3F5),
@@ -323,6 +319,36 @@ class _FollowPageState extends State<FollowPage> {
       onTap: () => _open(it),
       trailingSwipeActions: _trailing(it),
       contextMenuActions: _contextActions(it),
+    );
+  }
+
+  // ★ 拖拽抬起代理：玻璃容器包裹 + 缩放 + 抬升阴影 = 悬浮玻璃卡
+  Widget _glassProxy(Widget child, int index, Animation<double> animation) {
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final t = Curves.easeOut.transform(animation.value);
+        return Transform.scale(
+          scale: 1.02 + 0.02 * t,
+          child: GlassContainer(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            settings: LiquidGlassSettings(
+              glassColor: const Color(0xE6F2F2F7),
+              thickness: 28,
+              blur: 18,
+              lightIntensity: 0.5,
+              saturation: 1.3,
+              refractiveIndex: 1.2,
+              specularSharpness: GlassSpecularSharpness.medium,
+              shadowElevation: 8 + 10 * t,
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -357,11 +383,18 @@ class _FollowPageState extends State<FollowPage> {
               if (live.isEmpty)
                 const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: Text('暂无开播主播', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))))
               else
-                // ★ 玻璃版拖拽：grouped 默认 shrinkWrap + NeverScrollable，可直接嵌入 ListView
-                GlassReorderableList.grouped(
-                  itemCount: live.length,
-                  onReorderItem: _reorderLive,
-                  itemBuilder: (context, index) => _liveTile(live[index], index),
+                // ★ 玻璃分组卡 + 框架级拖拽：长按必抬起、tap 必被 reject
+                GlassContainer.card(
+                  shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+                  child: ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    padding: EdgeInsets.zero,
+                    buildDefaultDragHandles: true,
+                    onReorder: _reorderLive,
+                    proxyDecorator: _glassProxy,
+                    children: [for (final it in live) _liveTile(it)],
+                  ),
                 ),
               const SizedBox(height: 20),
               _sectionHeader(icon: Icons.schedule, iconColor: const Color(0xFF00B8D4), title: '暂未开播', count: offline.length,
@@ -375,9 +408,9 @@ class _FollowPageState extends State<FollowPage> {
               if (offline.isEmpty)
                 const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: Text('暂无未开播主播', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 13))))
               else
-                GlassReorderableList.grouped(
-                  itemCount: offline.length,
-                  itemBuilder: (context, index) => _offlineTile(offline[index]),
+                GlassContainer.card(
+                  shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+                  child: Column(children: [for (final it in offline) _offlineTile(it)]),
                 ),
             ],
           ),
