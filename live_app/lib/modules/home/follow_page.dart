@@ -206,29 +206,28 @@ class _FollowPageState extends State<FollowPage> {
     if (mounted) Get.snackbar('已取消订阅', it.name, snackPosition: SnackPosition.BOTTOM);
   }
 
-  // ★ 拖拽排序：把"正在直播"子序列的索引映射回全局 store 索引
   void _reorderLive(int oldIndex, int newIndex) {
     final store = FollowStore.to;
     List<int> liveIdx() => [for (int i = 0; i < store.items.length; i++) if (store.items[i].isLive) i];
-    final idx = liveIdx();
-    if (oldIndex >= idx.length || newIndex > idx.length) return;
+    var idx = liveIdx();
+    if (oldIndex >= idx.length) return;
     var ni = newIndex;
     if (ni > oldIndex) ni -= 1;
     final item = store.items.removeAt(idx[oldIndex]);
-    final idx2 = liveIdx();
-    final globalNew = ni < idx2.length ? idx2[ni] : store.items.length;
+    idx = liveIdx();
+    final globalNew = ni < idx.length ? idx[ni] : store.items.length;
     store.items.insert(globalNew, item);
     store.save();
     setState(() {});
   }
 
-  // ★ 左滑取关玻璃按钮
+  // ★ 1.15.0 真实 API: onTap, label 是 Widget
   List<GlassSwipeAction> _trailing(FollowItem it) => [
         GlassSwipeAction(
-          icon: const Icon(Icons.favorite_border, color: Colors.white, size: 20),
-          label: '取关',
-          backgroundColor: const Color(0xFFE5484D),
-          onTriggered: () => _unfollow(it),
+          icon: const Icon(Icons.favorite_border, color: Colors.white),
+          label: const Text('取关'),
+          isDestructive: true,
+          onTap: () => _unfollow(it),
         ),
       ];
 
@@ -376,15 +375,20 @@ class _FollowPageState extends State<FollowPage> {
               if (live.isEmpty)
                 _empty('暂无开播主播')
               else
-                // ★ 升级点：官方玻璃拖拽排序 + 左滑取关
+                // ★ 1.15.0 真实 API: itemCount + itemBuilder
                 GlassReorderableList(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
+                  itemCount: live.length,
                   onReorder: _reorderLive,
-                  children: [
-                    for (final it in live)
-                      GlassSwipeActions(trailing: _trailing(it), child: _liveCard(it)),
-                  ],
+                  itemBuilder: (context, index) {
+                    final it = live[index];
+                    return GlassSwipeActions(
+                      key: ValueKey(it.roomId),
+                      trailingActions: _trailing(it),
+                      child: _liveCard(it),
+                    );
+                  },
                 ),
               const SizedBox(height: 16),
               _sectionHeader(icon: Icons.schedule, iconColor: const Color(0xFF00B8D4), title: '暂未开播', count: offline.length,
@@ -398,7 +402,11 @@ class _FollowPageState extends State<FollowPage> {
               if (offline.isEmpty)
                 _empty('暂无未开播主播')
               else
-                ...offline.map((it) => GlassSwipeActions(trailing: _trailing(it), child: _offlineTile(it))),
+                ...offline.map((it) => GlassSwipeActions(
+                      key: ValueKey(it.roomId),
+                      trailingActions: _trailing(it),
+                      child: _offlineTile(it),
+                    )),
             ],
           ),
         ),
