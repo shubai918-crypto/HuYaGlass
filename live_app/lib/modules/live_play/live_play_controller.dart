@@ -44,7 +44,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
   final coverUrl = ''.obs;
-  final liveSchedule = ''.obs; // ★ 新增：日常开播预告
+  final liveSchedule = ''.obs; // 日常开播预告
   Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
@@ -53,7 +53,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final danmakuOpacity = 1.0.obs;
   final danmakuArea = 0.4.obs;
   final powerSave = false.obs;
-  // ★ 礼物弹幕显示开关：飘屏默认关（体验差），列表默认开
   final RxBool showGiftOverlay = false.obs;
   final RxBool showGiftList = true.obs;
 
@@ -63,6 +62,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final isLocked = false.obs;
   final isPaused = false.obs;
   final isMuted = false.obs;
+  final isSwitching = false.obs; // ★ 换源期间显示"切换中"遮罩，黑屏不再像死机
   final fitMode = 0.obs;
   Timer? _hideTimer;
 
@@ -92,16 +92,24 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
+  // ★ 长看断流根治：静默换源相关状态
+  Timer? _refreshUrlTimer; // 定时主动换源
+  bool _isRefreshing = false;
+  DateTime _playStartedAt = DateTime.now(); // 本次成功播放的起点
+  DateTime? _backgroundedAt;
+  Duration _lastPosition = Duration.zero;
+  int _positionFrozenSec = 0;
+
   int _ayyuid = 0;
   int _topSid = 0;
   int _subSid = 0;
-  HuyaDanmakuClient? _danmakuClient; 
+  HuyaDanmakuClient? _danmakuClient;
   HuyaDanmakuClient get client => _danmakuClient!;
   final inputController = TextEditingController();
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
-  
-  StreamSubscription? _scheduleSub; // ★ 新增：预告流订阅
+
+  StreamSubscription? _scheduleSub; // 预告流订阅
 
   @override
   void onInit() {
@@ -109,6 +117,11 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
+
+    // ★ 每 60 分钟主动静默换源：在 CDN 签名过期前完成切换，用户零感知
+    _refreshUrlTimer = Timer.periodic(const Duration(minutes: 60), (_) {
+      if (_playing && !_backgrounded && !_userPaused) _silentRefresh('定时换源');
+    });
 
     ever(streamerName, (name) {
       if (name.isNotEmpty) {
@@ -119,7 +132,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         );
       }
     });
-    
+
     BackgroundPlayStore.onMediaAction = (action) {
       switch (action) {
         case 'pause':
@@ -156,6 +169,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     if (!BackgroundPlayStore.enabled.value) return;
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
+    if (c.value.hasError) return; // ★ 报错的控制器不强制 play
     if (!c.value.isPlaying) {
       c.play();
       isPaused.value = false;
@@ -168,6 +182,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _backgrounded = true;
+      _backgroundedAt = DateTime.now();
       if (BackgroundPlayStore.enabled.value) {
         BackgroundPlayStore.acquireWakeLock();
         BackgroundPlayStore.setPlaying(!_userPaused);
@@ -180,7 +195,15 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       if (BackgroundPlayStore.enabled.value) {
         BackgroundPlayStore.setPlaying(!_userPaused);
       }
-      if (_playing && !_userPaused) _controller?.play();
+      // ★ 后台超过 10 分钟：流签名大概率已过期，回前台直接静默换源
+      final bgAt = _backgroundedAt;
+      _backgroundedAt = null;
+      if (bgAt != null &&
+          DateTime.now().difference(bgAt) > const Duration(minutes: 10)) {
+        if (!_userPaused) _silentRefresh('回前台换源');
+      } else if (_playing && !_userPaused) {
+        _controller?.play();
+      }
     }
   }
 
@@ -347,7 +370,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     );
   }
 
-  // ================= 卡顿检测（后台冻结） =================
+  // ================= 卡顿 / 冻结检测 =================
   void _checkStall(Timer t) {
     if (_backgrounded) return;
     final c = _controller;
@@ -362,6 +385,22 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     } else {
       _bufferingSince = null;
     }
+    // ★ 画面冻结检测：FLV 静默断链时既不报 error 也不 buffering，
+    //   但 position 会停止前进。15 秒不动 → 判定断流 → 重连
+    if (c.value.isPlaying && !c.value.isBuffering) {
+      if (c.value.position == _lastPosition) {
+        _positionFrozenSec += 3;
+        if (_positionFrozenSec >= 15) {
+          _positionFrozenSec = 0;
+          _advance('画面冻结');
+        }
+      } else {
+        _positionFrozenSec = 0;
+      }
+      _lastPosition = c.value.position;
+    } else {
+      _positionFrozenSec = 0;
+    }
   }
 
   bool _throttled() {
@@ -375,7 +414,54 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     if (_throttled()) return;
     _playing = false;
     _reconnectCount++;
-    _tryNext(reason);
+    // ★ 已稳定播放 >5 分钟再出错 = 签名过期/CDN 踢人：
+    //   重试旧候选 URL 必然全灭，直接静默换源拿新签名
+    if (DateTime.now().difference(_playStartedAt) >
+        const Duration(minutes: 5)) {
+      _silentRefresh(reason);
+    } else {
+      _tryNext(reason);
+    }
+  }
+
+  // ★ 静默换源：重新解析房间拿新 wsSecret/wsTime 的 URL，无缝替换播放器
+  Future<void> _silentRefresh(String reason) async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    _playing = false;
+    debugInfo.value = '[$reason] 静默换源中…';
+    try {
+      final info = await _resolver.resolveStream(roomId);
+      if (info != null && info.isLive) {
+        qualities.assignAll(info.qualities);
+        final keep = currentQuality.value;
+        final q = qualities.firstWhere(
+          (e) => e.name == keep && keep.isNotEmpty,
+          orElse: () => qualities.first,
+        );
+        currentQuality.value = q.name;
+        _candidates
+          ..clear()
+          ..addAll(q.candidates);
+        lines.assignAll(q.candidates);
+        _candidateTotal = _candidates.length;
+        _candidateIndex = 0;
+        _refreshCount = 0;
+        if (_candidates.isNotEmpty) {
+          final url = _candidates.removeAt(0);
+          _currentUrl = url;
+          _candidateIndex = 1;
+          await _openUrl(url);
+        }
+      } else {
+        debugInfo.value = '[$reason] 主播可能已下播';
+      }
+    } catch (_) {
+      debugInfo.value = '[$reason] 换源失败，watchdog 稍后重试';
+    } finally {
+      _isRefreshing = false;
+      _updateDebug();
+    }
   }
 
   void _updateDebug() {
@@ -425,7 +511,13 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _updateDebug();
     } catch (e) {
       loading.value = false;
-      Get.snackbar('错误', '加载失败: $e');
+      // ★ 原始异常（含长 URL）只进 debug，UI 只给友好提示 + 自动重试
+      debugInfo.value = '加载异常，自动重试中…';
+      Get.snackbar('加载失败', '网络异常，正在自动重试…',
+          snackPosition: SnackPosition.BOTTOM);
+      Future.delayed(const Duration(seconds: 3), () {
+        if (!_playing && !_isRefreshing) _silentRefresh('加载重试');
+      });
     }
   }
 
@@ -461,7 +553,11 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         debugInfo.value = '[$reason] 重新解析线路…';
         _loadStream();
       } else {
-        debugInfo.value = '全部线路失败 ✘';
+        // ★ 上限用尽也不再躺死：改为静默换源周期重试
+        debugInfo.value = '[$reason] 线路异常，持续自动重试中…';
+        Future.delayed(const Duration(seconds: 5), () {
+          if (!_playing && !_isRefreshing) _silentRefresh('周期重试');
+        });
       }
       return;
     }
@@ -472,9 +568,17 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
+  // ★ 根因修复：先 pause + dispose 旧播放器释放 MediaCodec 解码器，
+  //   再初始化新播放器。否则单解码器机型上新的必报 c0.k 错误，
+  //   旧的在后台继续出声 → "有声+黑屏+显示暂停"。
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
+    if (old != null) {
+      try { await old.pause(); } catch (_) {}
+      try { await old.dispose(); } catch (_) {}
+    }
+    isSwitching.value = true;
     final c = VideoPlayerController.networkUrl(
       Uri.parse(url),
       httpHeaders: const {
@@ -494,23 +598,27 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     });
     try {
       await c.initialize().timeout(const Duration(seconds: 8));
-      await old?.dispose();
       _controller = c;
       await c.setVolume(isMuted.value ? 0 : 100);
       await c.play();
       _playing = true;
       _userPaused = false;
-      isPaused.value = false;
       _bufferingSince = null;
       _vw = c.value.size.width.toInt();
       _vh = c.value.size.height.toInt();
       _lastError = '';
+      _refreshCount = 0;
+      _playStartedAt = DateTime.now();
+      _lastPosition = Duration.zero;
+      _positionFrozenSec = 0;
       playerVersion.value++;
       _updateDebug();
     } catch (e) {
       _lastError = '$e';
-      await c.dispose();
+      try { await c.dispose(); } catch (_) {}
       _advance('打开失败');
+    } finally {
+      isSwitching.value = false;
     }
   }
 
@@ -563,10 +671,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   }
 
   void refreshPlay() {
-    if (_currentUrl.isNotEmpty) {
-      _playing = false;
-      _openUrl(_currentUrl);
-    }
+    // ★ 手动刷新也走静默换源：拿新签名 URL，而不是重开过期旧 URL
+    _silentRefresh('手动刷新');
     showControls.value = false;
   }
 
@@ -629,10 +735,8 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _danmakuClient!.onStatus = (s) => danmakuStatus.value = s;
     _danmakuClient!.onPopularity = (v) => heatCount.value = v;
     _danmakuClient!.onSendDebug = (s) => debugInfo.value = s;
-    // ★ 表情字典加载完毕后强制刷新列表以渲染图片
     _danmakuClient!.onEmoteReady = () => danmakuList.refresh();
 
-    // ★ 监听日常开播预告
     _scheduleSub = _danmakuClient!.scheduleStream.listen((s) {
       liveSchedule.value = s;
     });
@@ -646,8 +750,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         danmakuList.removeRange(0, danmakuList.length - 200);
       }
     });
-    
-    // ★ 延迟请求预告，确保 WS 注册完成
+
     Future.delayed(const Duration(seconds: 2), () {
       if (_danmakuClient?.isRegistered == true) {
         _danmakuClient?.fetchLiveSchedule();
@@ -949,7 +1052,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                                     style: const TextStyle(
                                         color: Colors.white54, fontSize: 12)),
                               ],
-                              // ★ 区分日常预告与本场标题
                               if (liveSchedule.value.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text('日常预告：${liveSchedule.value}',
@@ -970,7 +1072,18 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   Positioned.fill(
                       child: KeyedSubtree(
                           key: const ValueKey('vp'), child: _videoByFit(c))),
-                if (isPaused.value && !isLocked.value)
+                // ★ 换源遮罩：切换线路时显示 spinner，黑屏不再像死机
+                if (isSwitching.value)
+                  Positioned.fill(
+                      child: Center(
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(width: 26, height: 26,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white70)),
+                    const SizedBox(height: 8),
+                    const Text('切换线路中…',
+                        style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  ]))),
+                if (isPaused.value && !isLocked.value && !isSwitching.value)
                   Center(
                       child: _controlBtn(Icons.play_arrow, togglePlay,
                           selected: true, size: 64)),
@@ -995,12 +1108,13 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     BackgroundPlayStore.onMediaAction = null;
     _bgWatchdog?.cancel();
+    _refreshUrlTimer?.cancel(); // 释放定时换源
     BackgroundPlayStore.stopService();
     BackgroundPlayStore.releaseWakeLock();
     _hideTimer?.cancel();
     _stallTimer?.cancel();
     _durationTimer?.cancel();
-    _scheduleSub?.cancel(); // ★ 释放预告流
+    _scheduleSub?.cancel(); // 释放预告流
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
