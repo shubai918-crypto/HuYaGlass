@@ -62,7 +62,7 @@ class _SearchPageState extends State<SearchPage> {
           GlassSearchBar(
             controller: _text,
             focusNode: _focus,
-            surfaceStyle: GlassSurfaceStyle.solid
+            surfaceStyle: GlassSurfaceStyle.solid,
             placeholder: '搜索虎牙主播/房间...',
             onChanged: _ctrl.setKeyword,
             onSubmitted: (_) => _submit(),
