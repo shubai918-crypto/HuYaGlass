@@ -44,7 +44,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
   final coverUrl = ''.obs;
-  final liveSchedule = ''.obs; // 日常开播预告
+  final liveSchedule = ''.obs;
   Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
@@ -62,7 +62,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final isLocked = false.obs;
   final isPaused = false.obs;
   final isMuted = false.obs;
-  final isSwitching = false.obs; // ★ 换源期间显示"切换中"遮罩，黑屏不再像死机
+  final isSwitching = false.obs;
   final fitMode = 0.obs;
   Timer? _hideTimer;
 
@@ -92,13 +92,17 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
-  // ★ 长看断流根治：静默换源相关状态
-  Timer? _refreshUrlTimer; // 定时主动换源
+  // ★ 静默换源 / 防循环状态
+  Timer? _refreshUrlTimer;
   bool _isRefreshing = false;
-  DateTime _playStartedAt = DateTime.now(); // 本次成功播放的起点
+  DateTime _playStartedAt = DateTime.now();
   DateTime? _backgroundedAt;
   Duration _lastPosition = Duration.zero;
   int _positionFrozenSec = 0;
+  DateTime _graceUntil = DateTime.fromMillisecondsSinceEpoch(0); // ★ 起播保护期
+  DateTime _lastStallAt = DateTime.fromMillisecondsSinceEpoch(0); // ★ 卡顿重连冷却
+  bool _retriedSameUrl = false; // ★ 同线重试标记
+  String _lastReconnectReason = ''; // ★ 重连原因（长按可见）
 
   int _ayyuid = 0;
   int _topSid = 0;
@@ -109,7 +113,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
 
-  StreamSubscription? _scheduleSub; // 预告流订阅
+  StreamSubscription? _scheduleSub;
 
   @override
   void onInit() {
@@ -118,7 +122,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
 
-    // ★ 每 60 分钟主动静默换源：在 CDN 签名过期前完成切换，用户零感知
     _refreshUrlTimer = Timer.periodic(const Duration(minutes: 60), (_) {
       if (_playing && !_backgrounded && !_userPaused) _silentRefresh('定时换源');
     });
@@ -169,7 +172,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     if (!BackgroundPlayStore.enabled.value) return;
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
-    if (c.value.hasError) return; // ★ 报错的控制器不强制 play
+    if (c.value.hasError) return;
     if (!c.value.isPlaying) {
       c.play();
       isPaused.value = false;
@@ -195,7 +198,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       if (BackgroundPlayStore.enabled.value) {
         BackgroundPlayStore.setPlaying(!_userPaused);
       }
-      // ★ 后台超过 10 分钟：流签名大概率已过期，回前台直接静默换源
       final bgAt = _backgroundedAt;
       _backgroundedAt = null;
       if (bgAt != null &&
@@ -370,29 +372,35 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     );
   }
 
-  // ================= 卡顿 / 冻结检测 =================
+  // ================= 卡顿 / 冻结检测（防循环加固版） =================
   void _checkStall(Timer t) {
     if (_backgrounded) return;
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
+    // ★ 保护期：起播 20s 内不做任何卡顿/冻结重连（缓冲填充时间）
+    if (DateTime.now().isBefore(_graceUntil)) {
+      _bufferingSince = null;
+      _positionFrozenSec = 0;
+      return;
+    }
     if (c.value.isBuffering) {
       _bufferingSince ??= DateTime.now();
+      // ★ 阈值 12s → 25s：瞬时缓冲波动不再触发重连
       if (DateTime.now().difference(_bufferingSince!) >
-          const Duration(seconds: 12)) {
+          const Duration(seconds: 25)) {
         _bufferingSince = null;
-        _advance('卡顿');
+        _stallAdvance('卡顿');
       }
     } else {
       _bufferingSince = null;
     }
-    // ★ 画面冻结检测：FLV 静默断链时既不报 error 也不 buffering，
-    //   但 position 会停止前进。15 秒不动 → 判定断流 → 重连
-    if (c.value.isPlaying && !c.value.isBuffering) {
+    // ★ 冻结阈值 15s → 30s，且排除 hasError 情况（错误走错误通道）
+    if (c.value.isPlaying && !c.value.isBuffering && !c.value.hasError) {
       if (c.value.position == _lastPosition) {
         _positionFrozenSec += 3;
-        if (_positionFrozenSec >= 15) {
+        if (_positionFrozenSec >= 30) {
           _positionFrozenSec = 0;
-          _advance('画面冻结');
+          _stallAdvance('画面冻结');
         }
       } else {
         _positionFrozenSec = 0;
@@ -410,12 +418,33 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     return false;
   }
 
-  void _advance(String reason) {
-    if (_throttled()) return;
+  // ★ 卡顿类重连：30s 冷却 + 同线重试优先，杜绝 10s 循环切线
+  void _stallAdvance(String reason) {
+    final now = DateTime.now();
+    if (now.difference(_lastStallAt) < const Duration(seconds: 30)) return;
+    _lastStallAt = now;
+    _lastReconnectReason = reason;
     _playing = false;
     _reconnectCount++;
-    // ★ 已稳定播放 >5 分钟再出错 = 签名过期/CDN 踢人：
-    //   重试旧候选 URL 必然全灭，直接静默换源拿新签名
+    if (!_retriedSameUrl && _currentUrl.isNotEmpty) {
+      _retriedSameUrl = true;
+      debugInfo.value = '[$reason] 同线路重试…';
+      _openUrl(_currentUrl);
+      return;
+    }
+    _retriedSameUrl = false;
+    if (now.difference(_playStartedAt) > const Duration(minutes: 5)) {
+      _silentRefresh(reason);
+    } else {
+      _tryNext(reason);
+    }
+  }
+
+  void _advance(String reason) {
+    if (_throttled()) return;
+    _lastReconnectReason = reason;
+    _playing = false;
+    _reconnectCount++;
     if (DateTime.now().difference(_playStartedAt) >
         const Duration(minutes: 5)) {
       _silentRefresh(reason);
@@ -424,11 +453,11 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  // ★ 静默换源：重新解析房间拿新 wsSecret/wsTime 的 URL，无缝替换播放器
   Future<void> _silentRefresh(String reason) async {
     if (_isRefreshing) return;
     _isRefreshing = true;
     _playing = false;
+    _lastReconnectReason = reason;
     debugInfo.value = '[$reason] 静默换源中…';
     try {
       final info = await _resolver.resolveStream(roomId);
@@ -466,7 +495,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
 
   void _updateDebug() {
     debugInfo.value =
-        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount';
+        '状态:${isLive.value ? "ON" : "OFF"} 线路:$_candidateIndex/$_candidateTotal ${_vw}x$_vh 重连:$_reconnectCount${_lastReconnectReason.isEmpty ? '' : ' 因:$_lastReconnectReason'}';
   }
 
   // ================= 加载房间 =================
@@ -511,7 +540,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _updateDebug();
     } catch (e) {
       loading.value = false;
-      // ★ 原始异常（含长 URL）只进 debug，UI 只给友好提示 + 自动重试
       debugInfo.value = '加载异常，自动重试中…';
       Get.snackbar('加载失败', '网络异常，正在自动重试…',
           snackPosition: SnackPosition.BOTTOM);
@@ -553,7 +581,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         debugInfo.value = '[$reason] 重新解析线路…';
         _loadStream();
       } else {
-        // ★ 上限用尽也不再躺死：改为静默换源周期重试
         debugInfo.value = '[$reason] 线路异常，持续自动重试中…';
         Future.delayed(const Duration(seconds: 5), () {
           if (!_playing && !_isRefreshing) _silentRefresh('周期重试');
@@ -568,9 +595,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
-  // ★ 根因修复：先 pause + dispose 旧播放器释放 MediaCodec 解码器，
-  //   再初始化新播放器。否则单解码器机型上新的必报 c0.k 错误，
-  //   旧的在后台继续出声 → "有声+黑屏+显示暂停"。
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -608,7 +632,10 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _vh = c.value.size.height.toInt();
       _lastError = '';
       _refreshCount = 0;
+      _retriedSameUrl = false;
       _playStartedAt = DateTime.now();
+      // ★ 起播保护期：20s 内卡顿/冻结检测静默
+      _graceUntil = _playStartedAt.add(const Duration(seconds: 20));
       _lastPosition = Duration.zero;
       _positionFrozenSec = 0;
       playerVersion.value++;
@@ -671,7 +698,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   }
 
   void refreshPlay() {
-    // ★ 手动刷新也走静默换源：拿新签名 URL，而不是重开过期旧 URL
     _silentRefresh('手动刷新');
     showControls.value = false;
   }
@@ -880,7 +906,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
             style: const TextStyle(color: Colors.white70, fontSize: 12)),
         const SizedBox(height: 8),
         Text(
-            '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n错误:$_lastError',
+            '状态:${isLive.value ? "ON" : "OFF"} 分辨率:${_vw}x$_vh 重连:$_reconnectCount\n原因:$_lastReconnectReason\n错误:$_lastError',
             style: const TextStyle(color: Colors.white38, fontSize: 11)),
       ]),
       actions: [
@@ -1072,7 +1098,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   Positioned.fill(
                       child: KeyedSubtree(
                           key: const ValueKey('vp'), child: _videoByFit(c))),
-                // ★ 换源遮罩：切换线路时显示 spinner，黑屏不再像死机
                 if (isSwitching.value)
                   Positioned.fill(
                       child: Center(
@@ -1108,13 +1133,13 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     BackgroundPlayStore.onMediaAction = null;
     _bgWatchdog?.cancel();
-    _refreshUrlTimer?.cancel(); // 释放定时换源
+    _refreshUrlTimer?.cancel();
     BackgroundPlayStore.stopService();
     BackgroundPlayStore.releaseWakeLock();
     _hideTimer?.cancel();
     _stallTimer?.cancel();
     _durationTimer?.cancel();
-    _scheduleSub?.cancel(); // 释放预告流
+    _scheduleSub?.cancel();
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
