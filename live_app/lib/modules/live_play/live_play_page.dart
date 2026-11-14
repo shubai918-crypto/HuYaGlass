@@ -329,7 +329,14 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         GestureDetector(onTap: () => Navigator.of(context).pop(), child: const Icon(Icons.close, color: Color(0xFFA6ADB5), size: 18)),
       ]),
       const SizedBox(height: 12),
-      Obx(() => Wrap(spacing: 10, runSpacing: 10, children: [for (final q in c.qualities) _chip(q.name, q.name == c.currentQuality.value, const Color(0xFF00B8D4), () => c.switchQuality(q))])),
+      Obx(() => Wrap(spacing: 10, runSpacing: 10, children: [
+  for (final q in c.qualities)
+    Opacity(
+      opacity: c.badQualities.contains(q.name) ? 0.4 : 1,
+      child: _chip(q.name, q.name == c.currentQuality.value,
+          const Color(0xFF00B8D4), () => c.switchQuality(q)),
+    ),
+])),
       const SizedBox(height: 18),
       const Row(children: [Icon(Icons.route_outlined, color: kAccent, size: 16), SizedBox(width: 6), Text('线路', style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700))]),
       const SizedBox(height: 12),
