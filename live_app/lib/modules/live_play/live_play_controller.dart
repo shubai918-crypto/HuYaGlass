@@ -44,7 +44,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final liveStartTime = 0.obs;
   final liveDurationText = ''.obs;
   final coverUrl = ''.obs;
-  final liveSchedule = ''.obs; // 日常开播预告
+  final liveSchedule = ''.obs;
+  // ★ 设备解码能力不足的画质黑名单（会话级，UI 可读取置灰）
+  final badQualities = <String>{}.obs;
   Timer? _durationTimer;
 
   // ---------- 弹幕设置 / 省电 ----------
@@ -62,7 +64,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final isLocked = false.obs;
   final isPaused = false.obs;
   final isMuted = false.obs;
-  final isSwitching = false.obs; // 换源期间显示"切换中"遮罩
+  final isSwitching = false.obs;
   final fitMode = 0.obs;
   Timer? _hideTimer;
 
@@ -92,19 +94,20 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   DateTime? _bufferingSince;
   Timer? _stallTimer;
 
-  // ★ 静默换源 / 防循环 / 冻结检测 v2 状态
+  // ★ 静默换源 / 防循环 / 冻结 v2 / 能力降档 状态
   Timer? _refreshUrlTimer;
   bool _isRefreshing = false;
+  bool _capHandling = false;
   DateTime _playStartedAt = DateTime.now();
   DateTime? _backgroundedAt;
   Duration _lastPosition = Duration.zero;
   int _positionFrozenSec = 0;
-  DateTime _graceUntil = DateTime.fromMillisecondsSinceEpoch(0); // 起播保护期
-  DateTime _lastStallAt = DateTime.fromMillisecondsSinceEpoch(0); // 卡顿重连冷却
-  bool _retriedSameUrl = false; // 同线重试标记
-  bool _freezeKicked = false; // ★ 冻结先"踢一脚"标记：踢不醒才重连
-  Duration _lastBufferEnd = Duration.zero; // ★ 缓冲尾端快照（区分真断流/假冻结）
-  String _lastReconnectReason = ''; // 重连原因（长按可见）
+  DateTime _graceUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastStallAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _retriedSameUrl = false;
+  bool _freezeKicked = false;
+  Duration _lastBufferEnd = Duration.zero;
+  String _lastReconnectReason = '';
 
   int _ayyuid = 0;
   int _topSid = 0;
@@ -115,7 +118,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   final HuyaStreamResolver _resolver = HuyaStreamResolver();
   final HuyaLoginManager _loginManager = HuyaLoginManager();
 
-  StreamSubscription? _scheduleSub; // 预告流订阅
+  StreamSubscription? _scheduleSub;
 
   @override
   void onInit() {
@@ -124,7 +127,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _stallTimer = Timer.periodic(const Duration(seconds: 3), _checkStall);
     _bgWatchdog = Timer.periodic(const Duration(seconds: 2), _bgKeepPlaying);
 
-    // ★ 每 60 分钟主动静默换源：在 CDN 签名过期前完成切换，用户零感知
     _refreshUrlTimer = Timer.periodic(const Duration(minutes: 60), (_) {
       if (_playing && !_backgrounded && !_userPaused) _silentRefresh('定时换源');
     });
@@ -175,7 +177,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     if (!BackgroundPlayStore.enabled.value) return;
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
-    if (c.value.hasError) return; // 报错的控制器不强制 play
+    if (c.value.hasError) return;
     if (!c.value.isPlaying) {
       c.play();
       isPaused.value = false;
@@ -201,7 +203,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       if (BackgroundPlayStore.enabled.value) {
         BackgroundPlayStore.setPlaying(!_userPaused);
       }
-      // ★ 后台超过 10 分钟：流签名大概率已过期，回前台直接静默换源
       final bgAt = _backgroundedAt;
       _backgroundedAt = null;
       if (bgAt != null &&
@@ -376,12 +377,11 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     );
   }
 
-  // ================= 卡顿 / 冻结检测（v2 防循环加固版） =================
+  // ================= 卡顿 / 冻结检测（v2） =================
   void _checkStall(Timer t) {
     if (_backgrounded) return;
     final c = _controller;
     if (c == null || !c.value.isInitialized || !_playing) return;
-    // ★ 保护期：起播 20s 内不做任何卡顿/冻结重连（缓冲填充时间）
     if (DateTime.now().isBefore(_graceUntil)) {
       _bufferingSince = null;
       _positionFrozenSec = 0;
@@ -389,7 +389,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
     if (c.value.isBuffering) {
       _bufferingSince ??= DateTime.now();
-      // ★ 阈值 25s：瞬时缓冲波动不再触发重连
       if (DateTime.now().difference(_bufferingSince!) >
           const Duration(seconds: 25)) {
         _bufferingSince = null;
@@ -398,8 +397,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     } else {
       _bufferingSince = null;
     }
-    // ★ 冻结检测 v2：position 与缓冲尾端"双冻结"才判定真断流；
-    //   首次到阈值先 pause+play 踢一脚（救解码器假死），踢不醒再重连
     if (c.value.isPlaying && !c.value.isBuffering && !c.value.hasError) {
       final posFrozen = c.value.position == _lastPosition;
       final bufEnd = c.value.buffered.isEmpty
@@ -420,7 +417,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
           _stallAdvance('画面冻结');
         }
       } else {
-        // 缓冲还在进 = 数据还在流 = 假冻结，不计
         _positionFrozenSec = 0;
         _freezeKicked = false;
       }
@@ -437,7 +433,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     return false;
   }
 
-  // ★ 卡顿类重连：30s 冷却 + 同线重试优先（仅限卡顿），杜绝 10s 循环切线
   void _stallAdvance(String reason) {
     final now = DateTime.now();
     if (now.difference(_lastStallAt) < const Duration(seconds: 30)) return;
@@ -445,7 +440,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _lastReconnectReason = reason;
     _playing = false;
     _reconnectCount++;
-    // ★ 同线路重试只对"卡顿"有效；"画面冻结"=URL 已死，直接换线/换源
     if (reason == '卡顿' && !_retriedSameUrl && _currentUrl.isNotEmpty) {
       _retriedSameUrl = true;
       debugInfo.value = '[$reason] 同线路重试…';
@@ -473,7 +467,43 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  // ★ 静默换源：重新解析房间拿新 wsSecret/wsTime 的 URL，无缝替换播放器
+  // ★ 能力错误识别：NO_EXCEEDS_CAPABILITIES = 设备解码器解不了该规格
+  bool _isCapabilityError(String err) =>
+      err.contains('NO_EXCEEDS_CAPABILITIES') ||
+      err.contains('exceeds capabilities');
+
+  // ★ 能力降档：拉黑当前画质 → 立即切最高可用画质（不走同画质换源死循环）
+  void _handleCapabilityError() {
+    if (_capHandling) return;
+    _capHandling = true;
+    Future.delayed(const Duration(seconds: 2), () => _capHandling = false);
+
+    final bad = currentQuality.value;
+    final isNew = bad.isNotEmpty && !badQualities.contains(bad);
+    if (bad.isNotEmpty) badQualities.add(bad);
+    _playing = false;
+    _reconnectCount++;
+    _lastReconnectReason = '画质超能力';
+
+    final avail =
+        qualities.where((q) => !badQualities.contains(q.name)).toList();
+    if (avail.isEmpty) {
+      debugInfo.value = '所有画质均超出设备解码能力';
+      Get.snackbar('播放失败', '设备解码能力不足，请尝试其他直播间',
+          snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    final next = avail.first; // qualities 默认从高到低
+    currentQuality.value = next.name;
+    if (isNew) {
+      Get.snackbar('画质自动降档', '设备不支持$bad，已切换至${next.name}',
+          snackPosition: SnackPosition.BOTTOM);
+    }
+    _refreshCount = 0;
+    _playStream(next);
+  }
+
+  // ★ 静默换源：跳过黑名单画质
   Future<void> _silentRefresh(String reason) async {
     if (_isRefreshing) return;
     _isRefreshing = true;
@@ -484,10 +514,16 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       final info = await _resolver.resolveStream(roomId);
       if (info != null && info.isLive) {
         qualities.assignAll(info.qualities);
+        final pool =
+            qualities.where((q) => !badQualities.contains(q.name)).toList();
+        if (pool.isEmpty) {
+          debugInfo.value = '[$reason] 无可用画质（设备能力不足）';
+          return;
+        }
         final keep = currentQuality.value;
-        final q = qualities.firstWhere(
+        final q = pool.firstWhere(
           (e) => e.name == keep && keep.isNotEmpty,
-          orElse: () => qualities.first,
+          orElse: () => pool.first,
         );
         currentQuality.value = q.name;
         _candidates
@@ -542,11 +578,15 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       qualities.assignAll(info.qualities);
 
       if (info.isLive && qualities.isNotEmpty) {
+        final pool =
+            qualities.where((q) => !badQualities.contains(q.name)).toList();
         final keep = currentQuality.value;
-        final q = qualities.firstWhere(
-          (e) => e.name == keep && keep.isNotEmpty,
-          orElse: () => qualities.first,
-        );
+        final q = pool.isNotEmpty
+            ? pool.firstWhere(
+                (e) => e.name == keep && keep.isNotEmpty,
+                orElse: () => pool.first,
+              )
+            : qualities.first;
         currentQuality.value = q.name;
         _playStream(q);
       } else {
@@ -561,7 +601,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _updateDebug();
     } catch (e) {
       loading.value = false;
-      // ★ 原始异常（含长 URL）只进 debug，UI 只给友好提示 + 自动重试
       debugInfo.value = '加载异常，自动重试中…';
       Get.snackbar('加载失败', '网络异常，正在自动重试…',
           snackPosition: SnackPosition.BOTTOM);
@@ -589,8 +628,15 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     if (_playing) return;
     if (_candidates.isEmpty) {
       final idx = qualities.indexWhere((q) => q.name == currentQuality.value);
-      if (idx >= 0 && idx < qualities.length - 1) {
-        final next = qualities[idx + 1];
+      // ★ 降档时跳过黑名单画质
+      StreamQuality? next;
+      for (var i = idx + 1; i < qualities.length; i++) {
+        if (!badQualities.contains(qualities[i].name)) {
+          next = qualities[i];
+          break;
+        }
+      }
+      if (next != null) {
         debugInfo.value =
             '[$reason] ${currentQuality.value}全灭 → 自动降档 ${next.name}';
         currentQuality.value = next.name;
@@ -603,7 +649,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
         debugInfo.value = '[$reason] 重新解析线路…';
         _loadStream();
       } else {
-        // ★ 上限用尽也不再躺死：改为静默换源周期重试
         debugInfo.value = '[$reason] 线路异常，持续自动重试中…';
         Future.delayed(const Duration(seconds: 5), () {
           if (!_playing && !_isRefreshing) _silentRefresh('周期重试');
@@ -618,9 +663,7 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     _openUrl(url);
   }
 
-  // ★ 根因修复：先 pause + dispose 旧播放器释放 MediaCodec 解码器，
-  //   再初始化新播放器。否则单解码器机型上新的必报 c0.k 错误，
-  //   旧的在后台继续出声 → "有声+黑屏+显示暂停"。
+  // ★ 先 dispose 旧播放器释放解码器，再初始化新播放器（防 c0.k 占用）
   Future<void> _openUrl(String url) async {
     final old = _controller;
     _controller = null;
@@ -643,7 +686,12 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       if (c.value.hasError) {
         _lastError = c.value.errorDescription ?? '播放器错误';
         if (_backgrounded) return;
-        _advance('出错');
+        // ★ 能力错误 → 降档；其它错误 → 常规重连
+        if (_isCapabilityError(_lastError)) {
+          _handleCapabilityError();
+        } else {
+          _advance('出错');
+        }
       }
     });
     try {
@@ -659,10 +707,9 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
       _lastError = '';
       _refreshCount = 0;
       _retriedSameUrl = false;
-      _freezeKicked = false; // ★ 新增：重置踢一脚标记
-      _lastBufferEnd = Duration.zero; // ★ 新增：重置缓冲尾端快照
+      _freezeKicked = false;
+      _lastBufferEnd = Duration.zero;
       _playStartedAt = DateTime.now();
-      // ★ 起播保护期：20s 内卡顿/冻结检测静默
       _graceUntil = _playStartedAt.add(const Duration(seconds: 20));
       _lastPosition = Duration.zero;
       _positionFrozenSec = 0;
@@ -671,7 +718,11 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     } catch (e) {
       _lastError = '$e';
       try { await c.dispose(); } catch (_) {}
-      _advance('打开失败');
+      if (_isCapabilityError(_lastError)) {
+        _handleCapabilityError();
+      } else {
+        _advance('打开失败');
+      }
     } finally {
       isSwitching.value = false;
     }
@@ -726,7 +777,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   }
 
   void refreshPlay() {
-    // ★ 手动刷新也走静默换源：拿新签名 URL，而不是重开过期旧 URL
     _silentRefresh('手动刷新');
     showControls.value = false;
   }
@@ -753,6 +803,12 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
   }
 
   void switchQuality(StreamQuality q) {
+    // ★ 手动选黑名单画质 → 友好拒绝，不再反复崩溃
+    if (badQualities.contains(q.name)) {
+      Get.snackbar('画质不可用', '设备解码能力不支持${q.name}',
+          snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
     currentQuality.value = q.name;
     _playing = false;
     _refreshCount = 0;
@@ -1127,7 +1183,6 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
                   Positioned.fill(
                       child: KeyedSubtree(
                           key: const ValueKey('vp'), child: _videoByFit(c))),
-                // ★ 换源遮罩：切换线路时显示 spinner，黑屏不再像死机
                 if (isSwitching.value)
                   Positioned.fill(
                       child: Center(
@@ -1163,13 +1218,13 @@ class LivePlayController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     BackgroundPlayStore.onMediaAction = null;
     _bgWatchdog?.cancel();
-    _refreshUrlTimer?.cancel(); // 释放定时换源
+    _refreshUrlTimer?.cancel();
     BackgroundPlayStore.stopService();
     BackgroundPlayStore.releaseWakeLock();
     _hideTimer?.cancel();
     _stallTimer?.cancel();
     _durationTimer?.cancel();
-    _scheduleSub?.cancel(); // 释放预告流
+    _scheduleSub?.cancel();
     _danmakuClient?.disconnect();
     _controller?.dispose();
     inputController.dispose();
