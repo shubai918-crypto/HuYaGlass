@@ -98,7 +98,7 @@ class _HuyaLoginPageState extends State<HuyaLoginPage> {
             ),
             const SizedBox(height: 16),
             GlassButton.custom(
-              onTap: _saving ? null : () => _save(),
+              onTap: () { if (!_saving) _save(); }, // ★ 非空闭包 + 内部守卫，替代 null 禁用
               height: 48,
               shape: const LiquidRoundedSuperellipse(borderRadius: 24),
               useOwnLayer: true, quality: GlassQuality.premium,
