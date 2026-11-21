@@ -7,6 +7,8 @@ import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_app/core/app_settings.dart';
+import 'package:live_app/core/ui_prefs.dart';
+import 'package:live_app/core/user_profile.dart';
 
 import '../live_play/live_play_page.dart';
 import '../search/search_page.dart';
@@ -79,6 +81,8 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   bool _isMinimized = false;
   double _lastScrollOffset = 0;
+  // ★ 程序化玻璃弹出面板控制器
+  final GlassPopoverController _settingsPop = GlassPopoverController();
 
   void _select(int i) => setState(() => _selectedIndex = i);
 
@@ -99,6 +103,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     NowWatching.notifier.removeListener(_onNowWatching);
     ProfilePage.onJumpTab = null;
+    _settingsPop.dispose();
     super.dispose();
   }
 
@@ -162,12 +167,19 @@ class _HomePageState extends State<HomePage> {
                     style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
               ),
               actions: [
-                GlassIconButton(
-                  icon: const Icon(Icons.settings, color: Color(0xFF1F2329)),
-                  size: 44,
+                // ★ 齿轮 = GlassPopover 触发器，程序化控制器开合
+                GlassPopover(
+                  controller: _settingsPop,
                   settings: _visibleGlass(),
-                  glowColor: kAccent.withOpacity(0.35),
-                  onPressed: () => _showQuickSettings(context),
+                  quality: GlassQuality.premium,
+                  triggerBuilder: (context, toggle) => GlassIconButton(
+                    icon: const Icon(Icons.settings, color: Color(0xFF1F2329)),
+                    size: 44,
+                    settings: _visibleGlass(),
+                    glowColor: kAccent.withOpacity(0.35),
+                    onPressed: toggle,
+                  ),
+                  child: _quickSettingsPanel(),
                 ),
               ],
             ),
@@ -234,37 +246,33 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ★ 快捷设置：GlassSwitch 液态开关
-  void _showQuickSettings(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: kCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: const Color(0xFFD8DBE0), borderRadius: BorderRadius.circular(2))),
-            Obx(() => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(children: [
-                    const Icon(Icons.bug_report_outlined, color: Color(0xFF3E9E4C), size: 20),
-                    const SizedBox(width: 12),
-                    const Expanded(child: Text('调试模式', style: TextStyle(color: kText, fontSize: 15))),
-                    GlassSwitch(
-                      value: AppSettings.to.debugEnabled.value,
-                      onChanged: AppSettings.to.setDebug,
-                      activeColor: kAccent,
-                      useOwnLayer: true,
-                      quality: GlassQuality.premium,
-                    ),
-                  ]),
-                )),
-          ]),
-        ),
-      ),
+  // ★ 玻璃弹出面板内容：调试 + 省电玻璃 双开关
+  Widget _quickSettingsPanel() {
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _popSwitchRow(Icons.bug_report_outlined, const Color(0xFF3E9E4C), '调试模式',
+            AppSettings.to.debugEnabled, AppSettings.to.setDebug),
+        const SizedBox(height: 12),
+        _popSwitchRow(Icons.battery_saver, const Color(0xFFFFB25E), '省电玻璃',
+            UiPrefs.to.minimalGlass, UiPrefs.to.setMinimal),
+      ]),
     );
+  }
+
+  Widget _popSwitchRow(IconData icon, Color color, String label, RxBool rx, ValueChanged<bool> onChanged) {
+    return Obx(() => Row(children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: const TextStyle(color: kText, fontSize: 14))),
+          GlassSwitch(
+            value: rx.value,
+            onChanged: onChanged,
+            activeColor: kAccent,
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+          ),
+        ]));
   }
 
   Widget _buildMiniBar(NowRoom room) {
@@ -659,15 +667,16 @@ class _HomeViewState extends State<_HomeView> {
     );
   }
 
+  // ★ 登录态改读响应式 UserProfile：保存/退出即时生效，无需重启
   Widget _quickRow() {
     return Row(children: [
       Expanded(child: _quickCard(Icons.subscriptions_outlined, kAccent, '我的订阅', widget.onOpenFollows)),
       const SizedBox(width: 10),
-      Expanded(child: _quickCard(Icons.account_circle, const Color(0xFFFFB25E),
-          HuyaLoginManager().isLoggedIn ? '已登录' : '登录',
-          () => HuyaLoginManager().isLoggedIn
+      Expanded(child: Obx(() => _quickCard(Icons.account_circle, const Color(0xFFFFB25E),
+          UserProfile.to.logged.value ? '已登录' : '登录',
+          () => UserProfile.to.logged.value
               ? ProfilePage.onJumpTab?.call(3)
-              : Get.toNamed('/huya_login'))),
+              : Get.toNamed('/huya_login')))),
     ]);
   }
 
