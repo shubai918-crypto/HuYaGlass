@@ -78,7 +78,8 @@ class _ProfilePageState extends State<ProfilePage> {
                       ],
                     ));
                     if (ok == true) {
-                      try { HuyaLoginManager().logout(); } catch (_) {}
+                      // ★ await 退出 + 清空响应式 profile → 全 App 即时回未登录
+                      try { await HuyaLoginManager().logout(); } catch (_) {}
                       await UserProfile.to.clear();
                       Get.snackbar('提示', '已退出登录', snackPosition: SnackPosition.BOTTOM);
                     }
@@ -143,22 +144,22 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  // ★ 新增数据卡：填充原空白区，三格可点跳
+  // ★ 数据卡包 Obx：订阅/历史计数即时刷新
   Widget _statsCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
-      child: Row(children: [
-        _stat(Icons.subscriptions_outlined, kAccent, '${FollowStore.to.items.length}', '订阅',
-            () => ProfilePage.onJumpTab?.call(2)),
-        _vDivider(),
-        _stat(Icons.history_outlined, const Color(0xFF4CB7FF), '${HistoryStore.items.length}', '历史',
-            () => Get.to(() => const HistoryPage())),
-        _vDivider(),
-        _stat(Icons.notifications_active_outlined, const Color(0xFFFFB25E), _noticeOn ? '开' : '关', '提醒',
-            () => Get.to(() => const NoticePage())),
-      ]),
-    );
+    return Obx(() => Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+          child: Row(children: [
+            _stat(Icons.subscriptions_outlined, kAccent, '${FollowStore.to.items.length}', '订阅',
+                () => ProfilePage.onJumpTab?.call(2)),
+            _vDivider(),
+            _stat(Icons.history_outlined, const Color(0xFF4CB7FF), '${HistoryStore.items.length}', '历史',
+                () => Get.to(() => const HistoryPage())),
+            _vDivider(),
+            _stat(Icons.notifications_active_outlined, const Color(0xFFFFB25E), _noticeOn ? '开' : '关', '提醒',
+                () => Get.to(() => const NoticePage())),
+          ]),
+        ));
   }
 
   Widget _stat(IconData icon, Color color, String value, String label, VoidCallback onTap) {
