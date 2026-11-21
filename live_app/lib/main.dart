@@ -5,7 +5,9 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_core/live_core.dart';
 
 import 'core/app_settings.dart';
+import 'core/auth_state.dart';
 import 'core/notify_manager.dart';
+import 'core/ui_prefs.dart';
 import 'core/user_profile.dart';
 import 'modules/home/follow_store.dart';
 import 'modules/home/home_page.dart';
@@ -29,8 +31,29 @@ void main() async {
   Get.put(AppSettings(), permanent: true);
   Get.put(UserProfile(), permanent: true);
   Get.put(LiveNotifyManager(), permanent: true);
-  Get.put(AuthState());
-AuthState.to.refresh();
+  Get.put(AuthState(), permanent: true);
+  Get.put(UiPrefs(), permanent: true); // ★ 新增：minimal 省电玻璃开关
+  AuthState.to.refresh();
+
+  // ★ 登录态双向同步桥：AuthState ↔ UserProfile，任一处更新另一处即时跟随
+  //   （带 syncing 守卫防循环；保证首页/我的 Obx 立即刷新，无需重启）
+  var syncing = false;
+  ever<bool>(AuthState.to.loggedIn, (v) {
+    if (syncing) return;
+    syncing = true;
+    if (v) {
+      UserProfile.to.logged.value = true;
+    } else {
+      UserProfile.to.clear();
+    }
+    syncing = false;
+  });
+  ever<bool>(UserProfile.to.logged, (v) {
+    if (syncing) return;
+    syncing = true;
+    AuthState.to.loggedIn.value = v;
+    syncing = false;
+  });
 
   // 预热 shader，遮首帧卡顿
   await LiquidGlassWidgets.initialize();
@@ -51,8 +74,16 @@ class HuyaLiveApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF8800), brightness: Brightness.light),
         useMaterial3: true,
       ),
-      // 透明 Material 兜底，消灭玻璃页输入框黄下划线
-      builder: (context, child) => Material(type: MaterialType.transparency, child: child!),
+      // ★ GlassTheme 包裹：minimal ↔ ios27 一键切换；内层 Material 透明兜底消灭黄下划线
+      builder: (context, child) => Obx(() => GlassTheme(
+            data: UiPrefs.to.minimalGlass.value
+                ? const GlassThemeData(
+                    light: GlassThemeVariant.minimalLight,
+                    dark: GlassThemeVariant.minimalDark,
+                  )
+                : const GlassThemeData.ios27(),
+            child: Material(type: MaterialType.transparency, child: child!),
+          )),
       home: const SplashPage(),
       getPages: [
         GetPage(name: '/notice', page: () => const NoticePage()),
