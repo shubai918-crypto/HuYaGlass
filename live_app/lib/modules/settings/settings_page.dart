@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:live_app/core/app_settings.dart';
+import 'package:live_app/core/ui_prefs.dart';
 
 import '../home/home_page.dart'; // 导入 kBg, kCard, kText, kSub, kLine, kAccent
 
@@ -12,7 +13,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // ★ 修复黑底：强制使用 kBg (浅灰) 作为背景，拒绝 transparent 穿透
     return Scaffold(
-      backgroundColor: kBg, 
+      backgroundColor: kBg,
       appBar: AppBar(
         backgroundColor: kBg,
         elevation: 0,
@@ -31,6 +32,18 @@ class SettingsPage extends StatelessWidget {
             _row(Icons.play_circle_outline, kAccent, '播放设置', '清晰度与线路自动优选'),
             _divider(),
             _row(Icons.route_outlined, const Color(0xFF4CB7FF), '网络线路', '优先使用网页 FLV 直连'),
+          ]),
+          const SizedBox(height: 20),
+          // ★ 新增：显示与性能（minimal 省电玻璃）
+          _section('显示与性能'),
+          const SizedBox(height: 8),
+          _group([
+            Obx(() => _switchRow(
+                  '省电玻璃材质',
+                  'minimal 档：零折射、更省 GPU',
+                  UiPrefs.to.minimalGlass.value,
+                  (v) => UiPrefs.to.setMinimal(v),
+                )),
           ]),
           const SizedBox(height: 20),
           _section('开发者'),
