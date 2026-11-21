@@ -29,6 +29,8 @@ void main() async {
   Get.put(AppSettings(), permanent: true);
   Get.put(UserProfile(), permanent: true);
   Get.put(LiveNotifyManager(), permanent: true);
+  Get.put(AuthState());
+AuthState.to.refresh();
 
   // 预热 shader，遮首帧卡顿
   await LiquidGlassWidgets.initialize();
