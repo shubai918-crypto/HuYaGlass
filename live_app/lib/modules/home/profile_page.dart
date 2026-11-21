@@ -79,7 +79,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     ));
                     if (ok == true) {
                       // ★ await 退出 + 清空响应式 profile → 全 App 即时回未登录
-                      try { await HuyaLoginManager().logout(); } catch (_) {}
+                      try { HuyaLoginManager().logout(); } catch (_) {}
                       await UserProfile.to.clear();
                       Get.snackbar('提示', '已退出登录', snackPosition: SnackPosition.BOTTOM);
                     }
