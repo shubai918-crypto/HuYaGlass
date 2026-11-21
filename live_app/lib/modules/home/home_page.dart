@@ -99,13 +99,6 @@ class _HomePageState extends State<HomePage> {
     if (r != null) HistoryStore.add(r.roomId, r.nickname, r.avatarUrl);
   }
 
-  @override
-  void dispose() {
-    NowWatching.notifier.removeListener(_onNowWatching);
-    ProfilePage.onJumpTab = null;
-    _settingsPop.dispose();
-    super.dispose();
-  }
 
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
         glassColor: const Color(0xAAF2F2F7),
@@ -179,7 +172,7 @@ class _HomePageState extends State<HomePage> {
                     glowColor: kAccent.withOpacity(0.35),
                     onPressed: toggle,
                   ),
-                  child: _quickSettingsPanel(),
+                  contentBuilder: (context, close) => _quickSettingsPanel(), // ★ child → contentBuilder
                 ),
               ],
             ),
