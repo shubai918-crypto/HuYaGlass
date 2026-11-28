@@ -263,7 +263,7 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     );
   }
 
-  // ★ 底栏：左"写评论"式薄 pill + 右单胶囊(图标+小标签)，逐图标 Q 弹
+  // ★ 底栏：左薄 pill + 右 GlassButtonGroup.icons（单一玻璃面，onTap）
   Widget _bottomBar() {
     return Row(children: [
       Expanded(
@@ -299,48 +299,42 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
         ),
       ),
       const SizedBox(width: 10),
-      GlassButtonGroup(
-        showDividers: false,
-        borderRadius: 24,
+      GlassButtonGroup.icons(
         useOwnLayer: true,
         quality: GlassQuality.premium,
+        borderRadius: 24,
+        iconSize: 22,
+        showDividers: false,
+        itemPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         settings: _hdrGlass(),
-        children: [
-          _groupBtn(Icons.speed, '清晰度', _openQualitySheet),
-          _groupBtn(Icons.tune, '设置', _showDanmakuSettingsSheet),
-          _groupBtn(Icons.emoji_emotions_outlined, '表情', () => _openComposeSheet(focusEmoji: true)),
+        items: [
+          GlassButtonGroupItem(label: '清晰度', icon: const Icon(Icons.speed, color: Color(0xFF3C4248)), onTap: _openQualitySheet),
+          GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: _showDanmakuSettingsSheet),
+          GlassButtonGroupItem(label: '表情', icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF3C4248)), onTap: () => _openComposeSheet(focusEmoji: true)),
         ],
       ),
     ]);
   }
 
-  Widget _groupBtn(IconData icon, String label, VoidCallback onTap) => GlassButton(
-        onTap: onTap,
-        style: GlassButtonStyle.transparent,
-        width: 62, height: 48,
-        stretch: 1.0, resistance: 0.03, interactionScale: 1.08,
-        anchorStretchSettings: const AnchorStretchSettings(
-            intensity: 0.9, squashFactor: 0.35, translationDamping: 0.05, bounciness: 0.5),
-        icon: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: const Color(0xFF3C4248), size: 20),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 9)),
-        ]),
-      );
-
-  // ★ 薄 rim + 30% 淡白纱 + 强模糊：底层文字糊化透出，dock 胶囊质感不厚重
+  // ★ iOS27 材质但低霜低纱 → 更通透，底字糊化透出
   LiquidGlassSettings _barGlass() => LiquidGlassSettings(
-        glassColor: const Color(0x4DFFFFFF),
+        glassColor: const Color(0x30FFFFFF),
+        saturation: 1.6,
+        blur: 8,
+        blurWeight: 0.8,
+        frost: 10,
+        frostOpacity: 0.35,
+        frostClamp: 0.4,
+        frostWeight: 1.2,
         thickness: 8,
-        blur: 14,
-        chromaticAberration: 0.006,
-        lightIntensity: 0.15,
-        ambientStrength: 0,
-        fresnelStrength: 0.3,
-        refractiveIndex: 1.1,
-        saturation: 1.2,
-        specularSharpness: GlassSpecularSharpness.soft,
-        shadowElevation: 0.8,
+        refractiveIndex: 1.2,
+        lensModel: GlassLensModel.paraxial,
+        lightIntensity: 0,
+        fresnelStrength: 0,
+        chromaticAberration: 0,
+        rimShade: 1,
+        rimLight: 1,
+        shadowElevation: 0.6,
       );
 
   LiquidGlassSettings _hdrGlass() => _barGlass();
@@ -349,8 +343,19 @@ class _LivePlayPageState extends State<LivePlayPage> with SingleTickerProviderSt
     showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _LightSheet(child: _qualityContent()));
   }
 
+  // ★ 180ms 快速转场 + 面板内 GlassTextField autofocus → 点开即弹输入法
   void _openComposeSheet({bool focusEmoji = false}) {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _LightSheet(child: _DanmakuComposeBody(c: c, showEmojiInitial: focusEmoji)));
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      enableDrag: false,
+      transitionAnimationController: AnimationController(
+        vsync: Navigator.of(context),
+        duration: const Duration(milliseconds: 180),
+      ),
+      builder: (_) => _LightSheet(child: _DanmakuComposeBody(c: c, showEmojiInitial: focusEmoji)),
+    );
   }
 
   Widget _qualityContent() {
@@ -431,7 +436,6 @@ class _DanmakuComposeBody extends StatefulWidget {
 
 class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   final FocusNode _fn = FocusNode();
-  bool _focused = false;
   bool _emojiOpen = false;
   bool _phraseOpen = false;
   bool _sending = false;
@@ -443,10 +447,9 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
     super.initState();
     _emojiOpen = widget.showEmojiInitial;
     _fn.addListener(_onFocus);
-    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted && !_emojiOpen && !_phraseOpen) _fn.requestFocus(); });
   }
 
-  void _onFocus() { setState(() { _focused = _fn.hasFocus; if (_fn.hasFocus) { _emojiOpen = false; _phraseOpen = false; } }); }
+  void _onFocus() { if (_fn.hasFocus) setState(() { _emojiOpen = false; _phraseOpen = false; }); }
   @override
   void dispose() { _fn.removeListener(_onFocus); _fn.dispose(); super.dispose(); }
 
@@ -490,12 +493,27 @@ class _DanmakuComposeBodyState extends State<_DanmakuComposeBody> {
   Widget build(BuildContext context) {
     final entries = HuyaDanmakuClient.emoteRegistry.entries.toList();
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        width: double.infinity, constraints: const BoxConstraints(minHeight: 64), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF2F3F5), borderRadius: BorderRadius.circular(16)),
-        child: _focused
-            ? TextField(controller: widget.c.inputController, focusNode: _fn, maxLines: 3, minLines: 1, style: const TextStyle(color: Color(0xFF23272E), fontSize: 15), cursorColor: kAccent, keyboardAppearance: Brightness.light, textInputAction: TextInputAction.send, onSubmitted: (_) => _sendFlow(), decoration: const InputDecoration(hintText: '发送弹幕...', hintStyle: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15), border: InputBorder.none))
-            : GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => FocusScope.of(context).requestFocus(_fn),
-                child: ValueListenableBuilder<TextEditingValue>(valueListenable: widget.c.inputController, builder: (context, v, _) => v.text.isEmpty ? const Align(alignment: Alignment.centerLeft, child: Text('发送弹幕...', style: TextStyle(color: Color(0xFFA6ADB5), fontSize: 15))) : Align(alignment: Alignment.centerLeft, child: Text.rich(TextSpan(children: buildEmoteSpans(v.text, fontSize: 15, textColor: const Color(0xFF23272E))), style: const TextStyle(color: Color(0xFF23272E), fontSize: 15, height: 1.5))))),
+      // ★ GlassTextField：solid 零 shader 井 + autofocus，开面板即聚焦弹输入法
+      GlassTextField(
+        controller: widget.c.inputController,
+        focusNode: _fn,
+        autofocus: !widget.showEmojiInitial,
+        placeholder: '发送弹幕...',
+        maxLines: 3,
+        minLines: 1,
+        autocorrect: false,
+        enableSuggestions: false,
+        textInputAction: TextInputAction.send,
+        onSubmitted: (_) => _sendFlow(),
+        textStyle: const TextStyle(color: Color(0xFF23272E), fontSize: 15),
+        placeholderStyle: const TextStyle(color: Color(0xFFA6ADB5), fontSize: 15),
+        padding: const EdgeInsets.all(12),
+        shape: const LiquidRoundedRectangle(borderRadius: 16),
+        surfaceStyle: GlassSurfaceStyle.solid,
+        color: const Color(0xFFF2F3F5),
+        suffixIcon: const Icon(Icons.close, size: 18, color: Color(0xFFA6ADB5)),
+        onSuffixTap: () { widget.c.inputController.clear(); setState(() {}); },
+        suffixSemanticLabel: '清空',
       ),
       const SizedBox(height: 10),
       Row(children: [
@@ -613,13 +631,11 @@ class _DanmakuListState extends State<_DanmakuList> {
   Color _contentColor(int rgb) { final c = Color(rgb); final l = (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255; return l > 0.62 ? const Color(0xFF3C4248) : c; }
   LiquidGlassSettings _menuGlass() => LiquidGlassSettings(glassColor: const Color(0xE61C1C1E), thickness: 24, blur: 14, lightIntensity: 0.25, saturation: 1.1, refractiveIndex: 1.1, specularSharpness: GlassSpecularSharpness.medium, shadowElevation: 3.0);
 
-  // ★ 原生 GlassContextMenu：lift + morph + glide-to-select；预览可框选
-  //   关闭后延迟 450ms 解锁 PopScope，吸收库的 stray pop，根治"按动作退房"
+  // ★ 原生 GlassContextMenu：lift + morph + glide；预览可框选；450ms 延迟解锁防退房
   void _showDanmakuMenu(DanmakuMessage m, Offset pos) {
     widget.menuOpen.value = true;
     final content = m.isGift ? '${m.nickname} 送 ${m.giftName} x${m.giftCount}' : m.content;
     final targetRect = Rect.fromCenter(center: pos, width: 1, height: 1);
-
     showGlassContextMenu<void>(
       context: context,
       targetRect: targetRect,
@@ -650,7 +666,6 @@ class _DanmakuListState extends State<_DanmakuList> {
         }),
       ],
     ).whenComplete(() {
-      // ★ 延迟解锁：吸收菜单关闭后库可能补的一次 stray pop
       Future.delayed(const Duration(milliseconds: 450), () {
         if (mounted) widget.menuOpen.value = false;
       });
@@ -695,16 +710,35 @@ class _DanmakuListState extends State<_DanmakuList> {
       if (list.isEmpty) return Center(child: Text(c.danmakuStatus.value, style: const TextStyle(color: Color(0xFFA6ADB5))));
       return Stack(children: [
         Scrollbar(controller: _sc, thumbVisibility: true, thickness: 4, radius: const Radius.circular(4), child: ListView.builder(controller: _sc, padding: const EdgeInsets.fromLTRB(12, 8, 12, 84), itemCount: list.length, itemBuilder: (_, i) => _item(c, list[i]))),
-        Positioned(right: 8, bottom: 84, child: GlassContainer(shape: const LiquidRoundedSuperellipse(borderRadius: 999), padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6), useOwnLayer: true, quality: GlassQuality.standard, settings: LiquidGlassSettings(glassColor: const Color(0xB3FFFFFF), thickness: 20, blur: 8, lightIntensity: 0.5, specularSharpness: GlassSpecularSharpness.medium, saturation: 1.1), child: Column(children: [
-          GlassIconButton(icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), size: 38, onPressed: () => _showDanmakuSettingsLocal(c)),
-          const SizedBox(height: 4),
-          GlassIconButton(icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)), size: 38, onPressed: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
-          const SizedBox(height: 4),
-          GlassIconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)), size: 38, onPressed: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
-        ]))),
+        // ★ 右竖条：GlassButtonGroup.icons(vertical)，单一玻璃面，onTap
+        Positioned(
+          right: 8, bottom: 84,
+          child: GlassButtonGroup.icons(
+            direction: Axis.vertical,
+            useOwnLayer: true,
+            quality: GlassQuality.premium,
+            borderRadius: 22,
+            iconSize: 20,
+            showDividers: false,
+            itemPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            settings: _stripGlass(),
+            items: [
+              GlassButtonGroupItem(label: '弹幕设置', icon: const Icon(Icons.tune, color: Color(0xFF3C4248)), onTap: () => _showDanmakuSettingsLocal(c)),
+              GlassButtonGroupItem(label: '回到顶部', icon: const Icon(Icons.keyboard_arrow_up, color: Color(0xFF3C4248)), onTap: () => _sc.hasClients ? _sc.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
+              GlassButtonGroupItem(label: '到底部', icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF3C4248)), onTap: () => _sc.hasClients ? _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : null),
+            ],
+          ),
+        ),
       ]);
     });
   }
+
+  LiquidGlassSettings _stripGlass() => LiquidGlassSettings(
+        glassColor: const Color(0x30FFFFFF), saturation: 1.6, blur: 8, blurWeight: 0.8,
+        frost: 10, frostOpacity: 0.35, frostClamp: 0.4, frostWeight: 1.2, thickness: 8,
+        refractiveIndex: 1.2, lensModel: GlassLensModel.paraxial, lightIntensity: 0,
+        fresnelStrength: 0, chromaticAberration: 0, rimShade: 1, rimLight: 1, shadowElevation: 0.6,
+      );
 
   void _showDanmakuSettingsLocal(LivePlayController c) {
     showModalBottomSheet(context: context, backgroundColor: kCard, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(mainAxisSize: MainAxisSize.min, children: [
